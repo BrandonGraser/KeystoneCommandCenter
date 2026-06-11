@@ -163,6 +163,14 @@ function bindEvents() {
     applyCategoryTone(els.dailyCategories, state.activeDailyCategory);
   });
   els.taskCategory.addEventListener("change", () => applyCategoryTone(els.taskCategory, els.taskCategory.value));
+  document.querySelector("#categoryPillPicker")?.addEventListener("click", (event) => {
+    const pill = event.target.closest(".category-pill-option");
+    if (!pill) return;
+    const category = pill.dataset.category;
+    els.taskCategory.value = category;
+    applyCategoryTone(els.taskCategory, category);
+    renderCategoryPillPicker(category);
+  });
   els.taskStatus.addEventListener("change", syncDueForStatus);
   els.taskAssignee.addEventListener("change", () => ensureNoteLinkPerson(els.taskAssignee.value));
   els.saveDailyNote.addEventListener("click", saveDailyNote);
@@ -300,12 +308,16 @@ function renderTaskBlock(task) {
 function renderTaskRow(task) {
   const due = dueState(task.due_date, task.done, task.status);
   const archive = archiveState(task);
+  const statusMeta = taskStatusMeta(task.status, task.done);
   return `
     <article class="task-row ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} due-row-${due.className}" data-task-id="${task.id}">
       <input class="task-check" type="checkbox" ${task.done ? "checked" : ""} ${state.showArchive ? "disabled" : ""} title="Mark done">
       <div class="task-main">
         <input class="task-title inline-task-input inline-task-title" data-inline-field="title" value="${escapeHtml(task.title)}" aria-label="Task name">
         <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
+      </div>
+      <div class="task-status">
+        <span class="status-badge status-${statusMeta.className}">${escapeHtml(statusMeta.label)}</span>
       </div>
       <div class="due ${due.className}" title="${escapeHtml(due.label)}">
         <span>${escapeHtml(state.showArchive ? archive.display : (due.display || task.due_date || "No due"))}</span>
@@ -502,6 +514,7 @@ function openTaskDialog(task = null) {
   els.taskStatus.value = task?.status || "Not Started";
   els.taskCategory.value = task?.category || "Misc.";
   applyCategoryTone(els.taskCategory, els.taskCategory.value);
+  renderCategoryPillPicker(els.taskCategory.value);
   els.taskDue.value = task ? (task.due_date || "") : today();
   syncDueForStatus();
   els.taskDone.checked = Boolean(task?.done);
@@ -1287,4 +1300,34 @@ function debounce(fn, delay) {
 
 function sleep(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function renderCategoryPillPicker(selectedCategory = "Misc.") {
+  const container = document.querySelector("#categoryPillPicker");
+  if (!container) return;
+  const categories = state.dailyCategories.length ? state.dailyCategories : Object.keys(CATEGORY_TONES);
+  container.innerHTML = categories.map((category) => {
+    const tone = categoryTone(category);
+    const isActive = category === selectedCategory;
+    return `<button
+      type="button"
+      class="category-pill-option${isActive ? " active" : ""}"
+      data-category="${escapeHtml(category)}"
+      style="--pill-accent: ${tone.accent}; --pill-bg: ${tone.background}; --pill-border: ${tone.border};"
+    >${escapeHtml(category)}</button>`;
+  }).join("");
+}
+
+function taskStatusMeta(status, done = false) {
+  if (done) return { className: "done-status", label: "Done" };
+  const map = {
+    "Not Started": { className: "not-started", label: "Not Started" },
+    "Working": { className: "working", label: "Working" },
+    "Needs Brandon Review": { className: "brandon-review", label: "BR Review" },
+    "Needs Tommy Review": { className: "tommy-review", label: "TM Review" },
+    "Done": { className: "done-status", label: "Done" },
+    "Misc.": { className: "misc", label: "Misc." },
+    "BRB": { className: "brb", label: "BRB" }
+  };
+  return map[status] || { className: "misc", label: status };
 }

@@ -102,15 +102,22 @@
         </div>
 
         <input type="hidden" id="taskId">
+
+        <div class="who-for-section">
+          <span class="control-label">Who is this for?</span>
+          <div id="categoryPillPicker" class="category-pill-picker"></div>
+          <select id="taskCategory" class="category-select-hidden" aria-label="Category" tabindex="-1"></select>
+        </div>
+
         <label>
           <span>Task Name</span>
           <input id="taskName" type="text" required>
         </label>
         <label>
-          <span>Task</span>
+          <span>Task Details</span>
           <textarea id="taskTitle" rows="3" placeholder="What needs to happen?"></textarea>
         </label>
-        <div class="form-grid">
+        <div class="form-grid form-grid-3">
           <label>
             <span>Assignee</span>
             <select id="taskAssignee"></select>
@@ -118,10 +125,6 @@
           <label>
             <span>Status</span>
             <select id="taskStatus"></select>
-          </label>
-          <label>
-            <span>Category</span>
-            <select id="taskCategory"></select>
           </label>
           <label>
             <span>Due</span>

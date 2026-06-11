@@ -460,7 +460,7 @@ textarea {
 .task-row {
   position: relative;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 120px 210px;
+  grid-template-columns: 32px minmax(0, 1fr) 150px 110px 200px;
   gap: 12px;
   align-items: center;
   min-height: 70px;
@@ -1773,7 +1773,7 @@ dialog::backdrop {
 
 @media (max-width: 1040px) {
   .task-row {
-    grid-template-columns: 30px minmax(0, 1fr) 96px 190px;
+    grid-template-columns: 30px minmax(0, 1fr) 130px 90px 160px;
   }
 
   .task-detail-grid,
@@ -1821,6 +1821,10 @@ dialog::backdrop {
 
   .task-row > *:nth-child(n+3) {
     grid-column: 2;
+  }
+
+  .task-status {
+    display: none;
   }
 
   .row-actions {
@@ -4146,4 +4150,180 @@ html[data-theme="dark"] .note-link-label {
   .note-link-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Who is this for? – category pill picker ── */
+.who-for-section {
+  display: grid;
+  gap: 10px;
+}
+
+.category-pill-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.category-pill-option {
+  min-height: 34px;
+  padding: 0 16px;
+  border: 1px solid var(--pill-border, var(--line-strong));
+  border-radius: 999px;
+  background: var(--pill-bg, #ffffff);
+  color: var(--pill-accent, var(--ink));
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(23, 23, 23, 0.08);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  text-transform: none;
+}
+
+.category-pill-option:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(23, 23, 23, 0.13);
+  border-color: var(--pill-accent, var(--accent));
+}
+
+.category-pill-option.active {
+  background: var(--pill-accent, var(--accent));
+  color: #ffffff;
+  border-color: var(--pill-accent, var(--accent));
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--pill-accent, var(--accent)) 38%, transparent 62%);
+}
+
+.category-select-hidden {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* 3-column form grid for dialog */
+.form-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* ── Status badge on task row ── */
+.task-status {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  max-width: 100%;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-badge.status-not-started {
+  background: #f4f4f2;
+  color: #5d6268;
+  border-color: #d7d7d2;
+}
+
+.status-badge.status-working {
+  background: #e5edff;
+  color: #0033a0;
+  border-color: #b8c8f6;
+}
+
+.status-badge.status-brandon-review {
+  background: #fff7ed;
+  color: #c05c0a;
+  border-color: #fed7aa;
+}
+
+.status-badge.status-tommy-review {
+  background: #eee9ff;
+  color: #5b42a5;
+  border-color: #c9bdf4;
+}
+
+.status-badge.status-done-status {
+  background: #eaf6ef;
+  color: #26875a;
+  border-color: #b8dcc8;
+}
+
+.status-badge.status-misc {
+  background: #eeeeea;
+  color: #5d6268;
+  border-color: #d7d7d2;
+}
+
+.status-badge.status-brb {
+  background: #f0eeec;
+  color: #7a7a7a;
+  border-color: #d7d3cf;
+}
+
+/* Dark mode overrides for new elements */
+html[data-theme="dark"] .category-pill-option {
+  background: #151f31;
+  color: color-mix(in srgb, var(--pill-accent, #9db5ff) 90%, #ffffff 10%);
+  border-color: color-mix(in srgb, var(--pill-border, #35445a) 80%, #ffffff 5%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.24);
+}
+
+html[data-theme="dark"] .category-pill-option:hover {
+  background: #1b2740;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.32);
+}
+
+html[data-theme="dark"] .category-pill-option.active {
+  background: color-mix(in srgb, var(--pill-accent, #80a0ff) 28%, #0f1826 72%);
+  color: color-mix(in srgb, var(--pill-accent, #9db5ff) 90%, #ffffff 10%);
+  border-color: color-mix(in srgb, var(--pill-accent, #80a0ff) 55%, transparent 45%);
+}
+
+html[data-theme="dark"] .status-badge.status-not-started {
+  background: #1b2535;
+  color: #aab4c2;
+  border-color: #35445a;
+}
+
+html[data-theme="dark"] .status-badge.status-working {
+  background: #16264d;
+  color: #9db5ff;
+  border-color: #354f86;
+}
+
+html[data-theme="dark"] .status-badge.status-brandon-review {
+  background: #2a1a0e;
+  color: #ffb86b;
+  border-color: #5a3210;
+}
+
+html[data-theme="dark"] .status-badge.status-tommy-review {
+  background: #1e163a;
+  color: #b8a8f5;
+  border-color: #4a3a7a;
+}
+
+html[data-theme="dark"] .status-badge.status-done-status {
+  background: #102719;
+  color: #7edfa2;
+  border-color: #285a38;
+}
+
+html[data-theme="dark"] .status-badge.status-misc,
+html[data-theme="dark"] .status-badge.status-brb {
+  background: #1b2535;
+  color: #8893a2;
+  border-color: #35445a;
 }
