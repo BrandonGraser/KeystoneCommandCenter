@@ -7,6 +7,7 @@ export async function sendTaskDoneNotification(task) {
 
   results.push(await sendEmail(`Done: ${task.title}`, text));
   results.push(await sendSms(text));
+  results.push(await sendDiscordDm(text));
   results.push(await sendWebhook("task.done", task, text));
 
   const sent = results.filter((result) => result.sent);
@@ -42,6 +43,7 @@ export async function sendRingNotification(input) {
 
   results.push(await sendEmail(subject, text));
   results.push(await sendSms(text));
+  results.push(await sendDiscordDm(text));
   results.push(await sendWebhook("ring.requested", ring, text));
 
   const sent = results.filter((result) => result.sent);
@@ -157,6 +159,32 @@ async function sendWebhook(event, payload, text) {
     return { channel: "webhook", sent: true };
   } catch (error) {
     return skipped("webhook", error.message);
+  }
+}
+
+async function sendDiscordDm(text) {
+  const token = process.env.DISCORD_BOT_TOKEN;
+  const userId = process.env.DISCORD_USER_ID;
+  if (!token || !userId) return skipped("discord", "DISCORD_BOT_TOKEN or DISCORD_USER_ID is missing.");
+
+  try {
+    const dmRes = await fetch("https://discord.com/api/v10/users/@me/channels", {
+      method: "POST",
+      headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ recipient_id: userId })
+    });
+    if (!dmRes.ok) return skipped("discord", await dmRes.text());
+    const { id: channelId } = await dmRes.json();
+
+    const msgRes = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content: text })
+    });
+    if (!msgRes.ok) return skipped("discord", await msgRes.text());
+    return { channel: "discord", sent: true };
+  } catch (error) {
+    return skipped("discord", error.message);
   }
 }
 
