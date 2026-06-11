@@ -1,0 +1,604 @@
+import { createClient } from "@libsql/client";
+import { ASSIGNEES, DAILY_CATEGORIES, STATUSES, validateTaskPayload } from "./validators.mjs";
+
+let _initPromise = null;
+
+function getDb() {
+  if (!_initPromise) _initPromise = _init();
+  return _initPromise;
+}
+
+async function _init() {
+  const dbPath = process.env.DB_PATH || "./data/tasks.db";
+  const url = process.env.TURSO_DATABASE_URL || `file:${dbPath}`;
+
+  if (url.startsWith("file:")) {
+    const { mkdirSync } = await import("node:fs");
+    const { dirname, resolve } = await import("node:path");
+    const filePath = url.slice(5);
+    mkdirSync(dirname(resolve(filePath)), { recursive: true });
+  }
+
+  const client = createClient({
+    url,
+    authToken: process.env.TURSO_AUTH_TOKEN || undefined
+  });
+
+  await migrate(client);
+  await seedAssignees(client);
+  return client;
+}
+
+function toRow(columns, row) {
+  if (!row) return null;
+  const obj = {};
+  for (const col of columns) obj[col] = row[col];
+  return obj;
+}
+
+async function migrate(client) {
+  await client.batch([
+    {
+      sql: `CREATE TABLE IF NOT EXISTS assignees (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        sort_order INTEGER NOT NULL
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS imports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT NOT NULL,
+        imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+        imported_rows INTEGER NOT NULL DEFAULT 0,
+        skipped_rows INTEGER NOT NULL DEFAULT 0,
+        task_rows INTEGER NOT NULL DEFAULT 0,
+        daily_note_rows INTEGER NOT NULL DEFAULT 0
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        assignee TEXT NOT NULL,
+        title TEXT NOT NULL,
+        details TEXT,
+        project TEXT,
+        category TEXT,
+        status TEXT NOT NULL DEFAULT 'BRB',
+        done INTEGER NOT NULL DEFAULT 0,
+        due_date TEXT,
+        stamp_at TEXT,
+        source_filename TEXT,
+        source_tab TEXT,
+        source_row INTEGER,
+        import_id INTEGER,
+        archived INTEGER NOT NULL DEFAULT 0,
+        archived_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (import_id) REFERENCES imports(id)
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS task_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        label TEXT NOT NULL,
+        url TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS task_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        person TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS task_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        author TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS task_workflow_steps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        label TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS daily_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_date TEXT NOT NULL,
+        assignee TEXT,
+        category TEXT,
+        body TEXT NOT NULL,
+        source_filename TEXT,
+        source_tab TEXT,
+        source_row INTEGER,
+        import_id INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (import_id) REFERENCES imports(id)
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS resource_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        section TEXT NOT NULL,
+        title TEXT NOT NULL,
+        url TEXT,
+        note TEXT,
+        username TEXT,
+        password TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    }
+  ], "write");
+
+  await client.batch([
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks (assignee)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks (due_date)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks (archived)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_links_task ON task_links (task_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_notes_task ON task_notes (task_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_messages_task ON task_messages (task_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_workflow_task ON task_workflow_steps (task_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_resource_items_section ON resource_items (section, sort_order)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks (category)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_daily_notes_category ON daily_notes (category)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks (archived_at)" }
+  ], "write");
+
+  const dailyCols = await client.execute("PRAGMA table_info(daily_notes)");
+  if (!dailyCols.rows.some((r) => r["name"] === "category")) {
+    await client.execute("ALTER TABLE daily_notes ADD COLUMN category TEXT");
+  }
+
+  const taskCols = await client.execute("PRAGMA table_info(tasks)");
+  const taskColNames = taskCols.rows.map((r) => r["name"]);
+  if (!taskColNames.includes("category")) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN category TEXT");
+  }
+  if (!taskColNames.includes("archived_at")) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN archived_at TEXT");
+  }
+
+  const resourceCols = await client.execute("PRAGMA table_info(resource_items)");
+  const resourceColNames = resourceCols.rows.map((r) => r["name"]);
+  if (!resourceColNames.includes("username")) {
+    await client.execute("ALTER TABLE resource_items ADD COLUMN username TEXT");
+  }
+  if (!resourceColNames.includes("password")) {
+    await client.execute("ALTER TABLE resource_items ADD COLUMN password TEXT");
+  }
+
+  await client.batch([
+    { sql: "UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted'" },
+    { sql: "UPDATE tasks SET due_date = NULL WHERE status = 'BRB'" },
+    { sql: "UPDATE tasks SET assignee = 'Tommy' WHERE lower(assignee) = 'ryan'" },
+    { sql: "UPDATE tasks SET source_tab = NULL WHERE lower(coalesce(source_tab, '')) LIKE '%ryan%'" },
+    { sql: "UPDATE daily_notes SET assignee = NULL WHERE lower(coalesce(assignee, '')) = 'ryan'" },
+    { sql: "UPDATE daily_notes SET source_tab = NULL WHERE lower(coalesce(source_tab, '')) LIKE '%ryan%'" },
+    { sql: "UPDATE task_notes SET person = 'General' WHERE lower(person) = 'ryan'" },
+    { sql: "UPDATE task_messages SET author = 'Me' WHERE lower(author) = 'ryan'" },
+    { sql: "DELETE FROM assignees WHERE lower(name) = 'ryan'" },
+    { sql: "UPDATE tasks SET archived_at = coalesce(archived_at, updated_at, datetime('now')) WHERE archived = 1" }
+  ], "write");
+}
+
+async function seedAssignees(client) {
+  for (let i = 0; i < ASSIGNEES.length; i++) {
+    await client.execute({
+      sql: "INSERT OR IGNORE INTO assignees (name, sort_order) VALUES (?, ?)",
+      args: [ASSIGNEES[i], i + 1]
+    });
+  }
+}
+
+async function purgeExpired(client) {
+  await client.execute(
+    "DELETE FROM tasks WHERE archived = 1 AND archived_at IS NOT NULL AND archived_at < datetime('now', '-30 days')"
+  );
+}
+
+async function hydrateTask(row, columns, client) {
+  const task = toRow(columns, row);
+  const [links, notes, steps] = await Promise.all([
+    client.execute({ sql: "SELECT * FROM task_links WHERE task_id = ? ORDER BY id ASC", args: [task.id] }),
+    client.execute({ sql: "SELECT * FROM task_notes WHERE task_id = ? ORDER BY id ASC", args: [task.id] }),
+    client.execute({ sql: "SELECT * FROM task_workflow_steps WHERE task_id = ? ORDER BY sort_order ASC, id ASC", args: [task.id] })
+  ]);
+  return {
+    ...task,
+    done: Boolean(task.done),
+    archived: Boolean(task.archived),
+    links: links.rows.map((r) => toRow(links.columns, r)),
+    notes: notes.rows.map((r) => toRow(notes.columns, r)),
+    workflow_steps: steps.rows.map((r) => toRow(steps.columns, r))
+  };
+}
+
+export async function listTasks(filters = {}) {
+  const client = await getDb();
+  await purgeExpired(client);
+
+  const showArchived = filters.archived === "true";
+  const where = showArchived
+    ? ["archived = 1", "archived_at >= datetime('now', '-30 days')"]
+    : ["archived = 0"];
+  const params = [];
+
+  if (filters.assignee && filters.assignee !== "All") {
+    where.push("assignee = ?");
+    params.push(filters.assignee);
+  }
+  if (filters.status && filters.status !== "All") {
+    where.push("status = ?");
+    params.push(filters.status);
+  }
+  if (filters.done === "true") where.push("done = 1");
+  if (filters.done === "false") where.push("done = 0");
+
+  if (filters.due === "overdue") {
+    where.push("status != 'BRB' AND due_date IS NOT NULL AND due_date < date('now', 'localtime') AND done = 0");
+  } else if (filters.due === "today") {
+    where.push("status != 'BRB' AND due_date = date('now', 'localtime')");
+  } else if (filters.due === "week") {
+    where.push("status != 'BRB' AND due_date IS NOT NULL AND due_date BETWEEN date('now', 'localtime') AND date('now', 'localtime', '+7 days')");
+  } else if (filters.due === "none") {
+    where.push("(due_date IS NULL OR status = 'BRB')");
+  }
+
+  if (filters.search) {
+    const search = `%${filters.search.toLowerCase()}%`;
+    where.push(`(
+      lower(coalesce(title, '')) LIKE ?
+      OR lower(coalesce(details, '')) LIKE ?
+      OR lower(coalesce(project, '')) LIKE ?
+      OR EXISTS (
+        SELECT 1 FROM task_links WHERE task_links.task_id = tasks.id
+        AND (lower(label) LIKE ? OR lower(coalesce(url, '')) LIKE ?)
+      )
+      OR EXISTS (
+        SELECT 1 FROM task_notes WHERE task_notes.task_id = tasks.id
+        AND (lower(person) LIKE ? OR lower(body) LIKE ?)
+      )
+    )`);
+    params.push(search, search, search, search, search, search, search);
+  }
+
+  const result = await client.execute({
+    sql: `SELECT * FROM tasks WHERE ${where.join(" AND ")}
+      ORDER BY done ASC,
+        CASE status
+          WHEN 'Working' THEN 1
+          WHEN 'Needs Brandon Review' THEN 2
+          WHEN 'Needs Tommy Review' THEN 3
+          WHEN 'Not Started' THEN 4
+          WHEN 'Misc.' THEN 5
+          WHEN 'BRB' THEN 6
+          WHEN 'Done' THEN 7
+          ELSE 8
+        END,
+        due_date IS NULL ASC,
+        due_date ASC,
+        ${showArchived ? "archived_at DESC," : ""}
+        updated_at DESC`,
+    args: params
+  });
+
+  return Promise.all(result.rows.map((row) => hydrateTask(row, result.columns, client)));
+}
+
+export async function getTask(id) {
+  const client = await getDb();
+  const result = await client.execute({
+    sql: "SELECT * FROM tasks WHERE id = ?",
+    args: [Number(id)]
+  });
+  if (!result.rows[0]) return null;
+  return hydrateTask(result.rows[0], result.columns, client);
+}
+
+export async function createTask(input, meta = {}) {
+  const payload = validateTaskPayload(input);
+  const client = await getDb();
+  const result = await client.execute({
+    sql: `INSERT INTO tasks (assignee, title, details, project, category, status, done, due_date, stamp_at,
+      source_filename, source_tab, source_row, import_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      payload.assignee,
+      payload.title,
+      payload.details || null,
+      payload.project || null,
+      payload.category || "Misc.",
+      payload.status,
+      payload.done ? 1 : 0,
+      payload.due_date || null,
+      payload.stamp_at || null,
+      meta.source_filename || null,
+      meta.source_tab || null,
+      meta.source_row || null,
+      meta.import_id || null
+    ]
+  });
+  const taskId = Number(result.lastInsertRowid);
+  await _replaceLinks(taskId, payload.links || [], client);
+  await _replaceNotes(taskId, payload.notes || [], client);
+  await _replaceSteps(taskId, payload.workflow_steps || [], client);
+  return getTask(taskId);
+}
+
+export async function updateTask(id, input) {
+  const task = await getTask(id);
+  if (!task) return null;
+  const payload = validateTaskPayload(input, { partial: true });
+  const sets = [];
+  const params = [];
+
+  for (const field of ["assignee", "title", "details", "project", "category", "status", "due_date", "stamp_at", "archived"]) {
+    if (field in payload) {
+      sets.push(`${field} = ?`);
+      params.push(field === "archived" ? (payload[field] ? 1 : 0) : payload[field]);
+      if (field === "archived") {
+        sets.push(payload[field] ? "archived_at = coalesce(archived_at, datetime('now'))" : "archived_at = NULL");
+      }
+    }
+  }
+
+  if ("done" in payload) {
+    sets.push("done = ?");
+    params.push(payload.done ? 1 : 0);
+    if (payload.done && !("stamp_at" in payload)) sets.push("stamp_at = coalesce(stamp_at, datetime('now'))");
+    if (payload.done && !("status" in payload)) sets.push("status = 'Done'");
+    if (!payload.done && task.status === "Done" && !("status" in payload)) sets.push("status = 'Not Started'");
+  }
+
+  const client = await getDb();
+  if (sets.length) {
+    sets.push("updated_at = datetime('now')");
+    params.push(Number(id));
+    await client.execute({ sql: `UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`, args: params });
+  }
+  if ("links" in payload) await _replaceLinks(Number(id), payload.links || [], client);
+  if ("notes" in payload) await _replaceNotes(Number(id), payload.notes || [], client);
+  if ("workflow_steps" in payload) await _replaceSteps(Number(id), payload.workflow_steps || [], client);
+  return getTask(id);
+}
+
+export async function archiveTask(id) {
+  const client = await getDb();
+  await client.execute({
+    sql: "UPDATE tasks SET archived = 1, archived_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+    args: [Number(id)]
+  });
+  return { ok: true, task: await getTask(id) };
+}
+
+export async function restoreTask(id) {
+  const client = await getDb();
+  await client.execute({
+    sql: "UPDATE tasks SET archived = 0, archived_at = NULL, updated_at = datetime('now') WHERE id = ?",
+    args: [Number(id)]
+  });
+  return { ok: true, task: await getTask(id) };
+}
+
+export async function duplicateTask(id) {
+  const source = await getTask(id);
+  if (!source) return null;
+  const status = source.done || source.status === "Done" ? "Not Started" : source.status;
+  return createTask({
+    assignee: source.assignee,
+    title: `${source.title} (copy)`,
+    details: source.details || "",
+    project: source.project || "",
+    category: source.category || "Misc.",
+    status,
+    done: false,
+    due_date: status === "BRB" ? null : source.due_date || null,
+    links: source.links.map((l) => ({ label: l.label, url: l.url || "" })),
+    notes: source.notes.map((n) => ({ person: n.person, body: n.body })),
+    workflow_steps: source.workflow_steps.map((s) => ({ label: s.label }))
+  });
+}
+
+async function _replaceLinks(taskId, links, client) {
+  await client.execute({ sql: "DELETE FROM task_links WHERE task_id = ?", args: [taskId] });
+  for (const link of links) {
+    await client.execute({
+      sql: "INSERT INTO task_links (task_id, label, url) VALUES (?, ?, ?)",
+      args: [taskId, link.label, link.url || null]
+    });
+  }
+}
+
+async function _replaceNotes(taskId, notes, client) {
+  await client.execute({ sql: "DELETE FROM task_notes WHERE task_id = ?", args: [taskId] });
+  for (const note of notes) {
+    await client.execute({
+      sql: "INSERT INTO task_notes (task_id, person, body) VALUES (?, ?, ?)",
+      args: [taskId, note.person, note.body]
+    });
+  }
+}
+
+async function _replaceSteps(taskId, steps, client) {
+  await client.execute({ sql: "DELETE FROM task_workflow_steps WHERE task_id = ?", args: [taskId] });
+  for (let i = 0; i < steps.length; i++) {
+    await client.execute({
+      sql: "INSERT INTO task_workflow_steps (task_id, label, sort_order) VALUES (?, ?, ?)",
+      args: [taskId, steps[i].label, i + 1]
+    });
+  }
+}
+
+export async function addTaskLink(input) {
+  const client = await getDb();
+  const result = await client.execute({
+    sql: "INSERT INTO task_links (task_id, label, url) VALUES (?, ?, ?)",
+    args: [Number(input.task_id), input.label, input.url || null]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM task_links WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return toRow(r.columns, r.rows[0]);
+}
+
+export async function updateTaskLink(id, input) {
+  const client = await getDb();
+  await client.execute({
+    sql: "UPDATE task_links SET label = ?, url = ?, updated_at = datetime('now') WHERE id = ?",
+    args: [input.label, input.url || null, Number(id)]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM task_links WHERE id = ?", args: [Number(id)] });
+  return toRow(r.columns, r.rows[0]);
+}
+
+export async function deleteTaskLink(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM task_links WHERE id = ?", args: [Number(id)] });
+  return { ok: true };
+}
+
+export async function listTaskMessages(taskId) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT * FROM task_messages WHERE task_id = ? ORDER BY created_at ASC, id ASC",
+    args: [Number(taskId)]
+  });
+  return r.rows.map((row) => toRow(r.columns, row));
+}
+
+export async function createTaskMessage(taskId, input) {
+  const author = String(input.author || "Me").trim() || "Me";
+  const body = String(input.body || "").replace(/\s+/g, " ").trim();
+  if (!body) { const e = new Error("Message body is required."); e.status = 400; throw e; }
+  const task = await getTask(taskId);
+  if (!task) { const e = new Error("Task not found."); e.status = 404; throw e; }
+  const client = await getDb();
+  const result = await client.execute({
+    sql: "INSERT INTO task_messages (task_id, author, body) VALUES (?, ?, ?)",
+    args: [Number(taskId), author, body]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM task_messages WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return toRow(r.columns, r.rows[0]);
+}
+
+export async function deleteTaskMessage(taskId, messageId) {
+  const client = await getDb();
+  const check = await client.execute({
+    sql: "SELECT id FROM task_messages WHERE id = ? AND task_id = ?",
+    args: [Number(messageId), Number(taskId)]
+  });
+  if (!check.rows[0]) return null;
+  await client.execute({
+    sql: "DELETE FROM task_messages WHERE id = ? AND task_id = ?",
+    args: [Number(messageId), Number(taskId)]
+  });
+  return { ok: true };
+}
+
+export async function listDailyNotes(date) {
+  const client = await getDb();
+  if (date) {
+    const r = await client.execute({ sql: "SELECT * FROM daily_notes WHERE note_date = ? ORDER BY updated_at DESC", args: [date] });
+    return r.rows.map((row) => toRow(r.columns, row));
+  }
+  const r = await client.execute("SELECT * FROM daily_notes ORDER BY note_date DESC, updated_at DESC LIMIT 200");
+  return r.rows.map((row) => toRow(r.columns, row));
+}
+
+export async function saveDailyNote(input) {
+  const client = await getDb();
+  if (input.id) {
+    await client.execute({
+      sql: "UPDATE daily_notes SET note_date = ?, assignee = ?, category = ?, body = ?, updated_at = datetime('now') WHERE id = ?",
+      args: [input.note_date, input.assignee || null, input.category || "Misc.", input.body, Number(input.id)]
+    });
+    const r = await client.execute({ sql: "SELECT * FROM daily_notes WHERE id = ?", args: [Number(input.id)] });
+    return toRow(r.columns, r.rows[0]);
+  }
+  const result = await client.execute({
+    sql: "INSERT INTO daily_notes (note_date, assignee, category, body) VALUES (?, ?, ?, ?)",
+    args: [input.note_date, input.assignee || null, input.category || "Misc.", input.body]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM daily_notes WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return toRow(r.columns, r.rows[0]);
+}
+
+export async function deleteDailyNote(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM daily_notes WHERE id = ?", args: [Number(id)] });
+  return { ok: true };
+}
+
+export async function listResourceItems() {
+  const client = await getDb();
+  const r = await client.execute("SELECT * FROM resource_items ORDER BY section ASC, sort_order ASC, title ASC, id ASC");
+  return r.rows.map((row) => toRow(r.columns, row));
+}
+
+export async function createResourceItem(input) {
+  const client = await getDb();
+  const section = ["logins", "important_links"].includes(input.section) ? input.section : "important_links";
+  const maxR = await client.execute({
+    sql: "SELECT coalesce(max(sort_order), 0) AS sort_order FROM resource_items WHERE section = ?",
+    args: [section]
+  });
+  const maxOrder = Number(maxR.rows[0]?.["sort_order"] ?? 0);
+  const result = await client.execute({
+    sql: "INSERT INTO resource_items (section, title, url, note, username, password, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    args: [section, input.title, input.url || null, input.note || null, input.username || null, input.password || null, maxOrder + 1]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM resource_items WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return toRow(r.columns, r.rows[0]);
+}
+
+export async function deleteResourceItem(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM resource_items WHERE id = ?", args: [Number(id)] });
+  return { ok: true };
+}
+
+export async function getBootstrap() {
+  const client = await getDb();
+  await purgeExpired(client);
+  const [total, open, overdue, archived, latestImport] = await Promise.all([
+    client.execute("SELECT count(*) AS count FROM tasks WHERE archived = 0"),
+    client.execute("SELECT count(*) AS count FROM tasks WHERE archived = 0 AND done = 0"),
+    client.execute("SELECT count(*) AS count FROM tasks WHERE archived = 0 AND done = 0 AND status != 'BRB' AND due_date < date('now', 'localtime')"),
+    client.execute("SELECT count(*) AS count FROM tasks WHERE archived = 1 AND archived_at >= datetime('now', '-30 days')"),
+    client.execute("SELECT * FROM imports ORDER BY imported_at DESC LIMIT 1")
+  ]);
+  return {
+    assignees: ASSIGNEES,
+    dailyCategories: DAILY_CATEGORIES,
+    statuses: STATUSES,
+    counts: {
+      tasks: Number(total.rows[0]?.["count"] ?? 0),
+      open: Number(open.rows[0]?.["count"] ?? 0),
+      overdue: Number(overdue.rows[0]?.["count"] ?? 0),
+      archived: Number(archived.rows[0]?.["count"] ?? 0)
+    },
+    latestImport: latestImport.rows[0] ? toRow(latestImport.columns, latestImport.rows[0]) : null
+  };
+}

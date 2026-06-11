@@ -1,5 +1,4 @@
 import { access, readFile } from "node:fs/promises";
-import { getBootstrap } from "../src/db.mjs";
 
 const required = [
   "public/index.html",
@@ -20,11 +19,6 @@ for (const asset of ["/styles.css", "/app.js"]) {
   if (!html.includes(asset)) {
     throw new Error(`index.html does not reference ${asset}`);
   }
-}
-
-const bootstrap = getBootstrap();
-if (!Array.isArray(bootstrap.assignees) || bootstrap.assignees.length !== 3) {
-  throw new Error("Assignees were not initialized.");
 }
 
 console.log("Build validation passed.");
