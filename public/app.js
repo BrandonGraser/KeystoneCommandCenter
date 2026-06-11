@@ -58,7 +58,6 @@ const els = {
   taskName: document.querySelector("#taskName"),
   taskTitle: document.querySelector("#taskTitle"),
   taskAssignee: document.querySelector("#taskAssignee"),
-  taskStatus: document.querySelector("#taskStatus"),
   taskCategory: document.querySelector("#taskCategory"),
   taskDue: document.querySelector("#taskDue"),
   taskDone: document.querySelector("#taskDone"),
@@ -100,6 +99,15 @@ async function init() {
 }
 
 function bindEvents() {
+  els.assigneeTabs.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-assignee]");
+    if (!button) return;
+    state.activeAssignee = button.dataset.assignee;
+    state.expandedTaskId = null;
+    state.focusedMessageId = null;
+    renderAssigneeTabs();
+    loadTasks();
+  });
   els.statusFilter.addEventListener("change", () => {
     state.filters.status = els.statusFilter.value;
     loadTasks();
@@ -153,8 +161,18 @@ function bindEvents() {
     applyCategoryTone(els.taskCategory, category);
     renderCategoryPillPicker(category);
   });
-  els.taskStatus.addEventListener("change", syncDueForStatus);
   els.taskAssignee.addEventListener("change", () => ensureNoteLinkPerson(els.taskAssignee.value));
+  els.taskBoard.addEventListener("change", async (event) => {
+    const select = event.target.closest(".inline-status-select");
+    if (!select) return;
+    const row = select.closest(".task-row");
+    if (!row) return;
+    const taskId = Number(row.dataset.taskId);
+    const data = await api(`/api/tasks/${taskId}`, { method: "PATCH", body: { status: select.value } });
+    const index = state.tasks.findIndex((t) => t.id === taskId);
+    if (index >= 0) state.tasks[index] = data.task;
+    renderTasks();
+  });
 }
 
 function renderChrome(bootstrap) {
@@ -184,13 +202,6 @@ function renderChrome(bootstrap) {
   els.assigneeTabs.innerHTML = state.assignees
     .map((name) => `<button type="button" data-assignee="${escapeHtml(name)}">${escapeHtml(name)}</button>`)
     .join("");
-  els.assigneeTabs.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-assignee]");
-    if (!button) return;
-    state.activeAssignee = button.dataset.assignee;
-    renderAssigneeTabs();
-    loadTasks();
-  });
   renderAssigneeTabs();
 
   els.statusFilter.innerHTML = ["All", ...state.statuses]
@@ -199,9 +210,6 @@ function renderChrome(bootstrap) {
 
   els.taskAssignee.innerHTML = state.assignees
     .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
-    .join("");
-  els.taskStatus.innerHTML = state.statuses
-    .map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`)
     .join("");
   els.taskCategory.innerHTML = state.dailyCategories
     .map(renderCategoryOption)
@@ -278,6 +286,11 @@ function renderTaskRow(task) {
   const due = dueState(task.due_date, task.done, task.status);
   const archive = archiveState(task);
   const statusMeta = taskStatusMeta(task.status, task.done);
+  const statusSelect = task.done
+    ? `<span class="status-badge status-done-status">Done</span>`
+    : `<select class="status-badge status-${statusMeta.className} inline-status-select" title="Change status">
+        ${state.statuses.map((s) => `<option value="${escapeHtml(s)}"${s === task.status ? " selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+       </select>`;
   return `
     <article class="task-row ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} due-row-${due.className}" data-task-id="${task.id}">
       <input class="task-check" type="checkbox" ${task.done ? "checked" : ""} ${state.showArchive ? "disabled" : ""} title="Mark done">
@@ -285,7 +298,7 @@ function renderTaskRow(task) {
         <input class="task-title inline-task-input inline-task-title" data-inline-field="title" value="${escapeHtml(task.title)}" aria-label="Task name">
         <div class="task-tags">
           <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
-          <span class="status-badge status-${statusMeta.className}">${escapeHtml(statusMeta.label)}</span>
+          ${statusSelect}
         </div>
       </div>
       <div class="due ${due.className}" title="${escapeHtml(due.label)}">
@@ -293,10 +306,10 @@ function renderTaskRow(task) {
         <small>${escapeHtml(state.showArchive ? archive.label : due.label)}</small>
       </div>
       <div class="row-actions">
-        <span class="expand-hint">${state.expandedTaskId === task.id ? "Open" : "View"}</span>
+        <span class="expand-hint">${state.expandedTaskId === task.id ? "▲ Hide" : "▼ View"}</span>
         ${state.showArchive
           ? `<button type="button" data-action="restore-task">Restore</button>`
-          : `<button type="button" class="row-archive-button" data-action="archive-task" title="Archive task">x</button><button type="button" data-action="duplicate-task">Duplicate</button><button type="button" data-action="edit">Edit</button>`}
+          : `<button type="button" class="row-archive-button" data-action="archive-task" title="Archive task">Archive</button><button type="button" class="row-delete-button danger" data-action="delete-task" title="Permanently delete">Delete</button><button type="button" data-action="duplicate-task">Duplicate</button><button type="button" data-action="edit">Edit</button>`}
       </div>
     </article>
   `;
@@ -422,6 +435,7 @@ els.taskBoard.addEventListener("focusout", async (event) => {
 
 els.taskBoard.addEventListener("click", async (event) => {
   if (event.target.closest(".inline-task-input")) return;
+  if (event.target.closest(".inline-status-select")) return;
   const expanded = event.target.closest(".task-expanded");
   const message = event.target.closest(".chat-message");
   if (expanded && event.target.closest("[data-action='delete-message']")) {
@@ -464,6 +478,10 @@ els.taskBoard.addEventListener("click", async (event) => {
     await archiveTaskFromRow(row);
     return;
   }
+  if (event.target.closest("[data-action='delete-task']")) {
+    await deleteTaskFromRow(row);
+    return;
+  }
   if (event.target.closest("[data-action='duplicate-task']")) {
     await duplicateCurrentTask(row);
     return;
@@ -480,12 +498,10 @@ function openTaskDialog(task = null) {
   els.taskName.value = task?.title || "";
   els.taskTitle.value = task?.details || "";
   els.taskAssignee.value = task?.assignee || state.activeAssignee || state.assignees[0] || "";
-  els.taskStatus.value = task?.status || "Not Started";
   els.taskCategory.value = task?.category || "Misc.";
   applyCategoryTone(els.taskCategory, els.taskCategory.value);
   renderCategoryPillPicker(els.taskCategory.value);
   els.taskDue.value = task ? (task.due_date || "") : today();
-  syncDueForStatus();
   els.taskDone.checked = Boolean(task?.done);
   fillWorkflowInputs(task?.workflow_steps || []);
   fillLinkInputs((task?.links || []).filter((link) => !isNoteLink(link)));
@@ -498,23 +514,24 @@ function openTaskDialog(task = null) {
 async function saveTask(event) {
   event.preventDefault();
   const id = els.taskId.value;
-  const payload = {
+  const basePayload = {
     title: els.taskName.value,
     details: els.taskTitle.value,
     assignee: els.taskAssignee.value,
-    status: els.taskStatus.value,
     category: els.taskCategory.value,
-    due_date: els.taskStatus.value === "BRB" ? null : els.taskDue.value || null,
+    due_date: els.taskDue.value || null,
     done: els.taskDone.checked,
     workflow_steps: collectWorkflowInputs(),
     links: [...collectLinkInputs(), ...collectNoteLinkInputs()],
     notes: parseNoteTextarea(els.taskNotes.value)
   };
   if (id) {
+    const payload = basePayload;
     const data = await api(`/api/tasks/${id}`, { method: "PATCH", body: payload });
     state.expandedTaskId = data.task.id;
     if (data.notification) showNotice(data.notification.message, data.notification.sent ? "good" : "");
   } else {
+    const payload = { ...basePayload, status: "Not Started" };
     const data = await api("/api/tasks", { method: "POST", body: payload });
     state.expandedTaskId = data.task.id;
     state.activeAssignee = data.task.assignee;
@@ -606,6 +623,15 @@ async function archiveTaskFromRow(container) {
   await api(`/api/tasks/${taskId}`, { method: "DELETE" });
   if (state.expandedTaskId === taskId) state.expandedTaskId = null;
   showNotice("Task moved to the 30-day archive.", "good");
+  await refreshAll();
+}
+
+async function deleteTaskFromRow(container) {
+  const taskId = Number(container.dataset.taskId);
+  if (!window.confirm("Permanently delete this task? This cannot be undone.")) return;
+  await api(`/api/tasks/${taskId}/delete`, { method: "DELETE" });
+  if (state.expandedTaskId === taskId) state.expandedTaskId = null;
+  showNotice("Task permanently deleted.", "good");
   await refreshAll();
 }
 
@@ -1036,14 +1062,6 @@ function groupBy(items, keyFn) {
     map.get(key).push(item);
   }
   return map;
-}
-
-function syncDueForStatus() {
-  const isPending = els.taskStatus.value === "BRB";
-  if (isPending) els.taskDue.value = "";
-  els.taskDue.disabled = isPending;
-  els.taskDue.closest("label")?.classList.toggle("is-disabled", isPending);
-  els.taskDue.title = isPending ? "BRB tasks stay pending until reviewed." : "";
 }
 
 function dueState(date, done = false, status = "") {

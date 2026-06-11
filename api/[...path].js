@@ -4,6 +4,7 @@ import {
   createTask,
   createTaskMessage,
   deleteDailyNote,
+  deleteTask,
   deleteTaskLink,
   deleteTaskMessage,
   deleteResourceItem,
@@ -125,6 +126,12 @@ async function handleApi(request, response, url) {
   const taskMatch = url.pathname.match(/^\/api\/tasks\/(\d+)$/);
   const duplicateMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/duplicate$/);
   const restoreMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/restore$/);
+  const deleteMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/delete$/);
+
+  if (deleteMatch && method === "DELETE") {
+    sendJson(response, 200, await deleteTask(Number(deleteMatch[1])));
+    return;
+  }
 
   if (duplicateMatch && method === "POST") {
     const task = await duplicateTask(Number(duplicateMatch[1]));

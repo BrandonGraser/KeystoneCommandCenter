@@ -395,6 +395,12 @@ export async function archiveTask(id) {
   return { ok: true, task: await getTask(id) };
 }
 
+export async function deleteTask(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM tasks WHERE id = ?", args: [Number(id)] });
+  return { deleted: true };
+}
+
 export async function restoreTask(id) {
   const client = await getDb();
   await client.execute({
