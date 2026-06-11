@@ -1,0 +1,7 @@
+data/*.sqlite
+data/*.sqlite-*
+node_modules/
+.env
+.env.local
+.DS_Store
+To Do List/

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Keystone Task Command Center</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="metrics" id="metrics"></section>
+
+      <section class="controls">
+        <div>
+          <span class="control-label">Assignee</span>
+          <div id="assigneeTabs" class="segmented"></div>
+        </div>
+        <label>
+          <span class="control-label">Status</span>
+          <select id="statusFilter"></select>
+        </label>
+        <label>
+          <span class="control-label">Due</span>
+          <select id="dueFilter">
+            <option value="">Any due date</option>
+            <option value="overdue">Overdue</option>
+            <option value="today">Today</option>
+            <option value="week">This week</option>
+            <option value="none">No due date</option>
+          </select>
+        </label>
+        <div class="search-actions">
+          <label class="search">
+            <span class="control-label">Search</span>
+            <input id="searchInput" type="search" placeholder="Task, note, link">
+          </label>
+          <button id="archiveToggle" class="secondary archive-toggle" type="button">Archive</button>
+        </div>
+        <div class="due-legend" aria-label="Due date color guide">
+          <span class="due-key" style="--key-color: var(--due-overdue)">Overdue</span>
+          <span class="due-key" style="--key-color: var(--due-today)">Today</span>
+          <span class="due-key" style="--key-color: var(--due-tomorrow)">Tomorrow</span>
+          <span class="due-key" style="--key-color: var(--due-soon)">2-3 days</span>
+          <span class="due-key" style="--key-color: var(--due-upcoming)">This week</span>
+          <span class="due-key" style="--key-color: var(--due-later)">Later</span>
+          <span class="due-key" style="--key-color: var(--due-pending)">Pending</span>
+        </div>
+      </section>
+
+      <div id="notice" class="notice" hidden></div>
+
+      <section class="workspace">
+        <aside class="daily-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Daily Notes</p>
+              <h2>Today</h2>
+            </div>
+            <input id="dailyDate" type="date">
+          </div>
+          <textarea id="dailyBody" rows="5" placeholder="Add a note for the day"></textarea>
+          <div class="category-picker">
+            <span class="control-label">Category</span>
+            <select id="dailyCategories"></select>
+          </div>
+          <div class="daily-row">
+            <select id="dailyAssignee">
+              <option value="">General</option>
+            </select>
+            <button id="saveDailyNote">Save Note</button>
+          </div>
+          <div id="dailyNotes" class="daily-list"></div>
+          <section class="resource-directory">
+            <div class="resource-block">
+              <div class="resource-heading">
+                <h3>LOGINS</h3>
+                <button type="button" class="add-resource" data-resource-section="logins" title="Add login reference">+</button>
+              </div>
+              <div id="loginResources" class="resource-list"></div>
+            </div>
+            <div class="resource-block">
+              <div class="resource-heading">
+                <h3>IMPORTANT LINKS</h3>
+                <button type="button" class="add-resource" data-resource-section="important_links" title="Add important link">+</button>
+              </div>
+              <div id="importantLinkResources" class="resource-list"></div>
+            </div>
+          </section>
+        </aside>
+        <div class="task-board" id="taskBoard"></div>
+      </section>
+    </main>
+
+    <dialog id="taskDialog">
+      <form id="taskForm" method="dialog" class="task-form">
+        <div class="dialog-head">
+          <div>
+            <h2 id="dialogTitle">What do you want me to do?</h2>
+            <p class="eyebrow" id="dialogMode">New task</p>
+          </div>
+          <button type="button" id="closeDialog" class="icon-button" title="Close">x</button>
+        </div>
+
+        <input type="hidden" id="taskId">
+        <label>
+          <span>Task Name</span>
+          <input id="taskName" type="text" required>
+        </label>
+        <label>
+          <span>Task</span>
+          <textarea id="taskTitle" rows="3" placeholder="What needs to happen?"></textarea>
+        </label>
+        <div class="form-grid">
+          <label>
+            <span>Assignee</span>
+            <select id="taskAssignee"></select>
+          </label>
+          <label>
+            <span>Status</span>
+            <select id="taskStatus"></select>
+          </label>
+          <label>
+            <span>Category</span>
+            <select id="taskCategory"></select>
+          </label>
+          <label>
+            <span>Due</span>
+            <input id="taskDue" type="date">
+          </label>
+        </div>
+        <label class="check-row">
+          <input id="taskDone" type="checkbox">
+          <span>Done</span>
+        </label>
+        <div class="workflow-section">
+          <div class="section-line">
+            <span>Workflow</span>
+            <button type="button" id="addWorkflowStep" class="secondary">Add step</button>
+          </div>
+          <div id="taskWorkflow" class="workflow-grid"></div>
+        </div>
+        <div class="links-section">
+          <div class="section-line">
+            <span>Links</span>
+            <button type="button" id="addTaskLink" class="secondary add-link-button">Add link</button>
+          </div>
+          <div id="taskLinks" class="link-grid"></div>
+        </div>
+        <label>
+          <span>Notes</span>
+          <textarea id="taskNotes" rows="4" placeholder="Tommy: note text"></textarea>
+        </label>
+        <div class="note-links-section">
+          <div class="section-line">
+            <span>Note Links</span>
+            <button type="button" id="addNoteLink" class="secondary add-link-button">Add person link</button>
+          </div>
+          <div id="taskNoteLinks" class="note-link-grid"></div>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" id="archiveTask" class="danger">Archive</button>
+          <span></span>
+          <button type="button" id="cancelTask">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="resourceDialog">
+      <form id="resourceForm" method="dialog" class="resource-form">
+        <div class="dialog-head">
+          <div>
+            <h2 id="resourceDialogTitle">Add resource</h2>
+            <p class="eyebrow">Directory item</p>
+          </div>
+          <button type="button" id="closeResourceDialog" class="icon-button" title="Close">x</button>
+        </div>
+        <input id="resourceSection" type="hidden" value="important_links">
+        <label>
+          <span>Name</span>
+          <input id="resourceTitle" type="text" required>
+        </label>
+        <label>
+          <span>Link</span>
+          <input id="resourceUrl" type="url" placeholder="https://...">
+        </label>
+        <div id="resourceLoginFields" class="resource-login-fields" hidden>
+          <label>
+            <span>Username</span>
+            <input id="resourceUsername" type="text" autocomplete="off">
+          </label>
+          <label>
+            <span>Password</span>
+            <input id="resourcePassword" type="text" autocomplete="off">
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <span></span>
+          <button type="button" id="cancelResource">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="ringDialog">
+      <form id="ringForm" method="dialog" class="ring-form">
+        <div class="dialog-head">
+          <div>
+            <h2>Ring Tommy</h2>
+            <p class="eyebrow">Send a note or problem</p>
+          </div>
+          <button type="button" id="closeRingDialog" class="icon-button" title="Close">x</button>
+        </div>
+        <label class="ring-description-field">
+          <span>Description</span>
+          <textarea id="ringDescription" rows="5" placeholder="What needs attention?"></textarea>
+        </label>
+        <label class="ring-task-field">
+          <span>Attach to task</span>
+          <select id="ringTask">
+            <option value="">No task attached</option>
+          </select>
+        </label>
+        <fieldset class="ring-priority">
+          <legend>Setting</legend>
+          <label>
+            <input type="radio" name="ringUrgency" value="urgent">
+            <span>Urgent</span>
+          </label>
+          <label>
+            <input type="radio" name="ringUrgency" value="today" checked>
+            <span>Today</span>
+          </label>
+          <label>
+            <input type="radio" name="ringUrgency" value="whenever">
+            <span>Whenever</span>
+          </label>
+        </fieldset>
+        <div class="dialog-actions">
+          <span></span>
+          <button type="button" id="cancelRing">Cancel</button>
+          <button type="submit" class="primary">Send Ring</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
