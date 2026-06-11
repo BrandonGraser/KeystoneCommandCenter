@@ -314,10 +314,10 @@ function renderTaskRow(task) {
       <input class="task-check" type="checkbox" ${task.done ? "checked" : ""} ${state.showArchive ? "disabled" : ""} title="Mark done">
       <div class="task-main">
         <input class="task-title inline-task-input inline-task-title" data-inline-field="title" value="${escapeHtml(task.title)}" aria-label="Task name">
-        <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
-      </div>
-      <div class="task-status">
-        <span class="status-badge status-${statusMeta.className}">${escapeHtml(statusMeta.label)}</span>
+        <div class="task-tags">
+          <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
+          <span class="status-badge status-${statusMeta.className}">${escapeHtml(statusMeta.label)}</span>
+        </div>
       </div>
       <div class="due ${due.className}" title="${escapeHtml(due.label)}">
         <span>${escapeHtml(state.showArchive ? archive.display : (due.display || task.due_date || "No due"))}</span>

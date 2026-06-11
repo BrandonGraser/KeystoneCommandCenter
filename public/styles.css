@@ -460,7 +460,7 @@ textarea {
 .task-row {
   position: relative;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 150px 110px 200px;
+  grid-template-columns: 32px minmax(0, 1fr) 120px 210px;
   gap: 12px;
   align-items: center;
   min-height: 70px;
@@ -587,8 +587,15 @@ textarea {
   grid-column: 2;
   min-width: 0;
   display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.task-tags {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .task-title {
@@ -1773,7 +1780,7 @@ dialog::backdrop {
 
 @media (max-width: 1040px) {
   .task-row {
-    grid-template-columns: 30px minmax(0, 1fr) 130px 90px 160px;
+    grid-template-columns: 30px minmax(0, 1fr) 96px 190px;
   }
 
   .task-detail-grid,
@@ -1823,9 +1830,6 @@ dialog::backdrop {
     grid-column: 2;
   }
 
-  .task-status {
-    display: none;
-  }
 
   .row-actions {
     justify-content: flex-start;
@@ -4027,9 +4031,9 @@ html[data-theme="dark"] dialog::backdrop {
 }
 
 .inline-task-title {
-  flex: 1 1 auto;
-  margin: -5px 0;
-  padding: 5px 7px;
+  width: 100%;
+  margin: -3px 0 0;
+  padding: 4px 7px;
 }
 
 .expanded-task-title {
@@ -4209,12 +4213,6 @@ html[data-theme="dark"] .note-link-label {
 }
 
 /* ── Status badge on task row ── */
-.task-status {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-
 .status-badge {
   display: inline-flex;
   align-items: center;
