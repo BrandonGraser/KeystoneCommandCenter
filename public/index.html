@@ -50,44 +50,23 @@
       <div id="notice" class="notice" hidden></div>
 
       <section class="workspace">
-        <aside class="daily-panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Daily Notes</p>
-              <h2>Today</h2>
-            </div>
-            <input id="dailyDate" type="date">
-          </div>
-          <textarea id="dailyBody" rows="5" placeholder="Add a note for the day"></textarea>
-          <div class="category-picker">
-            <span class="control-label">Category</span>
-            <select id="dailyCategories"></select>
-          </div>
-          <div class="daily-row">
-            <select id="dailyAssignee">
-              <option value="">General</option>
-            </select>
-            <button id="saveDailyNote">Save Note</button>
-          </div>
-          <div id="dailyNotes" class="daily-list"></div>
-          <section class="resource-directory">
-            <div class="resource-block">
-              <div class="resource-heading">
-                <h3>LOGINS</h3>
-                <button type="button" class="add-resource" data-resource-section="logins" title="Add login reference">+</button>
-              </div>
-              <div id="loginResources" class="resource-list"></div>
-            </div>
-            <div class="resource-block">
-              <div class="resource-heading">
-                <h3>IMPORTANT LINKS</h3>
-                <button type="button" class="add-resource" data-resource-section="important_links" title="Add important link">+</button>
-              </div>
-              <div id="importantLinkResources" class="resource-list"></div>
-            </div>
-          </section>
-        </aside>
         <div class="task-board" id="taskBoard"></div>
+        <div class="resources-row">
+          <div class="resource-block">
+            <div class="resource-heading">
+              <h3>LOGINS</h3>
+              <button type="button" class="add-resource" data-resource-section="logins" title="Add login reference">+</button>
+            </div>
+            <div id="loginResources" class="resource-list"></div>
+          </div>
+          <div class="resource-block">
+            <div class="resource-heading">
+              <h3>IMPORTANT LINKS</h3>
+              <button type="button" class="add-resource" data-resource-section="important_links" title="Add important link">+</button>
+            </div>
+            <div id="importantLinkResources" class="resource-list"></div>
+          </div>
+        </div>
       </section>
     </main>
 

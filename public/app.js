@@ -10,7 +10,6 @@ const state = {
   },
   showArchive: false,
   dailyCategories: [],
-  activeDailyCategory: "Misc.",
   expandedTaskId: null,
   taskMessages: {},
   focusedMessageId: null,
@@ -70,12 +69,6 @@ const els = {
   taskNotes: document.querySelector("#taskNotes"),
   taskNoteLinks: document.querySelector("#taskNoteLinks"),
   addNoteLink: document.querySelector("#addNoteLink"),
-  dailyDate: document.querySelector("#dailyDate"),
-  dailyBody: document.querySelector("#dailyBody"),
-  dailyCategories: document.querySelector("#dailyCategories"),
-  dailyAssignee: document.querySelector("#dailyAssignee"),
-  saveDailyNote: document.querySelector("#saveDailyNote"),
-  dailyNotes: document.querySelector("#dailyNotes"),
   loginResources: document.querySelector("#loginResources"),
   importantLinkResources: document.querySelector("#importantLinkResources"),
   resourceDialog: document.querySelector("#resourceDialog"),
@@ -95,7 +88,6 @@ init();
 
 async function init() {
   applyTheme();
-  els.dailyDate.value = today();
   bindEvents();
   const bootstrap = await api("/api/bootstrap");
   state.assignees = bootstrap.assignees;
@@ -104,7 +96,7 @@ async function init() {
   state.dailyCategories = bootstrap.dailyCategories || [];
   renderChrome(bootstrap);
   renderLinkInputs();
-  await Promise.all([loadTasks(), loadDailyNotes(), loadResources()]);
+  await Promise.all([loadTasks(), loadResources()]);
 }
 
 function bindEvents() {
@@ -152,16 +144,6 @@ function bindEvents() {
   els.taskWorkflow.addEventListener("click", removeWorkflowStep);
   els.taskForm.addEventListener("submit", saveTask);
   els.archiveTask.addEventListener("click", archiveCurrentTask);
-  els.dailyDate.addEventListener("change", loadDailyNotes);
-  els.dailyNotes.addEventListener("click", async (event) => {
-    const button = event.target.closest(".delete-daily-note");
-    if (!button) return;
-    await deleteDailyNote(Number(button.dataset.noteId));
-  });
-  els.dailyCategories.addEventListener("change", () => {
-    state.activeDailyCategory = els.dailyCategories.value || "Misc.";
-    applyCategoryTone(els.dailyCategories, state.activeDailyCategory);
-  });
   els.taskCategory.addEventListener("change", () => applyCategoryTone(els.taskCategory, els.taskCategory.value));
   document.querySelector("#categoryPillPicker")?.addEventListener("click", (event) => {
     const pill = event.target.closest(".category-pill-option");
@@ -173,7 +155,6 @@ function bindEvents() {
   });
   els.taskStatus.addEventListener("change", syncDueForStatus);
   els.taskAssignee.addEventListener("change", () => ensureNoteLinkPerson(els.taskAssignee.value));
-  els.saveDailyNote.addEventListener("click", saveDailyNote);
 }
 
 function renderChrome(bootstrap) {
@@ -216,12 +197,9 @@ function renderChrome(bootstrap) {
     .map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`)
     .join("");
 
-  for (const select of [els.taskAssignee, els.dailyAssignee]) {
-    const prefix = select === els.dailyAssignee ? `<option value="">General</option>` : "";
-    select.innerHTML = prefix + state.assignees
-      .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
-      .join("");
-  }
+  els.taskAssignee.innerHTML = state.assignees
+    .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+    .join("");
   els.taskStatus.innerHTML = state.statuses
     .map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`)
     .join("");
@@ -229,15 +207,6 @@ function renderChrome(bootstrap) {
     .map(renderCategoryOption)
     .join("");
   applyCategoryTone(els.taskCategory, els.taskCategory.value || "Misc.");
-  renderDailyCategories();
-}
-
-function renderDailyCategories() {
-  els.dailyCategories.innerHTML = state.dailyCategories
-    .map(renderCategoryOption)
-    .join("");
-  els.dailyCategories.value = state.activeDailyCategory;
-  applyCategoryTone(els.dailyCategories, state.activeDailyCategory);
 }
 
 function renderAssigneeTabs() {
@@ -548,6 +517,7 @@ async function saveTask(event) {
   } else {
     const data = await api("/api/tasks", { method: "POST", body: payload });
     state.expandedTaskId = data.task.id;
+    state.activeAssignee = data.task.assignee;
     if (data.notification) showNotice(data.notification.message, data.notification.sent ? "good" : "");
   }
   els.taskDialog.close();
@@ -654,7 +624,7 @@ async function refreshAll() {
     state.activeAssignee = state.assignees[0] || "";
   }
   renderChrome(bootstrap);
-  await Promise.all([loadTasks(), loadDailyNotes()]);
+  await loadTasks();
 }
 
 async function toggleTaskExpanded(taskId) {
@@ -709,42 +679,6 @@ async function duplicateCurrentTask(container) {
   await loadTaskMessages(data.task.id);
   await refreshAll();
   showNotice("Task duplicated.", "good");
-}
-
-async function loadDailyNotes() {
-  const data = await api(`/api/daily-notes?date=${encodeURIComponent(els.dailyDate.value || today())}`);
-  els.dailyNotes.innerHTML = data.notes.length
-    ? data.notes.map((note) => `
-      <article class="daily-note">
-        <strong>
-          <span>${escapeHtml(note.note_date)}${note.assignee ? ` - ${escapeHtml(note.assignee)}` : ""}</span>
-          <span class="note-category" style="${categoryToneStyle(note.category)}">${escapeHtml(note.category || "Misc.")}</span>
-        </strong>
-        <p>${escapeHtml(note.body)}</p>
-        <button type="button" class="delete-daily-note" data-note-id="${note.id}" title="Delete note">Delete</button>
-      </article>
-    `).join("")
-    : `<div class="empty">No notes for this date.</div>`;
-}
-
-async function saveDailyNote() {
-  if (!els.dailyBody.value.trim()) return;
-  await api("/api/daily-notes", {
-    method: "POST",
-    body: {
-      note_date: els.dailyDate.value || today(),
-      assignee: els.dailyAssignee.value,
-      category: state.activeDailyCategory,
-      body: els.dailyBody.value
-    }
-  });
-  els.dailyBody.value = "";
-  await loadDailyNotes();
-}
-
-async function deleteDailyNote(noteId) {
-  await api(`/api/daily-notes/${noteId}`, { method: "DELETE" });
-  await loadDailyNotes();
 }
 
 async function loadResources() {
