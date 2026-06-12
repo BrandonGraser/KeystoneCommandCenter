@@ -390,7 +390,7 @@ function renderTaskRow(task) {
         ${state.statuses.map((s) => `<option value="${escapeHtml(s)}"${s === task.status ? " selected" : ""}>${escapeHtml(s)}</option>`).join("")}
        </select>`;
   return `
-    <article class="task-row ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} due-row-${due.className}" data-task-id="${task.id}">
+    <article class="task-row ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} status-row-${statusMeta.className}" data-task-id="${task.id}">
       <input class="task-check" type="checkbox" ${task.done ? "checked" : ""} ${state.showArchive ? "disabled" : ""} title="Mark done">
       <div class="task-main">
         <input class="task-title inline-task-input inline-task-title" data-inline-field="title" value="${escapeHtml(task.title)}" aria-label="Task name">

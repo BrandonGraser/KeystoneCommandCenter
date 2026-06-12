@@ -27,6 +27,13 @@ html[data-theme="dark"] {
   --due-later: #7da3c4;
   --due-none: #5c5c5c;
   --due-pending: #8d8d8d;
+  --st-tommy-review: #b48ee0;
+  --st-brandon-review: #7da3c4;
+  --st-working: #d8b54a;
+  --st-not-started: #e05c5c;
+  --st-pending: #8d8d8d;
+  --st-brb: #6db8ae;
+  --st-done: #6fbf8f;
 }
 
 html[data-theme="light"] {
@@ -52,6 +59,13 @@ html[data-theme="light"] {
   --due-later: #34618a;
   --due-none: #9a9a9a;
   --due-pending: #6e6e6e;
+  --st-tommy-review: #7a4fb0;
+  --st-brandon-review: #34618a;
+  --st-working: #8a6d1a;
+  --st-not-started: #b53636;
+  --st-pending: #6e6e6e;
+  --st-brb: #2c7a70;
+  --st-done: #2e7d4f;
 }
 
 * {
@@ -581,33 +595,6 @@ a.login-resource-button:hover {
   border-color: var(--invert-bg);
 }
 
-.due-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  flex-basis: 100%;
-}
-
-.due-key {
-  display: inline-flex;
-  align-items: center;
-  min-height: 20px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.due-key::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  margin-right: 6px;
-  background: var(--key-color);
-}
-
 /* ---------------------------------------------------------------
    Notice
 --------------------------------------------------------------- */
@@ -703,14 +690,13 @@ a.login-resource-button:hover {
   background: var(--due-none);
 }
 
-.task-row.due-row-overdue::before { background: var(--due-overdue); }
-.task-row.due-row-today::before { background: var(--due-today); }
-.task-row.due-row-tomorrow::before { background: var(--due-tomorrow); }
-.task-row.due-row-soon::before { background: var(--due-soon); }
-.task-row.due-row-upcoming::before { background: var(--due-upcoming); }
-.task-row.due-row-later::before { background: var(--due-later); }
-.task-row.due-row-pending::before { background: var(--due-pending); }
-.task-row.due-row-done::before { background: var(--line); }
+.task-row.status-row-tommy-review::before { background: var(--st-tommy-review); }
+.task-row.status-row-brandon-review::before { background: var(--st-brandon-review); }
+.task-row.status-row-working::before { background: var(--st-working); }
+.task-row.status-row-not-started::before { background: var(--st-not-started); }
+.task-row.status-row-pending::before { background: var(--st-pending); }
+.task-row.status-row-brb::before { background: var(--st-brb); }
+.task-row.status-row-done-status::before { background: var(--st-done); }
 
 .task-row.done {
   color: var(--muted-2);
@@ -853,11 +839,13 @@ select.status-badge.inline-status-select:hover {
   color: var(--ink);
 }
 
-.status-badge.status-working { color: var(--ink); border-color: var(--line-strong); }
-.status-badge.status-pending { color: var(--due-pending); border-color: var(--line-strong); }
-.status-badge.status-done-status { color: var(--good); border-color: var(--good); }
-.status-badge.status-brandon-review,
-.status-badge.status-tommy-review { color: var(--warning); border-color: var(--warning); }
+.status-badge.status-tommy-review { color: var(--st-tommy-review); border-color: var(--st-tommy-review); }
+.status-badge.status-brandon-review { color: var(--st-brandon-review); border-color: var(--st-brandon-review); }
+.status-badge.status-working { color: var(--st-working); border-color: var(--st-working); }
+.status-badge.status-not-started { color: var(--st-not-started); border-color: var(--st-not-started); }
+.status-badge.status-pending { color: var(--st-pending); border-color: var(--st-pending); }
+.status-badge.status-brb { color: var(--st-brb); border-color: var(--st-brb); }
+.status-badge.status-done-status { color: var(--st-done); border-color: var(--st-done); }
 
 .due {
   display: grid;
