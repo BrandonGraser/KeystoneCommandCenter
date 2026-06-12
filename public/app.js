@@ -1393,6 +1393,7 @@ function taskStatusMeta(status, done = false) {
   const map = {
     "Not Started": { className: "not-started", label: "Not Started" },
     "Working": { className: "working", label: "Working" },
+    "Pending": { className: "pending", label: "Pending" },
     "Needs Brandon Review": { className: "brandon-review", label: "BR Review" },
     "Needs Tommy Review": { className: "tommy-review", label: "TM Review" },
     "Done": { className: "done-status", label: "Done" },

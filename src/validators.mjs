@@ -1,6 +1,7 @@
 export const STATUSES = [
   "Not Started",
   "Working",
+  "Pending",
   "Needs Brandon Review",
   "Needs Tommy Review",
   "Done",
@@ -48,7 +49,8 @@ export function normalizeStatus(value) {
     return "Needs Tommy Review";
   }
   if (/^(misc|misc\.|miscellaneous)$/i.test(text)) return "Misc.";
-  if (/^(not started|todo|to do|open|pending)$/i.test(text)) {
+  if (/^(pending|waiting|on hold|hold)$/i.test(text)) return "Pending";
+  if (/^(not started|todo|to do|open)$/i.test(text)) {
     return "Not Started";
   }
   const exact = STATUSES.find((status) => status.toLowerCase() === lower);

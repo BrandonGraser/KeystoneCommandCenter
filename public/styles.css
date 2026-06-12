@@ -854,6 +854,7 @@ select.status-badge.inline-status-select:hover {
 }
 
 .status-badge.status-working { color: var(--ink); border-color: var(--line-strong); }
+.status-badge.status-pending { color: var(--due-pending); border-color: var(--line-strong); }
 .status-badge.status-done-status { color: var(--good); border-color: var(--good); }
 .status-badge.status-brandon-review,
 .status-badge.status-tommy-review { color: var(--warning); border-color: var(--warning); }

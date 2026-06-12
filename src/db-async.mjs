@@ -305,13 +305,14 @@ export async function listTasks(filters = {}) {
       ORDER BY done ASC,
         CASE status
           WHEN 'Working' THEN 1
-          WHEN 'Needs Brandon Review' THEN 2
-          WHEN 'Needs Tommy Review' THEN 3
-          WHEN 'Not Started' THEN 4
-          WHEN 'Misc.' THEN 5
-          WHEN 'BRB' THEN 6
-          WHEN 'Done' THEN 7
-          ELSE 8
+          WHEN 'Pending' THEN 2
+          WHEN 'Needs Brandon Review' THEN 3
+          WHEN 'Needs Tommy Review' THEN 4
+          WHEN 'Not Started' THEN 5
+          WHEN 'Misc.' THEN 6
+          WHEN 'BRB' THEN 7
+          WHEN 'Done' THEN 8
+          ELSE 9
         END,
         due_date IS NULL ASC,
         due_date ASC,
