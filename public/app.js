@@ -433,10 +433,6 @@ function renderTaskExpanded(task) {
           <span class="detail-label">Category</span>
           <p><span class="task-category detail-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span></p>
         </div>
-        <div>
-          <span class="detail-label">Owner / Status</span>
-          <p>${escapeHtml(task.assignee)} - ${escapeHtml(task.status)}</p>
-        </div>
       </div>
       <div class="task-detail-columns">
         <div>
@@ -453,7 +449,7 @@ function renderTaskExpanded(task) {
           <span class="detail-label">Notes</span>
           ${task.notes.length || noteLinks.length ? `
             <ul class="detail-list">
-              ${task.notes.map((note) => `<li><strong>${escapeHtml(note.person)}:</strong> ${escapeHtml(note.body)}</li>`).join("")}
+              ${task.notes.map((note) => `<li>${note.person && note.person !== "General" ? `<strong>${escapeHtml(note.person)}:</strong> ` : ""}${escapeHtml(note.body)}</li>`).join("")}
               ${noteLinks.map((link) => `
                 <li><strong>${escapeHtml(noteLinkPerson(link))} Link:</strong> ${link.url ? `<a href="${escapeHtml(link.url)}" target="_blank" rel="noreferrer">${escapeHtml(link.url)}</a>` : escapeHtml(link.label)}</li>
               `).join("")}
@@ -604,7 +600,9 @@ function openTaskDialog(task = null) {
   fillWorkflowInputs(task?.workflow_steps || []);
   fillLinkInputs((task?.links || []).filter((link) => !isNoteLink(link)));
   fillNoteLinkInputs((task?.links || []).filter(isNoteLink), els.taskAssignee.value);
-  els.taskNotes.value = (task?.notes || []).map((note) => `${note.person}: ${note.body}`).join("\n");
+  els.taskNotes.value = (task?.notes || [])
+    .map((note) => (note.person && note.person !== "General" ? `${note.person}: ${note.body}` : note.body))
+    .join("\n");
   els.archiveTask.hidden = !task;
   els.taskDialog.showModal();
 }
