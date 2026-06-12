@@ -97,8 +97,36 @@ async function init() {
   state.dailyCategories = bootstrap.dailyCategories || [];
   renderChrome(bootstrap);
   renderLinkInputs();
+  applyStoredResourceCollapse();
   await Promise.all([loadTasks(), loadResources()]);
   startLiveSync();
+}
+
+function applyStoredResourceCollapse() {
+  document.querySelectorAll("[data-resource-block]").forEach((block) => {
+    const open = getStoredResourceOpen(block.dataset.resourceBlock);
+    block.classList.toggle("collapsed", !open);
+    block.querySelector(".resource-heading")?.setAttribute("aria-expanded", String(open));
+  });
+}
+
+function toggleResourceBlock(block) {
+  if (!block) return;
+  const collapsed = block.classList.toggle("collapsed");
+  block.querySelector(".resource-heading")?.setAttribute("aria-expanded", String(!collapsed));
+  try {
+    localStorage.setItem(`keystone-resources-${block.dataset.resourceBlock}`, collapsed ? "collapsed" : "open");
+  } catch {
+    // Collapse state just won't persist across reloads if storage is unavailable.
+  }
+}
+
+function getStoredResourceOpen(name) {
+  try {
+    return localStorage.getItem(`keystone-resources-${name}`) === "open";
+  } catch {
+    return false;
+  }
 }
 
 // Surface failed requests instead of letting clicks silently do nothing.
@@ -190,7 +218,16 @@ function bindEvents() {
   });
   document.addEventListener("click", async (event) => {
     const addButton = event.target.closest(".add-resource");
-    if (addButton) openResourceDialog(addButton.dataset.resourceSection);
+    if (addButton) {
+      openResourceDialog(addButton.dataset.resourceSection);
+      return;
+    }
+
+    const heading = event.target.closest(".resource-heading");
+    if (heading) {
+      toggleResourceBlock(heading.closest(".resource-block"));
+      return;
+    }
 
     const deleteButton = event.target.closest(".delete-resource");
     if (deleteButton) await deleteResource(Number(deleteButton.dataset.resourceId));

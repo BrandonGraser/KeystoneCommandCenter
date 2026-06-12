@@ -11,18 +11,20 @@
       <section class="metrics" id="metrics"></section>
 
       <section class="resources-row">
-        <div class="resource-block">
-          <div class="resource-heading">
+        <div class="resource-block collapsed" data-resource-block="logins">
+          <button type="button" class="resource-heading" aria-expanded="false">
+            <span class="collapse-indicator" aria-hidden="true"></span>
             <h3>LOGINS</h3>
-            <button type="button" class="add-resource" data-resource-section="logins" title="Add login reference">+</button>
-          </div>
+            <span class="add-resource" data-resource-section="logins" title="Add login reference" role="button">+</span>
+          </button>
           <div id="loginResources" class="resource-list"></div>
         </div>
-        <div class="resource-block">
-          <div class="resource-heading">
+        <div class="resource-block collapsed" data-resource-block="important_links">
+          <button type="button" class="resource-heading" aria-expanded="false">
+            <span class="collapse-indicator" aria-hidden="true"></span>
             <h3>IMPORTANT LINKS</h3>
-            <button type="button" class="add-resource" data-resource-section="important_links" title="Add important link">+</button>
-          </div>
+            <span class="add-resource" data-resource-section="important_links" title="Add important link" role="button">+</span>
+          </button>
           <div id="importantLinkResources" class="resource-list"></div>
         </div>
       </section>

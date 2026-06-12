@@ -330,6 +330,7 @@ label span,
 .resources-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: start;
   gap: 14px;
   margin-bottom: 14px;
 }
@@ -342,10 +343,39 @@ label span,
 .resource-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 9px;
+  width: 100%;
   min-height: 38px;
   padding: 0 12px;
+  border: 0;
   border-bottom: 1px solid var(--line);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.resource-heading:hover {
+  border-color: var(--line);
+  background: var(--panel-2);
+}
+
+.resource-block.collapsed .resource-heading {
+  border-bottom: 0;
+}
+
+.resource-block.collapsed .resource-list {
+  display: none;
+}
+
+.collapse-indicator::before {
+  content: "\25BE";
+  color: var(--muted-2);
+  font-size: 9px;
+}
+
+.resource-block.collapsed .collapse-indicator::before {
+  content: "\25B8";
 }
 
 .resource-heading h3 {
@@ -356,16 +386,27 @@ label span,
   letter-spacing: 0.18em;
 }
 
+.resource-heading:hover h3 {
+  color: var(--ink);
+}
+
 .add-resource {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 24px;
   min-height: 24px;
+  margin-left: auto;
   padding: 0;
-  border-color: var(--line);
+  border: 1px solid var(--line);
   color: var(--muted);
   font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
 }
 
 .add-resource:hover {
+  border-color: var(--ink);
   color: var(--ink);
 }
 
