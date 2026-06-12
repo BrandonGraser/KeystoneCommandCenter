@@ -83,6 +83,8 @@ const els = {
   resourcePassword: document.querySelector("#resourcePassword")
 };
 
+const SYNC_INTERVAL_MS = 5000;
+
 init();
 
 async function init() {
@@ -96,6 +98,61 @@ async function init() {
   renderChrome(bootstrap);
   renderLinkInputs();
   await Promise.all([loadTasks(), loadResources()]);
+  startLiveSync();
+}
+
+// Surface failed requests instead of letting clicks silently do nothing.
+window.addEventListener("unhandledrejection", (event) => {
+  const message = event.reason?.message || "Request failed.";
+  showNotice(message, "bad");
+});
+
+function startLiveSync() {
+  window.setInterval(() => { syncNow(); }, SYNC_INTERVAL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) syncNow();
+  });
+}
+
+let syncInFlight = false;
+
+async function syncNow() {
+  if (syncInFlight || document.hidden) return;
+  // Don't yank the UI out from under someone mid-edit.
+  if (els.taskDialog.open || els.ringDialog.open || els.resourceDialog.open) return;
+  const active = document.activeElement;
+  if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) return;
+
+  syncInFlight = true;
+  try {
+    const [bootstrap, data, resources] = await Promise.all([
+      api("/api/bootstrap"),
+      api(`/api/tasks?${taskQueryParams()}`),
+      api("/api/resources")
+    ]);
+    if (JSON.stringify(data.tasks) !== JSON.stringify(state.tasks)) {
+      state.tasks = data.tasks;
+      if (state.expandedTaskId) {
+        if (state.tasks.some((task) => task.id === state.expandedTaskId)) {
+          await loadTaskMessages(state.expandedTaskId);
+        } else {
+          state.expandedTaskId = null;
+          state.focusedMessageId = null;
+        }
+      }
+      renderTasks();
+    } else if (state.expandedTaskId) {
+      const before = JSON.stringify(state.taskMessages[state.expandedTaskId] || []);
+      await loadTaskMessages(state.expandedTaskId);
+      if (JSON.stringify(state.taskMessages[state.expandedTaskId] || []) !== before) renderTasks();
+    }
+    updateMetricCounts(bootstrap.counts);
+    renderResources(resources.resources);
+  } catch {
+    // Network hiccups during background sync are non-fatal; next tick retries.
+  } finally {
+    syncInFlight = false;
+  }
 }
 
 function bindEvents() {
@@ -177,10 +234,10 @@ function bindEvents() {
 
 function renderChrome(bootstrap) {
   els.metrics.innerHTML = [
-    metric("Open tasks", bootstrap.counts.open),
-    metric("Total active", bootstrap.counts.tasks),
-    metric("Overdue", bootstrap.counts.overdue),
-    metric("Archived 30 days", bootstrap.counts.archived || 0),
+    metric("Open tasks", bootstrap.counts.open, "open"),
+    metric("Total active", bootstrap.counts.tasks, "tasks"),
+    metric("Overdue", bootstrap.counts.overdue, "overdue"),
+    metric("Archived 30 days", bootstrap.counts.archived || 0, "archived"),
     `<div class="metric metric-action">
       <button id="newTaskButton" class="primary">New Task</button>
       <div class="action-subrow">
@@ -230,14 +287,18 @@ function renderArchiveToggle() {
   els.archiveToggle.setAttribute("aria-pressed", String(state.showArchive));
 }
 
-async function loadTasks() {
+function taskQueryParams() {
   const params = new URLSearchParams();
   if (state.activeAssignee) params.set("assignee", state.activeAssignee);
   if (state.filters.status !== "All") params.set("status", state.filters.status);
   if (state.filters.due) params.set("due", state.filters.due);
   if (state.filters.search) params.set("search", state.filters.search);
   if (state.showArchive) params.set("archived", "true");
-  const data = await api(`/api/tasks?${params.toString()}`);
+  return params.toString();
+}
+
+async function loadTasks() {
+  const data = await api(`/api/tasks?${taskQueryParams()}`);
   state.tasks = data.tasks;
   renderTasks();
 }
@@ -707,9 +768,18 @@ async function duplicateCurrentTask(container) {
   showNotice("Task duplicated.", "good");
 }
 
+let lastResourcesJson = "";
+
 async function loadResources() {
   const data = await api("/api/resources");
-  const groups = groupBy(data.resources, (resource) => resource.section);
+  renderResources(data.resources, true);
+}
+
+function renderResources(resources, force = false) {
+  const json = JSON.stringify(resources);
+  if (!force && json === lastResourcesJson) return;
+  lastResourcesJson = json;
+  const groups = groupBy(resources, (resource) => resource.section);
   renderResourceList(els.loginResources, groups.get("logins") || [], "logins");
   renderResourceList(els.importantLinkResources, groups.get("important_links") || [], "important_links");
 }
@@ -1029,8 +1099,21 @@ function parseNoteTextarea(text) {
     });
 }
 
-function metric(label, value) {
-  return `<div class="metric"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`;
+function metric(label, value, key = "") {
+  return `<div class="metric"><strong${key ? ` data-metric="${escapeHtml(key)}"` : ""}>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`;
+}
+
+function updateMetricCounts(counts) {
+  const values = {
+    open: counts.open,
+    tasks: counts.tasks,
+    overdue: counts.overdue,
+    archived: counts.archived || 0
+  };
+  for (const [key, value] of Object.entries(values)) {
+    const node = els.metrics.querySelector(`[data-metric="${key}"]`);
+    if (node && node.textContent !== String(value)) node.textContent = String(value);
+  }
 }
 
 function renderCategoryOption(category) {

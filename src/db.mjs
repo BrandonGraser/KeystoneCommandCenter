@@ -342,6 +342,12 @@ export function archiveTask(id) {
   return { ok: true, task: getTask(id) };
 }
 
+export function deleteTask(id) {
+  const database = getDb();
+  database.prepare("DELETE FROM tasks WHERE id = ?").run(Number(id));
+  return { deleted: true };
+}
+
 export function restoreTask(id) {
   const database = getDb();
   database

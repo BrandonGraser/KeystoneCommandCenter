@@ -229,6 +229,15 @@ async function notifyTaskDone(task) {
 }
 
 async function readJson(request) {
+  // Vercel's Node helpers may have already consumed the stream and parsed the body.
+  if (request.body !== undefined && request.body !== null) {
+    if (typeof request.body === "string") return request.body ? JSON.parse(request.body) : {};
+    if (Buffer.isBuffer(request.body)) {
+      const text = request.body.toString("utf8");
+      return text ? JSON.parse(text) : {};
+    }
+    return request.body;
+  }
   const text = (await readBody(request)).toString("utf8");
   return text ? JSON.parse(text) : {};
 }

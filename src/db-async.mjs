@@ -4,11 +4,24 @@ import { ASSIGNEES, DAILY_CATEGORIES, STATUSES, validateTaskPayload } from "./va
 let _initPromise = null;
 
 function getDb() {
-  if (!_initPromise) _initPromise = _init();
+  if (!_initPromise) {
+    _initPromise = _init().catch((error) => {
+      _initPromise = null;
+      throw error;
+    });
+  }
   return _initPromise;
 }
 
 async function _init() {
+  if (process.env.VERCEL && !process.env.TURSO_DATABASE_URL) {
+    const error = new Error(
+      "Database is not configured: TURSO_DATABASE_URL is missing. Vercel's filesystem is temporary, so saves would be lost. Add TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in the Vercel project's environment variables, then redeploy."
+    );
+    error.status = 503;
+    throw error;
+  }
+
   const dbPath = process.env.DB_PATH || "./data/tasks.db";
   const url = process.env.TURSO_DATABASE_URL || `file:${dbPath}`;
 
