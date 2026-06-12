@@ -3,6 +3,9 @@
   "buildCommand": "node scripts/build.mjs",
   "outputDirectory": "public",
   "framework": null,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" }
+  ],
   "functions": {
     "api/**/*.js": {
       "maxDuration": 30

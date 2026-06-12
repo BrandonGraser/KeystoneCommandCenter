@@ -6,7 +6,7 @@ const TEST_DB = "./data/test-api.db";
 if (existsSync(TEST_DB)) rmSync(TEST_DB);
 process.env.TURSO_DATABASE_URL = `file:${TEST_DB}`;
 
-const { default: handler } = await import("../api/[...path].js");
+const { default: handler } = await import("../api/index.js");
 
 let failures = 0;
 
