@@ -207,6 +207,7 @@ async function migrate(client) {
 
   await client.batch([
     { sql: "UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted'" },
+    { sql: "UPDATE tasks SET status = 'Not Started' WHERE status = 'Misc.'" },
     { sql: "UPDATE tasks SET due_date = NULL WHERE status = 'BRB'" },
     { sql: "UPDATE tasks SET assignee = 'Tommy' WHERE lower(assignee) = 'ryan'" },
     { sql: "UPDATE tasks SET source_tab = NULL WHERE lower(coalesce(source_tab, '')) LIKE '%ryan%'" },
@@ -304,15 +305,14 @@ export async function listTasks(filters = {}) {
     sql: `SELECT * FROM tasks WHERE ${where.join(" AND ")}
       ORDER BY done ASC,
         CASE status
-          WHEN 'Working' THEN 1
-          WHEN 'Pending' THEN 2
-          WHEN 'Needs Brandon Review' THEN 3
-          WHEN 'Needs Tommy Review' THEN 4
-          WHEN 'Not Started' THEN 5
-          WHEN 'Misc.' THEN 6
-          WHEN 'BRB' THEN 7
-          WHEN 'Done' THEN 8
-          ELSE 9
+          WHEN 'Needs Tommy Review' THEN 1
+          WHEN 'Needs Brandon Review' THEN 2
+          WHEN 'Working' THEN 3
+          WHEN 'Not Started' THEN 4
+          WHEN 'Pending' THEN 5
+          WHEN 'BRB' THEN 6
+          WHEN 'Done' THEN 7
+          ELSE 8
         END,
         due_date IS NULL ASC,
         due_date ASC,

@@ -1,12 +1,11 @@
 export const STATUSES = [
-  "Not Started",
-  "Working",
-  "Pending",
-  "Needs Brandon Review",
   "Needs Tommy Review",
-  "Done",
-  "Misc.",
-  "BRB"
+  "Needs Brandon Review",
+  "Working",
+  "Not Started",
+  "Pending",
+  "BRB",
+  "Done"
 ];
 
 export const ASSIGNEES = ["Brandon", "Mac", "Tommy"];
@@ -48,7 +47,7 @@ export function normalizeStatus(value) {
   if (/tommy/.test(lower) && /(review|check|approval)/.test(lower)) {
     return "Needs Tommy Review";
   }
-  if (/^(misc|misc\.|miscellaneous)$/i.test(text)) return "Misc.";
+  if (/^(misc|misc\.|miscellaneous)$/i.test(text)) return "Not Started";
   if (/^(pending|waiting|on hold|hold)$/i.test(text)) return "Pending";
   if (/^(not started|todo|to do|open)$/i.test(text)) {
     return "Not Started";

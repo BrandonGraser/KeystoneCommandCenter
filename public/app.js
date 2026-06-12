@@ -1397,7 +1397,6 @@ function taskStatusMeta(status, done = false) {
     "Needs Brandon Review": { className: "brandon-review", label: "BR Review" },
     "Needs Tommy Review": { className: "tommy-review", label: "TM Review" },
     "Done": { className: "done-status", label: "Done" },
-    "Misc.": { className: "misc", label: "Misc." },
     "BRB": { className: "brb", label: "BRB" }
   };
   return map[status] || { className: "misc", label: status };
