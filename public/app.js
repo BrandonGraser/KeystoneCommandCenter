@@ -287,13 +287,28 @@ function bindEvents() {
       if (expanded) sendTaskMessage(expanded);
     }
   });
+  els.taskBoard.addEventListener("paste", async (event) => {
+    const composer = event.target.closest(".chat-body");
+    if (!composer) return;
+    const items = [...(event.clipboardData?.items || [])];
+    const imageItem = items.find((item) => item.type.startsWith("image/"));
+    if (!imageItem) return;
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    await attachChatImage(composer.closest(".task-expanded"), file);
+  });
 }
 
 async function handleChatPhoto(input) {
   const file = input.files && input.files[0];
   const expanded = input.closest("[data-task-id]");
-  const taskId = Number(expanded?.dataset.taskId);
   input.value = "";
+  await attachChatImage(expanded, file);
+}
+
+async function attachChatImage(expanded, file) {
+  const taskId = Number(expanded?.dataset.taskId);
   if (!file || !taskId) return;
   try {
     pendingImages[taskId] = await readImageAsDataUrl(file);
@@ -508,7 +523,7 @@ function renderTaskExpanded(task) {
           <select class="chat-author author-name author-${authorSlug(composerAuthor())}" aria-label="Your name">
             ${state.assignees.map((name) => `<option value="${escapeHtml(name)}"${name === composerAuthor() ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
           </select>
-          <textarea class="chat-body" rows="2" placeholder="Message — Enter to send, Shift+Enter for a new line"></textarea>
+          <textarea class="chat-body" rows="2" placeholder="Message — Enter to send, Shift+Enter for a new line, Ctrl+V to paste a screenshot"></textarea>
           <div class="chat-actions">
             <label class="chat-photo-button" title="Attach a photo">Photo
               <input type="file" accept="image/*" class="chat-photo-input" hidden>
@@ -578,6 +593,11 @@ els.taskBoard.addEventListener("focusout", async (event) => {
 els.taskBoard.addEventListener("click", async (event) => {
   if (event.target.closest(".inline-task-input")) return;
   if (event.target.closest(".inline-status-select")) return;
+  const chatImage = event.target.closest(".chat-image");
+  if (chatImage) {
+    openImageLightbox(chatImage.src);
+    return;
+  }
   const expanded = event.target.closest(".task-expanded");
   const message = event.target.closest(".chat-message");
   if (expanded && event.target.closest("[data-action='delete-message']")) {
@@ -1412,6 +1432,31 @@ function renderThemeToggle() {
 }
 
 const pendingImages = {};
+
+function openImageLightbox(src) {
+  let overlay = document.querySelector("#imageLightbox");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "imageLightbox";
+    overlay.className = "image-lightbox";
+    overlay.innerHTML = `<img alt="Full size image"><button type="button" class="image-lightbox-close" title="Close (Esc)" aria-label="Close">×</button>`;
+    overlay.addEventListener("click", closeImageLightbox);
+    document.body.append(overlay);
+  }
+  overlay.querySelector("img").src = src;
+  overlay.classList.add("open");
+  document.addEventListener("keydown", closeLightboxOnEscape);
+}
+
+function closeImageLightbox() {
+  const overlay = document.querySelector("#imageLightbox");
+  if (overlay) overlay.classList.remove("open");
+  document.removeEventListener("keydown", closeLightboxOnEscape);
+}
+
+function closeLightboxOnEscape(event) {
+  if (event.key === "Escape") closeImageLightbox();
+}
 
 function authorSlug(name) {
   return String(name || "").toLowerCase().replace(/[^a-z]/g, "") || "unknown";
