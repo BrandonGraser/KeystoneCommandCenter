@@ -434,7 +434,7 @@ function renderTaskExpanded(task) {
         </div>
         <div class="chat-composer">
           <select class="chat-author" aria-label="Message author">
-            ${["Me", ...state.assignees].map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${state.assignees.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
           </select>
           <textarea class="chat-body" rows="2" placeholder="Add a message"></textarea>
           <button type="button" class="primary chat-send">Send</button>
@@ -1287,9 +1287,9 @@ function toggleTheme() {
 
 function getStoredTheme() {
   try {
-    return localStorage.getItem("keystone-theme") === "dark" ? "dark" : "light";
+    return localStorage.getItem("keystone-theme") === "light" ? "light" : "dark";
   } catch {
-    return "light";
+    return "dark";
   }
 }
 

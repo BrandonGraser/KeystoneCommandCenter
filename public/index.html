@@ -10,6 +10,23 @@
     <main class="shell">
       <section class="metrics" id="metrics"></section>
 
+      <section class="resources-row">
+        <div class="resource-block">
+          <div class="resource-heading">
+            <h3>LOGINS</h3>
+            <button type="button" class="add-resource" data-resource-section="logins" title="Add login reference">+</button>
+          </div>
+          <div id="loginResources" class="resource-list"></div>
+        </div>
+        <div class="resource-block">
+          <div class="resource-heading">
+            <h3>IMPORTANT LINKS</h3>
+            <button type="button" class="add-resource" data-resource-section="important_links" title="Add important link">+</button>
+          </div>
+          <div id="importantLinkResources" class="resource-list"></div>
+        </div>
+      </section>
+
       <section class="controls">
         <div>
           <span class="control-label">Assignee</span>
@@ -51,22 +68,6 @@
 
       <section class="workspace">
         <div class="task-board" id="taskBoard"></div>
-        <div class="resources-row">
-          <div class="resource-block">
-            <div class="resource-heading">
-              <h3>LOGINS</h3>
-              <button type="button" class="add-resource" data-resource-section="logins" title="Add login reference">+</button>
-            </div>
-            <div id="loginResources" class="resource-list"></div>
-          </div>
-          <div class="resource-block">
-            <div class="resource-heading">
-              <h3>IMPORTANT LINKS</h3>
-              <button type="button" class="add-resource" data-resource-section="important_links" title="Add important link">+</button>
-            </div>
-            <div id="importantLinkResources" class="resource-list"></div>
-          </div>
-        </div>
       </section>
     </main>
 
