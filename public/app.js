@@ -12,6 +12,7 @@ const state = {
   dailyCategories: [],
   expandedTaskId: null,
   taskMessages: {},
+  taskImages: {},
   focusedMessageId: null,
   editingTask: null,
   theme: getStoredTheme()
@@ -162,7 +163,7 @@ async function syncNow() {
       state.tasks = data.tasks;
       if (state.expandedTaskId) {
         if (state.tasks.some((task) => task.id === state.expandedTaskId)) {
-          await loadTaskMessages(state.expandedTaskId);
+          await Promise.all([loadTaskMessages(state.expandedTaskId), loadTaskImages(state.expandedTaskId)]);
         } else {
           state.expandedTaskId = null;
           state.focusedMessageId = null;
@@ -268,6 +269,15 @@ function bindEvents() {
       await handleChatPhoto(photoInput);
       return;
     }
+    const imageInput = event.target.closest(".task-image-input");
+    if (imageInput) {
+      const expanded = imageInput.closest("[data-task-id]");
+      const taskId = Number(expanded?.dataset.taskId);
+      const files = [...(imageInput.files || [])];
+      imageInput.value = "";
+      for (const file of files) await uploadTaskImage(taskId, file);
+      return;
+    }
     const select = event.target.closest(".inline-status-select");
     if (!select) return;
     const row = select.closest(".task-row");
@@ -289,14 +299,20 @@ function bindEvents() {
   });
   els.taskBoard.addEventListener("paste", async (event) => {
     const composer = event.target.closest(".chat-body");
-    if (!composer) return;
+    const imageZone = event.target.closest(".task-image-add");
+    if (!composer && !imageZone) return;
     const items = [...(event.clipboardData?.items || [])];
     const imageItem = items.find((item) => item.type.startsWith("image/"));
     if (!imageItem) return;
     const file = imageItem.getAsFile();
     if (!file) return;
     event.preventDefault();
-    await attachChatImage(composer.closest(".task-expanded"), file);
+    if (composer) {
+      await attachChatImage(composer.closest(".task-expanded"), file);
+    } else {
+      const expanded = imageZone.closest("[data-task-id]");
+      await uploadTaskImage(Number(expanded?.dataset.taskId), file);
+    }
   });
 }
 
@@ -450,6 +466,7 @@ function renderTaskRow(task) {
         <div class="task-tags">
           <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
           ${statusSelect}
+          ${task.image_count ? `<span class="img-count">${task.image_count} img</span>` : ""}
           ${task.last_message ? `<span class="last-msg">last: <span class="author-name author-${authorSlug(task.last_message.author)}">${escapeHtml(task.last_message.author)}</span></span>` : ""}
         </div>
       </div>
@@ -509,6 +526,23 @@ function renderTaskExpanded(task) {
               `).join("")}
             </ul>
           ` : `<p class="detail-empty">No notes yet.</p>`}
+        </div>
+      </div>
+      <div class="task-images-block">
+        <span class="detail-label">Images</span>
+        <div class="task-image-grid">
+          ${(state.taskImages[task.id] || []).map((img) => `
+            <div class="task-image-item">
+              <img class="task-image-thumb" src="${escapeHtml(img.image)}" alt="Reference image" loading="lazy">
+              <button type="button" class="task-image-delete" data-image-id="${img.id}" title="Delete image">×</button>
+            </div>
+          `).join("")}
+          <div class="task-image-add" tabindex="0" role="button" title="Click here, then Ctrl+V to paste a screenshot">
+            <span class="task-image-add-main">+ Add image</span>
+            <small>Click then Ctrl+V, or</small>
+            <button type="button" class="task-image-browse">Browse</button>
+            <input type="file" accept="image/*" class="task-image-input" hidden multiple>
+          </div>
         </div>
       </div>
       <div class="task-chat">
@@ -593,9 +627,9 @@ els.taskBoard.addEventListener("focusout", async (event) => {
 els.taskBoard.addEventListener("click", async (event) => {
   if (event.target.closest(".inline-task-input")) return;
   if (event.target.closest(".inline-status-select")) return;
-  const chatImage = event.target.closest(".chat-image");
-  if (chatImage) {
-    openImageLightbox(chatImage.src);
+  const zoomImage = event.target.closest(".chat-image, .task-image-thumb");
+  if (zoomImage) {
+    openImageLightbox(zoomImage.src);
     return;
   }
   const expanded = event.target.closest(".task-expanded");
@@ -618,6 +652,17 @@ els.taskBoard.addEventListener("click", async (event) => {
       preview.hidden = true;
       preview.innerHTML = "";
     }
+    return;
+  }
+
+  if (expanded && event.target.closest(".task-image-browse")) {
+    expanded.querySelector(".task-image-input")?.click();
+    return;
+  }
+
+  const imageDelete = expanded && event.target.closest(".task-image-delete");
+  if (imageDelete) {
+    await deleteTaskImageById(Number(expanded.dataset.taskId), Number(imageDelete.dataset.imageId));
     return;
   }
 
@@ -836,7 +881,7 @@ async function toggleTaskExpanded(taskId) {
   }
   state.expandedTaskId = taskId;
   state.focusedMessageId = null;
-  await loadTaskMessages(taskId);
+  await Promise.all([loadTaskMessages(taskId), loadTaskImages(taskId)]);
   renderTasks();
   scrollExpandedChatToEnd(taskId);
 }
@@ -844,6 +889,38 @@ async function toggleTaskExpanded(taskId) {
 async function loadTaskMessages(taskId) {
   const data = await api(`/api/tasks/${taskId}/messages`);
   state.taskMessages[taskId] = data.messages;
+}
+
+async function loadTaskImages(taskId) {
+  const data = await api(`/api/tasks/${taskId}/images`);
+  state.taskImages[taskId] = data.images;
+}
+
+async function uploadTaskImage(taskId, file) {
+  if (!file) return;
+  try {
+    const dataUrl = await readImageAsDataUrl(file);
+    const data = await api(`/api/tasks/${taskId}/images`, { method: "POST", body: { image: dataUrl } });
+    applyTaskImages(taskId, data.images);
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
+}
+
+async function deleteTaskImageById(taskId, imageId) {
+  try {
+    const data = await api(`/api/tasks/${taskId}/images/${imageId}`, { method: "DELETE" });
+    applyTaskImages(taskId, data.images);
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
+}
+
+function applyTaskImages(taskId, images) {
+  state.taskImages[taskId] = images;
+  const index = state.tasks.findIndex((task) => task.id === taskId);
+  if (index >= 0) state.tasks[index].image_count = images.length;
+  renderTasks();
 }
 
 async function sendTaskMessage(container) {

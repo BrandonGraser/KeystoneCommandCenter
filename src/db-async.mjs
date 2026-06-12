@@ -136,6 +136,15 @@ async function migrate(client) {
       )`
     },
     {
+      sql: `CREATE TABLE IF NOT EXISTS task_images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        image TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )`
+    },
+    {
       sql: `CREATE TABLE IF NOT EXISTS daily_notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         note_date TEXT NOT NULL,
@@ -176,6 +185,7 @@ async function migrate(client) {
     { sql: "CREATE INDEX IF NOT EXISTS idx_notes_task ON task_notes (task_id)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_messages_task ON task_messages (task_id)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_workflow_task ON task_workflow_steps (task_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_images_task ON task_images (task_id)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_resource_items_section ON resource_items (section, sort_order)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks (category)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_daily_notes_category ON daily_notes (category)" },
@@ -242,11 +252,12 @@ async function purgeExpired(client) {
 
 async function hydrateTask(row, columns, client) {
   const task = toRow(columns, row);
-  const [links, notes, steps, lastMsg] = await Promise.all([
+  const [links, notes, steps, lastMsg, imageCount] = await Promise.all([
     client.execute({ sql: "SELECT * FROM task_links WHERE task_id = ? ORDER BY id ASC", args: [task.id] }),
     client.execute({ sql: "SELECT * FROM task_notes WHERE task_id = ? ORDER BY id ASC", args: [task.id] }),
     client.execute({ sql: "SELECT * FROM task_workflow_steps WHERE task_id = ? ORDER BY sort_order ASC, id ASC", args: [task.id] }),
-    client.execute({ sql: "SELECT author, created_at FROM task_messages WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT 1", args: [task.id] })
+    client.execute({ sql: "SELECT author, created_at FROM task_messages WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT 1", args: [task.id] }),
+    client.execute({ sql: "SELECT count(*) AS count FROM task_images WHERE task_id = ?", args: [task.id] })
   ]);
   return {
     ...task,
@@ -255,8 +266,41 @@ async function hydrateTask(row, columns, client) {
     links: links.rows.map((r) => toRow(links.columns, r)),
     notes: notes.rows.map((r) => toRow(notes.columns, r)),
     workflow_steps: steps.rows.map((r) => toRow(steps.columns, r)),
-    last_message: lastMsg.rows[0] ? toRow(lastMsg.columns, lastMsg.rows[0]) : null
+    last_message: lastMsg.rows[0] ? toRow(lastMsg.columns, lastMsg.rows[0]) : null,
+    image_count: Number(imageCount.rows[0]?.["count"] ?? 0)
   };
+}
+
+export async function listTaskImages(taskId) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT id, task_id, image, created_at FROM task_images WHERE task_id = ? ORDER BY id ASC",
+    args: [Number(taskId)]
+  });
+  return r.rows.map((row) => toRow(r.columns, row));
+}
+
+export async function addTaskImage(taskId, image) {
+  if (typeof image !== "string" || !image.startsWith("data:image/")) {
+    const e = new Error("A valid image is required."); e.status = 400; throw e;
+  }
+  const task = await getTask(taskId);
+  if (!task) { const e = new Error("Task not found."); e.status = 404; throw e; }
+  const client = await getDb();
+  await client.execute({
+    sql: "INSERT INTO task_images (task_id, image) VALUES (?, ?)",
+    args: [Number(taskId), image]
+  });
+  return listTaskImages(taskId);
+}
+
+export async function deleteTaskImage(taskId, imageId) {
+  const client = await getDb();
+  await client.execute({
+    sql: "DELETE FROM task_images WHERE id = ? AND task_id = ?",
+    args: [Number(imageId), Number(taskId)]
+  });
+  return listTaskImages(taskId);
 }
 
 export async function listTasks(filters = {}) {

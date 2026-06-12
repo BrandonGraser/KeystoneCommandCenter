@@ -98,6 +98,14 @@ function migrate(database) {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS task_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      image TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS daily_notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       note_date TEXT NOT NULL,
@@ -134,6 +142,7 @@ function migrate(database) {
     CREATE INDEX IF NOT EXISTS idx_notes_task ON task_notes (task_id);
     CREATE INDEX IF NOT EXISTS idx_messages_task ON task_messages (task_id);
     CREATE INDEX IF NOT EXISTS idx_workflow_task ON task_workflow_steps (task_id);
+    CREATE INDEX IF NOT EXISTS idx_images_task ON task_images (task_id);
     CREATE INDEX IF NOT EXISTS idx_resource_items_section ON resource_items (section, sort_order);
   `);
 
@@ -615,6 +624,36 @@ function hydrateTask(row) {
     links: database.prepare("SELECT * FROM task_links WHERE task_id = ? ORDER BY id ASC").all(row.id),
     notes: database.prepare("SELECT * FROM task_notes WHERE task_id = ? ORDER BY id ASC").all(row.id),
     workflow_steps: database.prepare("SELECT * FROM task_workflow_steps WHERE task_id = ? ORDER BY sort_order ASC, id ASC").all(row.id),
-    last_message: database.prepare("SELECT author, created_at FROM task_messages WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT 1").get(row.id) || null
+    last_message: database.prepare("SELECT author, created_at FROM task_messages WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT 1").get(row.id) || null,
+    image_count: database.prepare("SELECT count(*) AS count FROM task_images WHERE task_id = ?").get(row.id).count
   };
+}
+
+export function listTaskImages(taskId) {
+  return getDb()
+    .prepare("SELECT id, task_id, image, created_at FROM task_images WHERE task_id = ? ORDER BY id ASC")
+    .all(Number(taskId));
+}
+
+export function addTaskImage(taskId, image) {
+  if (typeof image !== "string" || !image.startsWith("data:image/")) {
+    const error = new Error("A valid image is required.");
+    error.status = 400;
+    throw error;
+  }
+  const task = getTask(taskId);
+  if (!task) {
+    const error = new Error("Task not found.");
+    error.status = 404;
+    throw error;
+  }
+  getDb().prepare("INSERT INTO task_images (task_id, image) VALUES (?, ?)").run(Number(taskId), image);
+  return listTaskImages(taskId);
+}
+
+export function deleteTaskImage(taskId, imageId) {
+  getDb()
+    .prepare("DELETE FROM task_images WHERE id = ? AND task_id = ?")
+    .run(Number(imageId), Number(taskId));
+  return listTaskImages(taskId);
 }

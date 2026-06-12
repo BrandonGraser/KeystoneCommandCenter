@@ -1174,6 +1174,108 @@ select.status-badge.inline-status-select:hover {
   line-height: 1;
 }
 
+/* Task reference images */
+.task-images-block {
+  margin-top: 16px;
+}
+
+.task-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.task-image-item {
+  position: relative;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.task-image-thumb {
+  display: block;
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+.task-image-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  min-height: 22px;
+  padding: 0;
+  border-color: var(--line-strong);
+  background: var(--bg);
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+}
+
+.task-image-item:hover .task-image-delete,
+.task-image-delete:focus-visible {
+  opacity: 1;
+}
+
+.task-image-delete:hover {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--bg);
+}
+
+.task-image-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 110px;
+  padding: 8px;
+  border: 1px dashed var(--line-strong);
+  color: var(--muted);
+  text-align: center;
+  cursor: pointer;
+}
+
+.task-image-add:focus {
+  outline: none;
+  border-color: var(--ink);
+  border-style: solid;
+  color: var(--ink);
+}
+
+.task-image-add-main {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.task-image-add small {
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.task-image-browse {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+.img-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .chat-message time {
   color: var(--muted-2);
   font-size: 10px;

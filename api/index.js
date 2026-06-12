@@ -1,10 +1,12 @@
 import {
+  addTaskImage,
   addTaskLink,
   archiveTask,
   createTask,
   createTaskMessage,
   deleteDailyNote,
   deleteTask,
+  deleteTaskImage,
   deleteTaskLink,
   deleteTaskMessage,
   deleteResourceItem,
@@ -13,6 +15,7 @@ import {
   getTask,
   listDailyNotes,
   listResourceItems,
+  listTaskImages,
   listTaskMessages,
   listTasks,
   createResourceItem,
@@ -121,6 +124,22 @@ async function handleApi(request, response, url) {
     const deleted = await deleteTaskMessage(Number(messageItemMatch[1]), Number(messageItemMatch[2]));
     if (!deleted) throw notFound("Message not found.");
     sendJson(response, 200, { messages: await listTaskMessages(Number(messageItemMatch[1])) });
+    return;
+  }
+
+  const imagesMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/images$/);
+  if (imagesMatch && method === "GET") {
+    sendJson(response, 200, { images: await listTaskImages(Number(imagesMatch[1])) });
+    return;
+  }
+  if (imagesMatch && method === "POST") {
+    const body = await readJson(request);
+    sendJson(response, 201, { images: await addTaskImage(Number(imagesMatch[1]), body.image) });
+    return;
+  }
+  const imageItemMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/images\/(\d+)$/);
+  if (imageItemMatch && method === "DELETE") {
+    sendJson(response, 200, { images: await deleteTaskImage(Number(imageItemMatch[1]), Number(imageItemMatch[2])) });
     return;
   }
 
