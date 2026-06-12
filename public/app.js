@@ -12,7 +12,8 @@ const state = {
   dailyCategories: [],
   expandedTaskId: null,
   taskMessages: {},
-  taskImages: {},
+  formImages: [],
+  removedImageIds: [],
   focusedMessageId: null,
   editingTask: null,
   theme: getStoredTheme()
@@ -69,6 +70,7 @@ const els = {
   taskNotes: document.querySelector("#taskNotes"),
   taskNoteLinks: document.querySelector("#taskNoteLinks"),
   addNoteLink: document.querySelector("#addNoteLink"),
+  taskImages: document.querySelector("#taskImages"),
   loginResources: document.querySelector("#loginResources"),
   importantLinkResources: document.querySelector("#importantLinkResources"),
   resourceDialog: document.querySelector("#resourceDialog"),
@@ -163,7 +165,7 @@ async function syncNow() {
       state.tasks = data.tasks;
       if (state.expandedTaskId) {
         if (state.tasks.some((task) => task.id === state.expandedTaskId)) {
-          await Promise.all([loadTaskMessages(state.expandedTaskId), loadTaskImages(state.expandedTaskId)]);
+          await loadTaskMessages(state.expandedTaskId);
         } else {
           state.expandedTaskId = null;
           state.focusedMessageId = null;
@@ -247,6 +249,35 @@ function bindEvents() {
   els.taskWorkflow.addEventListener("click", removeWorkflowStep);
   els.taskForm.addEventListener("submit", saveTask);
   els.archiveTask.addEventListener("click", archiveCurrentTask);
+  els.taskImages.addEventListener("click", (event) => {
+    if (event.target.closest(".task-image-browse")) {
+      els.taskImages.querySelector(".task-image-input")?.click();
+      return;
+    }
+    const del = event.target.closest(".task-image-delete");
+    if (del) {
+      removeFormImage(Number(del.dataset.imageIndex));
+      return;
+    }
+    const thumb = event.target.closest(".task-image-thumb");
+    if (thumb) openImageLightbox(thumb.src);
+  });
+  els.taskImages.addEventListener("change", async (event) => {
+    const input = event.target.closest(".task-image-input");
+    if (!input) return;
+    const files = [...(input.files || [])];
+    input.value = "";
+    for (const file of files) await addFormImageFile(file);
+  });
+  els.taskImages.addEventListener("paste", async (event) => {
+    if (!event.target.closest(".task-image-add")) return;
+    const imageItem = [...(event.clipboardData?.items || [])].find((item) => item.type.startsWith("image/"));
+    if (!imageItem) return;
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    await addFormImageFile(file);
+  });
   els.taskCategory.addEventListener("change", () => applyCategoryTone(els.taskCategory, els.taskCategory.value));
   document.querySelector("#categoryPillPicker")?.addEventListener("click", (event) => {
     const pill = event.target.closest(".category-pill-option");
@@ -267,15 +298,6 @@ function bindEvents() {
     const photoInput = event.target.closest(".chat-photo-input");
     if (photoInput) {
       await handleChatPhoto(photoInput);
-      return;
-    }
-    const imageInput = event.target.closest(".task-image-input");
-    if (imageInput) {
-      const expanded = imageInput.closest("[data-task-id]");
-      const taskId = Number(expanded?.dataset.taskId);
-      const files = [...(imageInput.files || [])];
-      imageInput.value = "";
-      for (const file of files) await uploadTaskImage(taskId, file);
       return;
     }
     const select = event.target.closest(".inline-status-select");
@@ -299,20 +321,14 @@ function bindEvents() {
   });
   els.taskBoard.addEventListener("paste", async (event) => {
     const composer = event.target.closest(".chat-body");
-    const imageZone = event.target.closest(".task-image-add");
-    if (!composer && !imageZone) return;
+    if (!composer) return;
     const items = [...(event.clipboardData?.items || [])];
     const imageItem = items.find((item) => item.type.startsWith("image/"));
     if (!imageItem) return;
     const file = imageItem.getAsFile();
     if (!file) return;
     event.preventDefault();
-    if (composer) {
-      await attachChatImage(composer.closest(".task-expanded"), file);
-    } else {
-      const expanded = imageZone.closest("[data-task-id]");
-      await uploadTaskImage(Number(expanded?.dataset.taskId), file);
-    }
+    await attachChatImage(composer.closest(".task-expanded"), file);
   });
 }
 
@@ -528,23 +544,6 @@ function renderTaskExpanded(task) {
           ` : `<p class="detail-empty">No notes yet.</p>`}
         </div>
       </div>
-      <div class="task-images-block">
-        <span class="detail-label">Images</span>
-        <div class="task-image-grid">
-          ${(state.taskImages[task.id] || []).map((img) => `
-            <div class="task-image-item">
-              <img class="task-image-thumb" src="${escapeHtml(img.image)}" alt="Reference image" loading="lazy">
-              <button type="button" class="task-image-delete" data-image-id="${img.id}" title="Delete image">×</button>
-            </div>
-          `).join("")}
-          <div class="task-image-add" tabindex="0" role="button" title="Click here, then Ctrl+V to paste a screenshot">
-            <span class="task-image-add-main">+ Add image</span>
-            <small>Click then Ctrl+V, or</small>
-            <button type="button" class="task-image-browse">Browse</button>
-            <input type="file" accept="image/*" class="task-image-input" hidden multiple>
-          </div>
-        </div>
-      </div>
       <div class="task-chat">
         <div class="chat-head">
           <span class="detail-label">Discussion</span>
@@ -627,7 +626,7 @@ els.taskBoard.addEventListener("focusout", async (event) => {
 els.taskBoard.addEventListener("click", async (event) => {
   if (event.target.closest(".inline-task-input")) return;
   if (event.target.closest(".inline-status-select")) return;
-  const zoomImage = event.target.closest(".chat-image, .task-image-thumb");
+  const zoomImage = event.target.closest(".chat-image");
   if (zoomImage) {
     openImageLightbox(zoomImage.src);
     return;
@@ -655,16 +654,6 @@ els.taskBoard.addEventListener("click", async (event) => {
     return;
   }
 
-  if (expanded && event.target.closest(".task-image-browse")) {
-    expanded.querySelector(".task-image-input")?.click();
-    return;
-  }
-
-  const imageDelete = expanded && event.target.closest(".task-image-delete");
-  if (imageDelete) {
-    await deleteTaskImageById(Number(expanded.dataset.taskId), Number(imageDelete.dataset.imageId));
-    return;
-  }
 
   if (expanded && event.target.closest(".chat-send")) {
     await sendTaskMessage(expanded);
@@ -726,8 +715,24 @@ function openTaskDialog(task = null) {
   els.taskNotes.value = (task?.notes || [])
     .map((note) => (note.person && note.person !== "General" ? `${note.person}: ${note.body}` : note.body))
     .join("\n");
+  state.formImages = [];
+  state.removedImageIds = [];
+  renderFormImages();
   els.archiveTask.hidden = !task;
   els.taskDialog.showModal();
+  if (task) loadFormImages(task.id);
+}
+
+async function loadFormImages(taskId) {
+  try {
+    const data = await api(`/api/tasks/${taskId}/images`);
+    // Ignore if the dialog moved on to another task while loading.
+    if (Number(els.taskId.value) !== Number(taskId)) return;
+    state.formImages = data.images.map((img) => ({ id: img.id, image: img.image }));
+    renderFormImages();
+  } catch {
+    // Non-fatal — the form just opens without preloaded images.
+  }
 }
 
 async function saveTask(event) {
@@ -744,18 +749,22 @@ async function saveTask(event) {
     links: [...collectLinkInputs(), ...collectNoteLinkInputs()],
     notes: parseNoteTextarea(els.taskNotes.value)
   };
+  let savedTaskId;
   if (id) {
     const payload = basePayload;
     const data = await api(`/api/tasks/${id}`, { method: "PATCH", body: payload });
+    savedTaskId = data.task.id;
     state.expandedTaskId = data.task.id;
     if (data.notification) showNotice(data.notification.message, data.notification.sent ? "good" : "");
   } else {
     const payload = { ...basePayload, status: "Not Started" };
     const data = await api("/api/tasks", { method: "POST", body: payload });
+    savedTaskId = data.task.id;
     state.expandedTaskId = data.task.id;
     state.activeAssignee = data.task.assignee;
     if (data.notification) showNotice(data.notification.message, data.notification.sent ? "good" : "");
   }
+  await applyFormImages(savedTaskId);
   els.taskDialog.close();
   await loadTaskMessages(state.expandedTaskId);
   await refreshAll();
@@ -881,7 +890,7 @@ async function toggleTaskExpanded(taskId) {
   }
   state.expandedTaskId = taskId;
   state.focusedMessageId = null;
-  await Promise.all([loadTaskMessages(taskId), loadTaskImages(taskId)]);
+  await loadTaskMessages(taskId);
   renderTasks();
   scrollExpandedChatToEnd(taskId);
 }
@@ -891,36 +900,51 @@ async function loadTaskMessages(taskId) {
   state.taskMessages[taskId] = data.messages;
 }
 
-async function loadTaskImages(taskId) {
-  const data = await api(`/api/tasks/${taskId}/images`);
-  state.taskImages[taskId] = data.images;
+// --- Task dialog images (staged; only persisted when the form is saved) ---
+
+function renderFormImages() {
+  if (!els.taskImages) return;
+  els.taskImages.innerHTML = `
+    ${state.formImages.map((img, index) => `
+      <div class="task-image-item">
+        <img class="task-image-thumb" src="${escapeHtml(img.image)}" alt="Reference image" loading="lazy">
+        <button type="button" class="task-image-delete" data-image-index="${index}" title="Remove image">×</button>
+      </div>
+    `).join("")}
+    <div class="task-image-add" tabindex="0" role="button" title="Click here, then Ctrl+V to paste a screenshot">
+      <span class="task-image-add-main">+ Add image</span>
+      <small>Click then Ctrl+V, or</small>
+      <button type="button" class="task-image-browse">Browse</button>
+      <input type="file" accept="image/*" class="task-image-input" hidden multiple>
+    </div>
+  `;
 }
 
-async function uploadTaskImage(taskId, file) {
+async function addFormImageFile(file) {
   if (!file) return;
   try {
     const dataUrl = await readImageAsDataUrl(file);
-    const data = await api(`/api/tasks/${taskId}/images`, { method: "POST", body: { image: dataUrl } });
-    applyTaskImages(taskId, data.images);
+    state.formImages.push({ image: dataUrl });
+    renderFormImages();
   } catch (error) {
     showNotice(error.message, "bad");
   }
 }
 
-async function deleteTaskImageById(taskId, imageId) {
-  try {
-    const data = await api(`/api/tasks/${taskId}/images/${imageId}`, { method: "DELETE" });
-    applyTaskImages(taskId, data.images);
-  } catch (error) {
-    showNotice(error.message, "bad");
-  }
+function removeFormImage(index) {
+  const [removed] = state.formImages.splice(index, 1);
+  if (removed?.id) state.removedImageIds.push(removed.id);
+  renderFormImages();
 }
 
-function applyTaskImages(taskId, images) {
-  state.taskImages[taskId] = images;
-  const index = state.tasks.findIndex((task) => task.id === taskId);
-  if (index >= 0) state.tasks[index].image_count = images.length;
-  renderTasks();
+// After the task is saved, reconcile staged image changes against the server.
+async function applyFormImages(taskId) {
+  for (const imageId of state.removedImageIds) {
+    await api(`/api/tasks/${taskId}/images/${imageId}`, { method: "DELETE" });
+  }
+  for (const img of state.formImages) {
+    if (!img.id) await api(`/api/tasks/${taskId}/images`, { method: "POST", body: { image: img.image } });
+  }
 }
 
 async function sendTaskMessage(container) {

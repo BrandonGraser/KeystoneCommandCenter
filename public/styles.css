@@ -1080,7 +1080,8 @@ select.status-badge.inline-status-select:hover {
   display: grid;
   gap: 6px;
   margin: 10px 0;
-  max-height: 180px;
+  min-height: 150px;
+  max-height: 360px;
   overflow-y: auto;
   padding-right: 4px;
   scroll-behavior: smooth;
@@ -1175,8 +1176,9 @@ select.status-badge.inline-status-select:hover {
 }
 
 /* Task reference images */
-.task-images-block {
-  margin-top: 16px;
+.form-images-section {
+  display: grid;
+  gap: 8px;
 }
 
 .task-image-grid {
