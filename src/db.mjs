@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ASSIGNEES, DAILY_CATEGORIES, STATUSES, validateTaskPayload } from "./validators.mjs";
+import { ASSIGNEES, DAILY_CATEGORIES, STATUSES, cleanMultiline, validateTaskPayload } from "./validators.mjs";
 
 const DB_PATH = process.env.DB_PATH
   ? resolve(process.env.DB_PATH)
@@ -154,6 +154,10 @@ function migrate(database) {
   }
   if (!resourceColumns.some((column) => column.name === "password")) {
     database.exec("ALTER TABLE resource_items ADD COLUMN password TEXT;");
+  }
+  const messageColumns = database.prepare("PRAGMA table_info(task_messages)").all();
+  if (!messageColumns.some((column) => column.name === "image")) {
+    database.exec("ALTER TABLE task_messages ADD COLUMN image TEXT;");
   }
   database.exec("UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted';");
   database.exec("UPDATE tasks SET status = 'Not Started' WHERE status = 'Misc.';");
@@ -445,8 +449,9 @@ export function listTaskMessages(taskId) {
 
 export function createTaskMessage(taskId, input) {
   const author = String(input.author || "Me").trim() || "Me";
-  const body = String(input.body || "").replace(/\s+/g, " ").trim();
-  if (!body) {
+  const body = cleanMultiline(input.body);
+  const image = typeof input.image === "string" && input.image.startsWith("data:image/") ? input.image : null;
+  if (!body && !image) {
     const error = new Error("Message body is required.");
     error.status = 400;
     throw error;
@@ -458,8 +463,8 @@ export function createTaskMessage(taskId, input) {
     throw error;
   }
   const result = getDb()
-    .prepare("INSERT INTO task_messages (task_id, author, body) VALUES (?, ?, ?)")
-    .run(Number(taskId), author, body);
+    .prepare("INSERT INTO task_messages (task_id, author, body, image) VALUES (?, ?, ?, ?)")
+    .run(Number(taskId), author, body, image);
   return getDb()
     .prepare("SELECT * FROM task_messages WHERE id = ?")
     .get(Number(result.lastInsertRowid));
@@ -609,6 +614,7 @@ function hydrateTask(row) {
     archived: Boolean(row.archived),
     links: database.prepare("SELECT * FROM task_links WHERE task_id = ? ORDER BY id ASC").all(row.id),
     notes: database.prepare("SELECT * FROM task_notes WHERE task_id = ? ORDER BY id ASC").all(row.id),
-    workflow_steps: database.prepare("SELECT * FROM task_workflow_steps WHERE task_id = ? ORDER BY sort_order ASC, id ASC").all(row.id)
+    workflow_steps: database.prepare("SELECT * FROM task_workflow_steps WHERE task_id = ? ORDER BY sort_order ASC, id ASC").all(row.id),
+    last_message: database.prepare("SELECT author, created_at FROM task_messages WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT 1").get(row.id) || null
   };
 }

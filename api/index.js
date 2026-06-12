@@ -109,7 +109,8 @@ async function handleApi(request, response, url) {
     const body = await readJson(request);
     const message = await createTaskMessage(Number(messageMatch[1]), {
       author: cleanText(body.author) || "Me",
-      body: cleanText(body.body)
+      body: body.body,
+      image: body.image
     });
     sendJson(response, 201, { message, messages: await listTaskMessages(Number(messageMatch[1])) });
     return;

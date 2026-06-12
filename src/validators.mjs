@@ -30,6 +30,18 @@ export function cleanText(value) {
   return String(value).replace(/\s+/g, " ").trim();
 }
 
+// Like cleanText but keeps line breaks so multi-line descriptions and
+// messages preserve the user's spacing instead of collapsing to one line.
+export function cleanMultiline(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function normalizeAssignee(value) {
   const text = cleanText(value).toLowerCase();
   return ASSIGNEES.find((name) => name.toLowerCase() === text) || null;
@@ -76,7 +88,7 @@ export function validateTaskPayload(input, { partial = false } = {}) {
     if (!output.title) errors.push("Task title is required.");
   }
 
-  if ("details" in input) output.details = cleanText(input.details);
+  if ("details" in input) output.details = cleanMultiline(input.details);
   if ("project" in input) output.project = cleanText(input.project);
   if ("category" in input) output.category = normalizeDailyCategory(input.category);
   if ("due_date" in input) output.due_date = normalizeDateInput(input.due_date);

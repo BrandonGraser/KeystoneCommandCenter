@@ -257,6 +257,17 @@ function bindEvents() {
   });
   els.taskAssignee.addEventListener("change", () => ensureNoteLinkPerson(els.taskAssignee.value));
   els.taskBoard.addEventListener("change", async (event) => {
+    const authorSelect = event.target.closest(".chat-author");
+    if (authorSelect) {
+      storeChatAuthor(authorSelect.value);
+      authorSelect.className = `chat-author author-name author-${authorSlug(authorSelect.value)}`;
+      return;
+    }
+    const photoInput = event.target.closest(".chat-photo-input");
+    if (photoInput) {
+      await handleChatPhoto(photoInput);
+      return;
+    }
     const select = event.target.closest(".inline-status-select");
     if (!select) return;
     const row = select.closest(".task-row");
@@ -267,6 +278,33 @@ function bindEvents() {
     if (index >= 0) state.tasks[index] = data.task;
     renderTasks();
   });
+  els.taskBoard.addEventListener("keydown", (event) => {
+    const composer = event.target.closest(".chat-body");
+    if (!composer) return;
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      const expanded = composer.closest(".task-expanded");
+      if (expanded) sendTaskMessage(expanded);
+    }
+  });
+}
+
+async function handleChatPhoto(input) {
+  const file = input.files && input.files[0];
+  const expanded = input.closest("[data-task-id]");
+  const taskId = Number(expanded?.dataset.taskId);
+  input.value = "";
+  if (!file || !taskId) return;
+  try {
+    pendingImages[taskId] = await readImageAsDataUrl(file);
+    const preview = expanded.querySelector(".chat-photo-preview");
+    if (preview) {
+      preview.hidden = false;
+      preview.innerHTML = `<img src="${escapeHtml(pendingImages[taskId])}" alt="Attachment preview"><button type="button" class="chat-photo-remove" title="Remove photo">Remove</button>`;
+    }
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
 }
 
 function renderChrome(bootstrap) {
@@ -397,6 +435,7 @@ function renderTaskRow(task) {
         <div class="task-tags">
           <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
           ${statusSelect}
+          ${task.last_message ? `<span class="last-msg">last: <span class="author-name author-${authorSlug(task.last_message.author)}">${escapeHtml(task.last_message.author)}</span></span>` : ""}
         </div>
       </div>
       <div class="due ${due.className}" title="${escapeHtml(due.label)}">
@@ -466,11 +505,19 @@ function renderTaskExpanded(task) {
           ${messages.length ? messages.map(renderMessage).join("") : `<p class="detail-empty">No discussion yet. Start one below.</p>`}
         </div>
         <div class="chat-composer">
-          <select class="chat-author" aria-label="Message author">
-            ${state.assignees.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+          <select class="chat-author author-name author-${authorSlug(composerAuthor())}" aria-label="Your name">
+            ${state.assignees.map((name) => `<option value="${escapeHtml(name)}"${name === composerAuthor() ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
           </select>
-          <textarea class="chat-body" rows="2" placeholder="Add a message"></textarea>
-          <button type="button" class="primary chat-send">Send</button>
+          <textarea class="chat-body" rows="2" placeholder="Message — Enter to send, Shift+Enter for a new line"></textarea>
+          <div class="chat-actions">
+            <label class="chat-photo-button" title="Attach a photo">Photo
+              <input type="file" accept="image/*" class="chat-photo-input" hidden>
+            </label>
+            <button type="button" class="primary chat-send">Send</button>
+          </div>
+          <div class="chat-photo-preview"${pendingImages[task.id] ? "" : " hidden"}>
+            ${pendingImages[task.id] ? `<img src="${escapeHtml(pendingImages[task.id])}" alt="Attachment preview"><button type="button" class="chat-photo-remove" title="Remove photo">Remove</button>` : ""}
+          </div>
         </div>
       </div>
     </section>
@@ -481,10 +528,11 @@ function renderMessage(message) {
   return `
     <article class="chat-message ${state.focusedMessageId === message.id ? "focused" : ""}" data-message-id="${message.id}" tabindex="0" title="Click to revisit this message">
       <div class="chat-message-head">
-        <strong>${escapeHtml(message.author)}</strong>
+        <strong class="author-name author-${authorSlug(message.author)}">${escapeHtml(message.author)}</strong>
         <button type="button" class="delete-chat-message" data-action="delete-message" title="Delete discussion text">Delete</button>
       </div>
-      <p>${escapeHtml(message.body)}</p>
+      ${message.body ? `<p>${escapeHtml(message.body)}</p>` : ""}
+      ${message.image ? `<img class="chat-image" src="${escapeHtml(message.image)}" alt="Shared photo" loading="lazy">` : ""}
       <time>${escapeHtml(shortDateTime(message.created_at))}</time>
     </article>
 `;
@@ -540,6 +588,16 @@ els.taskBoard.addEventListener("click", async (event) => {
     state.focusedMessageId = Number(message.dataset.messageId);
     renderTasks();
     scrollExpandedChatToEnd(Number(expanded.dataset.taskId));
+    return;
+  }
+
+  if (expanded && event.target.closest(".chat-photo-remove")) {
+    delete pendingImages[Number(expanded.dataset.taskId)];
+    const preview = expanded.querySelector(".chat-photo-preview");
+    if (preview) {
+      preview.hidden = true;
+      preview.innerHTML = "";
+    }
     return;
   }
 
@@ -770,13 +828,16 @@ async function loadTaskMessages(taskId) {
 
 async function sendTaskMessage(container) {
   const taskId = Number(container.dataset.taskId);
-  const body = container.querySelector(".chat-body").value.trim();
-  if (!body) return;
-  const author = container.querySelector(".chat-author").value || "Me";
+  const rawBody = container.querySelector(".chat-body").value;
+  const image = pendingImages[taskId] || null;
+  if (!rawBody.trim() && !image) return;
+  const author = container.querySelector(".chat-author").value || state.assignees[0] || "Me";
+  storeChatAuthor(author);
   const data = await api(`/api/tasks/${taskId}/messages`, {
     method: "POST",
-    body: { author, body }
+    body: { author, body: rawBody, image }
   });
+  delete pendingImages[taskId];
   state.taskMessages[taskId] = data.messages;
   state.focusedMessageId = data.message.id;
   renderTasks();
@@ -1348,6 +1409,62 @@ function renderThemeToggle() {
   button.setAttribute("aria-pressed", String(isDark));
   button.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
   button.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+}
+
+const pendingImages = {};
+
+function authorSlug(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z]/g, "") || "unknown";
+}
+
+function composerAuthor() {
+  const stored = getStoredChatAuthor();
+  if (stored && state.assignees.includes(stored)) return stored;
+  return state.assignees[0] || "";
+}
+
+function getStoredChatAuthor() {
+  try {
+    return localStorage.getItem("keystone-chat-author") || "";
+  } catch {
+    return "";
+  }
+}
+
+function storeChatAuthor(name) {
+  try {
+    localStorage.setItem("keystone-chat-author", name);
+  } catch {
+    // Author just won't be remembered across reloads if storage is unavailable.
+  }
+}
+
+// Shrink the image in the browser so uploads stay small (longest edge ~1400px).
+function readImageAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read that image."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("That file is not a readable image."));
+      img.onload = () => {
+        const max = 1400;
+        let { width, height } = img;
+        if (width > max || height > max) {
+          const scale = Math.min(max / width, max / height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function escapeHtml(value) {

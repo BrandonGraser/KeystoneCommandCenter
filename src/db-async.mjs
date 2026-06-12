@@ -1,5 +1,5 @@
 import { createClient } from "@libsql/client";
-import { ASSIGNEES, DAILY_CATEGORIES, STATUSES, validateTaskPayload } from "./validators.mjs";
+import { ASSIGNEES, DAILY_CATEGORIES, STATUSES, cleanMultiline, validateTaskPayload } from "./validators.mjs";
 
 let _initPromise = null;
 
@@ -205,6 +205,11 @@ async function migrate(client) {
     await client.execute("ALTER TABLE resource_items ADD COLUMN password TEXT");
   }
 
+  const messageCols = await client.execute("PRAGMA table_info(task_messages)");
+  if (!messageCols.rows.some((r) => r["name"] === "image")) {
+    await client.execute("ALTER TABLE task_messages ADD COLUMN image TEXT");
+  }
+
   await client.batch([
     { sql: "UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted'" },
     { sql: "UPDATE tasks SET status = 'Not Started' WHERE status = 'Misc.'" },
@@ -237,10 +242,11 @@ async function purgeExpired(client) {
 
 async function hydrateTask(row, columns, client) {
   const task = toRow(columns, row);
-  const [links, notes, steps] = await Promise.all([
+  const [links, notes, steps, lastMsg] = await Promise.all([
     client.execute({ sql: "SELECT * FROM task_links WHERE task_id = ? ORDER BY id ASC", args: [task.id] }),
     client.execute({ sql: "SELECT * FROM task_notes WHERE task_id = ? ORDER BY id ASC", args: [task.id] }),
-    client.execute({ sql: "SELECT * FROM task_workflow_steps WHERE task_id = ? ORDER BY sort_order ASC, id ASC", args: [task.id] })
+    client.execute({ sql: "SELECT * FROM task_workflow_steps WHERE task_id = ? ORDER BY sort_order ASC, id ASC", args: [task.id] }),
+    client.execute({ sql: "SELECT author, created_at FROM task_messages WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT 1", args: [task.id] })
   ]);
   return {
     ...task,
@@ -248,7 +254,8 @@ async function hydrateTask(row, columns, client) {
     archived: Boolean(task.archived),
     links: links.rows.map((r) => toRow(links.columns, r)),
     notes: notes.rows.map((r) => toRow(notes.columns, r)),
-    workflow_steps: steps.rows.map((r) => toRow(steps.columns, r))
+    workflow_steps: steps.rows.map((r) => toRow(steps.columns, r)),
+    last_message: lastMsg.rows[0] ? toRow(lastMsg.columns, lastMsg.rows[0]) : null
   };
 }
 
@@ -510,14 +517,15 @@ export async function listTaskMessages(taskId) {
 
 export async function createTaskMessage(taskId, input) {
   const author = String(input.author || "Me").trim() || "Me";
-  const body = String(input.body || "").replace(/\s+/g, " ").trim();
-  if (!body) { const e = new Error("Message body is required."); e.status = 400; throw e; }
+  const body = cleanMultiline(input.body);
+  const image = typeof input.image === "string" && input.image.startsWith("data:image/") ? input.image : null;
+  if (!body && !image) { const e = new Error("Message body is required."); e.status = 400; throw e; }
   const task = await getTask(taskId);
   if (!task) { const e = new Error("Task not found."); e.status = 404; throw e; }
   const client = await getDb();
   const result = await client.execute({
-    sql: "INSERT INTO task_messages (task_id, author, body) VALUES (?, ?, ?)",
-    args: [Number(taskId), author, body]
+    sql: "INSERT INTO task_messages (task_id, author, body, image) VALUES (?, ?, ?, ?)",
+    args: [Number(taskId), author, body, image]
   });
   const r = await client.execute({ sql: "SELECT * FROM task_messages WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   return toRow(r.columns, r.rows[0]);
