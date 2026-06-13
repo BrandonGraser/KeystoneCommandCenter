@@ -431,10 +431,13 @@ label span,
   width: 24px;
   min-height: 24px;
   margin-left: auto;
-  padding: 0;
+  /* The "+" glyph's ink sits high and slightly left of its advance box;
+     asymmetric padding nudges the flex-centered glyph to the optical center. */
+  padding: 2px 0 0 1px;
   border: 1px solid var(--line);
   color: var(--muted);
   font-size: 13px;
+  line-height: 1;
   cursor: pointer;
   transition: border-color 0.12s ease, color 0.12s ease;
 }
@@ -846,6 +849,9 @@ a.login-resource-button:hover {
   color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.1em;
+  /* letter-spacing adds a trailing gap after the last letter; nudge the text
+     right by the same amount so it reads centered inside the border. */
+  text-indent: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
 }
