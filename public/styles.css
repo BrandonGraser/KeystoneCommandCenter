@@ -805,7 +805,7 @@ a.login-resource-button:hover {
 
 .expanded-task-details {
   display: block;
-  min-height: 64px;
+  min-height: 130px;
   margin-top: 6px;
   padding: 8px;
   resize: vertical;
@@ -1186,6 +1186,22 @@ select.status-badge.inline-status-select:hover {
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 8px;
   margin-top: 8px;
+}
+
+.task-images-section {
+  margin-top: 14px;
+}
+
+.task-images-gallery {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.task-images-gallery .task-image-thumb {
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
 
 .task-image-item {

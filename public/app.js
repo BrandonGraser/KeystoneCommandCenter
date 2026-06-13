@@ -12,6 +12,7 @@ const state = {
   dailyCategories: [],
   expandedTaskId: null,
   taskMessages: {},
+  taskImages: {},
   formImages: [],
   removedImageIds: [],
   focusedMessageId: null,
@@ -478,7 +479,7 @@ function renderTaskRow(task) {
     <article class="task-row ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} status-row-${statusMeta.className}" data-task-id="${task.id}">
       <input class="task-check" type="checkbox" ${task.done ? "checked" : ""} ${state.showArchive ? "disabled" : ""} title="Mark done">
       <div class="task-main">
-        <input class="task-title inline-task-input inline-task-title" data-inline-field="title" value="${escapeHtml(task.title)}" aria-label="Task name">
+        <div class="task-title" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</div>
         <div class="task-tags">
           <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
           ${statusSelect}
@@ -509,8 +510,8 @@ function renderTaskExpanded(task) {
       <div class="task-detail-grid">
         <div class="full-task-detail">
           <span class="detail-label">Full Task</span>
-          <input class="full-task-text inline-task-input expanded-task-title" data-inline-field="title" value="${escapeHtml(task.title)}" aria-label="Full task name">
-          <textarea class="task-detail-copy inline-task-input expanded-task-details" data-inline-field="details" rows="3" placeholder="Add task details" aria-label="Task details">${escapeHtml(task.details || "")}</textarea>
+          <div class="full-task-text expanded-task-title">${escapeHtml(task.title)}</div>
+          <textarea class="task-detail-copy inline-task-input expanded-task-details" data-inline-field="details" rows="6" placeholder="Add task details" aria-label="Task details">${escapeHtml(task.details || "")}</textarea>
         </div>
         <div class="workflow-detail">
           <span class="detail-label">Workflow</span>
@@ -544,6 +545,7 @@ function renderTaskExpanded(task) {
           ` : `<p class="detail-empty">No notes yet.</p>`}
         </div>
       </div>
+      ${renderExpandedImages(task)}
       <div class="task-chat">
         <div class="chat-head">
           <span class="detail-label">Discussion</span>
@@ -569,6 +571,19 @@ function renderTaskExpanded(task) {
         </div>
       </div>
     </section>
+  `;
+}
+
+function renderExpandedImages(task) {
+  const images = state.taskImages[task.id];
+  if (!images || !images.length) return "";
+  return `
+    <div class="task-images-section">
+      <span class="detail-label">Images</span>
+      <div class="task-images-gallery">
+        ${images.map((img) => `<img class="task-image-thumb" src="${escapeHtml(img.image)}" alt="Reference image" loading="lazy">`).join("")}
+      </div>
+    </div>
   `;
 }
 
@@ -626,7 +641,7 @@ els.taskBoard.addEventListener("focusout", async (event) => {
 els.taskBoard.addEventListener("click", async (event) => {
   if (event.target.closest(".inline-task-input")) return;
   if (event.target.closest(".inline-status-select")) return;
-  const zoomImage = event.target.closest(".chat-image");
+  const zoomImage = event.target.closest(".chat-image, .task-images-gallery .task-image-thumb");
   if (zoomImage) {
     openImageLightbox(zoomImage.src);
     return;
@@ -767,6 +782,7 @@ async function saveTask(event) {
   await applyFormImages(savedTaskId);
   els.taskDialog.close();
   await loadTaskMessages(state.expandedTaskId);
+  await loadTaskImages(state.expandedTaskId);
   await refreshAll();
 }
 
@@ -890,7 +906,7 @@ async function toggleTaskExpanded(taskId) {
   }
   state.expandedTaskId = taskId;
   state.focusedMessageId = null;
-  await loadTaskMessages(taskId);
+  await Promise.all([loadTaskMessages(taskId), loadTaskImages(taskId)]);
   renderTasks();
   scrollExpandedChatToEnd(taskId);
 }
@@ -898,6 +914,15 @@ async function toggleTaskExpanded(taskId) {
 async function loadTaskMessages(taskId) {
   const data = await api(`/api/tasks/${taskId}/messages`);
   state.taskMessages[taskId] = data.messages;
+}
+
+async function loadTaskImages(taskId) {
+  try {
+    const data = await api(`/api/tasks/${taskId}/images`);
+    state.taskImages[taskId] = data.images || [];
+  } catch {
+    state.taskImages[taskId] = [];
+  }
 }
 
 // --- Task dialog images (staged; only persisted when the form is saved) ---
