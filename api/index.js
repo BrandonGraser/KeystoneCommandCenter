@@ -26,6 +26,7 @@ import {
 } from "../src/db-async.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "../src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "../src/validators.mjs";
+import { buildAuthCookie, verifyPassword } from "../src/auth.mjs";
 
 export const config = {
   api: { bodyParser: false }
@@ -43,6 +44,21 @@ export default async function handler(req, res) {
 
 async function handleApi(request, response, url) {
   const method = request.method || "GET";
+
+  if (url.pathname === "/api/login" && method === "POST") {
+    const body = await readJson(request);
+    if (!verifyPassword(body?.password)) {
+      sendJson(response, 401, { error: "Incorrect password." });
+      return;
+    }
+    const secure = (request.headers["x-forwarded-proto"] || "").includes("https");
+    response.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Set-Cookie": await buildAuthCookie({ secure })
+    });
+    response.end(JSON.stringify({ ok: true }));
+    return;
+  }
 
   if (method === "GET" && url.pathname === "/api/bootstrap") {
     sendJson(response, 200, await getBootstrap());

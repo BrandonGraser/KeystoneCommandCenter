@@ -1,31 +1,25 @@
-export default function middleware(request) {
-  const password = process.env.APP_PASSWORD;
-  if (!password) return;
+import { isAuthed, LOGIN_PATH } from "./src/auth.mjs";
 
-  const authHeader = request.headers.get("authorization") || "";
-  const match = authHeader.match(/^Basic (.+)$/i);
+// Public paths that must stay reachable without a session.
+const PUBLIC_PATHS = new Set([LOGIN_PATH, "/api/login", "/healthz"]);
 
-  if (match) {
-    try {
-      const decoded = atob(match[1]);
-      const sep = decoded.indexOf(":");
-      if (sep >= 0) {
-        const username = decoded.slice(0, sep);
-        const pass = decoded.slice(sep + 1);
-        if (username === (process.env.APP_USERNAME || "keystone") && pass === password) {
-          return;
-        }
-      }
-    } catch {}
+export default async function middleware(request) {
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  if (PUBLIC_PATHS.has(path)) return;
+
+  if (await isAuthed(request.headers.get("cookie") || "")) return;
+
+  // Not signed in: APIs get a 401, page views get sent to the login screen.
+  if (path.startsWith("/api/")) {
+    return new Response(JSON.stringify({ error: "Not authorized." }), {
+      status: 401,
+      headers: { "Content-Type": "application/json; charset=utf-8" }
+    });
   }
 
-  return new Response("Sign in to Keystone Tasks.", {
-    status: 401,
-    headers: {
-      "WWW-Authenticate": 'Basic realm="Keystone Tasks", charset="UTF-8"',
-      "Content-Type": "text/plain; charset=utf-8"
-    }
-  });
+  return Response.redirect(new URL(LOGIN_PATH, request.url), 302);
 }
 
 export const config = {

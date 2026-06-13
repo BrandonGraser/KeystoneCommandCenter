@@ -32,11 +32,12 @@ import {
 import { importWorkbook } from "./src/importer.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "./src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "./src/validators.mjs";
+import { buildAuthCookie, isAuthed, verifyPassword, LOGIN_PATH } from "./src/auth.mjs";
 
 const PORT = Number(process.env.PORT || 4242);
 const PUBLIC_DIR = join(process.cwd(), "public");
-const APP_USERNAME = process.env.APP_USERNAME || "keystone";
-const APP_PASSWORD = process.env.APP_PASSWORD || "";
+
+const PUBLIC_PATHS = new Set([LOGIN_PATH, "/api/login", "/healthz"]);
 
 const server = createServer(async (request, response) => {
   try {
@@ -47,8 +48,18 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    if (!isAuthorized(request)) {
-      requestAuth(response);
+    if (url.pathname === "/api/login" && (request.method || "GET") === "POST") {
+      await handleLogin(request, response);
+      return;
+    }
+
+    if (!PUBLIC_PATHS.has(url.pathname) && !(await isAuthed(request.headers.cookie || ""))) {
+      if (url.pathname.startsWith("/api/")) {
+        sendJson(response, 401, { error: "Not authorized." });
+      } else {
+        response.writeHead(302, { Location: LOGIN_PATH });
+        response.end();
+      }
       return;
     }
 
@@ -358,29 +369,18 @@ function sendText(response, status, text) {
   response.end(text);
 }
 
-function isAuthorized(request) {
-  if (!APP_PASSWORD) return true;
-  const header = request.headers.authorization || "";
-  const [scheme, token] = header.split(" ");
-  if (scheme !== "Basic" || !token) return false;
-
-  try {
-    const decoded = Buffer.from(token, "base64").toString("utf8");
-    const separator = decoded.indexOf(":");
-    const username = separator >= 0 ? decoded.slice(0, separator) : "";
-    const password = separator >= 0 ? decoded.slice(separator + 1) : "";
-    return username === APP_USERNAME && password === APP_PASSWORD;
-  } catch {
-    return false;
+async function handleLogin(request, response) {
+  const body = await readJson(request);
+  if (!verifyPassword(body?.password)) {
+    sendJson(response, 401, { error: "Incorrect password." });
+    return;
   }
-}
-
-function requestAuth(response) {
-  response.writeHead(401, {
-    "Content-Type": "text/plain; charset=utf-8",
-    "WWW-Authenticate": 'Basic realm="Keystone Tasks", charset="UTF-8"'
+  const secure = (request.headers["x-forwarded-proto"] || "").includes("https");
+  response.writeHead(200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Set-Cookie": await buildAuthCookie({ secure })
   });
-  response.end("Sign in to Keystone Tasks.");
+  response.end(JSON.stringify({ ok: true }));
 }
 
 function badRequest(message) {
