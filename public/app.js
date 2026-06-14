@@ -107,6 +107,7 @@ const els = {
   accountPassword: document.querySelector("#accountPassword"),
   accountScheduledThrough: document.querySelector("#accountScheduledThrough"),
   accountFlowstageId: document.querySelector("#accountFlowstageId"),
+  accountFlowstageSelect: document.querySelector("#accountFlowstageSelect"),
   accountSteps: document.querySelector("#accountSteps"),
   addAccountStep: document.querySelector("#addAccountStep")
 };
@@ -1729,7 +1730,8 @@ const accountsState = {
   accounts: [],
   loaded: false,
   editing: null,
-  steps: [] // working copy while the dialog is open
+  steps: [], // working copy while the dialog is open
+  flowstageAccounts: null // cached list of connected FlowStage accounts
 };
 
 function getStoredTab() {
@@ -1772,6 +1774,10 @@ function bindAccountEvents() {
   els.accountForm.addEventListener("submit", saveAccount);
   els.deleteAccount.addEventListener("click", deleteCurrentAccount);
   els.accountBoard.addEventListener("click", onAccountBoardClick);
+  els.accountFlowstageSelect.addEventListener("change", () => {
+    // Picking a connected FlowStage account fills the id we actually save.
+    if (els.accountFlowstageSelect.value) els.accountFlowstageId.value = els.accountFlowstageSelect.value;
+  });
 }
 
 function switchTab(tab) {
@@ -1878,8 +1884,45 @@ function openAccountDialog(account = null) {
     ? (account.steps || []).map((step) => ({ label: step.label, assignee: step.assignee || "" }))
     : DEFAULT_ACCOUNT_STEPS_UI.map((label) => ({ label, assignee: "" }));
   renderAccountSteps();
+  populateFlowstageAccounts(account?.flowstage_account_id || "");
   els.deleteAccount.hidden = !account;
   els.accountDialog.showModal();
+}
+
+// Fill the "FlowStage Account" dropdown from the team's connected accounts so a
+// row can be linked by handle instead of pasting a UUID. Falls back gracefully
+// to the manual id field if the list can't be loaded (e.g. key not set).
+async function populateFlowstageAccounts(currentId) {
+  const select = els.accountFlowstageSelect;
+  select.innerHTML = `<option value="">Not linked</option>`;
+  try {
+    if (!accountsState.flowstageAccounts) {
+      const data = await api("/api/flowstage/social-accounts");
+      accountsState.flowstageAccounts = data.accounts || [];
+    }
+    for (const account of accountsState.flowstageAccounts) {
+      const option = document.createElement("option");
+      option.value = account.id;
+      option.textContent = `${account.handle || account.id}${account.platform ? ` (${account.platform})` : ""}`;
+      select.appendChild(option);
+    }
+    // If the saved id isn't in the list, keep it as a manual entry option.
+    if (currentId && !accountsState.flowstageAccounts.some((a) => a.id === currentId)) {
+      const option = document.createElement("option");
+      option.value = currentId;
+      option.textContent = `${currentId} (manual)`;
+      select.appendChild(option);
+    }
+    select.value = currentId || "";
+  } catch {
+    // Not configured or unreachable — the manual id field still works.
+    accountsState.flowstageAccounts = null;
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Could not load — enter id manually";
+    select.appendChild(option);
+    select.value = "";
+  }
 }
 
 function renderAccountSteps() {

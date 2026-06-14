@@ -33,7 +33,7 @@ import {
 import { sendRingNotification, sendTaskDoneNotification } from "../src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "../src/validators.mjs";
 import { buildAuthCookie, verifyPassword } from "../src/auth.mjs";
-import { getScheduledThrough } from "../src/flowstage.mjs";
+import { getScheduledThrough, listSocialAccounts } from "../src/flowstage.mjs";
 
 export const config = {
   api: { bodyParser: false }
@@ -203,6 +203,10 @@ async function handleApi(request, response, url) {
   }
 
   // --- TikTok accounts (FlowStage tab) -----------------------------------
+  if (url.pathname === "/api/flowstage/social-accounts" && method === "GET") {
+    sendJson(response, 200, { accounts: await listSocialAccounts() });
+    return;
+  }
   if (url.pathname === "/api/tiktok-accounts" && method === "GET") {
     sendJson(response, 200, { accounts: await listTikTokAccounts() });
     return;

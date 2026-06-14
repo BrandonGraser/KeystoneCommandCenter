@@ -287,10 +287,18 @@
             <input id="accountScheduledThrough" type="date">
           </label>
         </div>
-        <label>
-          <span>FlowStage Account ID</span>
-          <input id="accountFlowstageId" type="text" autocomplete="off" placeholder="For FlowStage API sync (optional)">
-        </label>
+        <div class="form-grid form-grid-2">
+          <label>
+            <span>FlowStage Account</span>
+            <select id="accountFlowstageSelect">
+              <option value="">Not linked</option>
+            </select>
+          </label>
+          <label>
+            <span>FlowStage Account ID</span>
+            <input id="accountFlowstageId" type="text" autocomplete="off" placeholder="Auto-filled when you pick at left">
+          </label>
+        </div>
         <div class="workflow-section">
           <div class="section-line">
             <span>Process Steps</span>

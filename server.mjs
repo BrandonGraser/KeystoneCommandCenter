@@ -38,7 +38,7 @@ import {
 import { importWorkbook } from "./src/importer.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "./src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "./src/validators.mjs";
-import { getScheduledThrough } from "./src/flowstage.mjs";
+import { getScheduledThrough, listSocialAccounts } from "./src/flowstage.mjs";
 import { buildAuthCookie, isAuthed, verifyPassword, LOGIN_PATH } from "./src/auth.mjs";
 
 const PORT = Number(process.env.PORT || 4242);
@@ -231,6 +231,10 @@ async function handleApi(request, response, url) {
   }
 
   // --- TikTok accounts (FlowStage tab) -----------------------------------
+  if (url.pathname === "/api/flowstage/social-accounts" && method === "GET") {
+    sendJson(response, 200, { accounts: await listSocialAccounts() });
+    return;
+  }
   if (url.pathname === "/api/tiktok-accounts" && method === "GET") {
     sendJson(response, 200, { accounts: listTikTokAccounts() });
     return;
