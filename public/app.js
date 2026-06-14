@@ -100,6 +100,8 @@ const els = {
   deleteAccount: document.querySelector("#deleteAccount"),
   accountId: document.querySelector("#accountId"),
   accountName: document.querySelector("#accountName"),
+  accountNameSelect: document.querySelector("#accountNameSelect"),
+  accountNameCustomRow: document.querySelector("#accountNameCustomRow"),
   accountAeUrl: document.querySelector("#accountAeUrl"),
   accountTutorialUrl: document.querySelector("#accountTutorialUrl"),
   accountUsername: document.querySelector("#accountUsername"),
@@ -107,7 +109,6 @@ const els = {
   accountPassword: document.querySelector("#accountPassword"),
   accountScheduledThrough: document.querySelector("#accountScheduledThrough"),
   accountFlowstageId: document.querySelector("#accountFlowstageId"),
-  accountFlowstageSelect: document.querySelector("#accountFlowstageSelect"),
   accountSteps: document.querySelector("#accountSteps"),
   addAccountStep: document.querySelector("#addAccountStep")
 };
@@ -1774,10 +1775,22 @@ function bindAccountEvents() {
   els.accountForm.addEventListener("submit", saveAccount);
   els.deleteAccount.addEventListener("click", deleteCurrentAccount);
   els.accountBoard.addEventListener("click", onAccountBoardClick);
-  els.accountFlowstageSelect.addEventListener("change", () => {
-    // Picking a connected FlowStage account fills the id we actually save.
-    if (els.accountFlowstageSelect.value) els.accountFlowstageId.value = els.accountFlowstageSelect.value;
-  });
+  els.accountNameSelect.addEventListener("change", onAccountNameSelectChange);
+}
+
+// The account name IS the FlowStage account: picking one sets the name + links
+// the id. "Custom name" reveals a text field for accounts not on FlowStage.
+function onAccountNameSelectChange() {
+  const value = els.accountNameSelect.value;
+  if (value === "__custom__") {
+    els.accountNameCustomRow.hidden = false;
+    els.accountFlowstageId.value = "";
+    els.accountName.value = "";
+    els.accountName.focus();
+  } else {
+    els.accountNameCustomRow.hidden = true;
+    els.accountFlowstageId.value = value;
+  }
 }
 
 function switchTab(tab) {
@@ -1884,44 +1897,55 @@ function openAccountDialog(account = null) {
     ? (account.steps || []).map((step) => ({ label: step.label, assignee: step.assignee || "" }))
     : DEFAULT_ACCOUNT_STEPS_UI.map((label) => ({ label, assignee: "" }));
   renderAccountSteps();
-  populateFlowstageAccounts(account?.flowstage_account_id || "");
+  populateAccountNameOptions(account);
   els.deleteAccount.hidden = !account;
   els.accountDialog.showModal();
 }
 
-// Fill the "FlowStage Account" dropdown from the team's connected accounts so a
-// row can be linked by handle instead of pasting a UUID. Falls back gracefully
-// to the manual id field if the list can't be loaded (e.g. key not set).
-async function populateFlowstageAccounts(currentId) {
-  const select = els.accountFlowstageSelect;
-  select.innerHTML = `<option value="">Not linked</option>`;
+// Build the Account Name dropdown from the team's connected FlowStage accounts.
+// Selecting one sets the name (handle) and links its id. A "Custom name" option
+// (and the fallback when the list can't load) reveals a free-text name field.
+async function populateAccountNameOptions(account) {
+  const select = els.accountNameSelect;
+  const currentId = account?.flowstage_account_id || "";
+  const currentName = account?.name || "";
+  select.innerHTML = `<option value="">Select a FlowStage account…</option>`;
+
+  let listed = [];
   try {
     if (!accountsState.flowstageAccounts) {
       const data = await api("/api/flowstage/social-accounts");
       accountsState.flowstageAccounts = data.accounts || [];
     }
-    for (const account of accountsState.flowstageAccounts) {
-      const option = document.createElement("option");
-      option.value = account.id;
-      option.textContent = `${account.handle || account.id}${account.platform ? ` (${account.platform})` : ""}`;
-      select.appendChild(option);
-    }
-    // If the saved id isn't in the list, keep it as a manual entry option.
-    if (currentId && !accountsState.flowstageAccounts.some((a) => a.id === currentId)) {
-      const option = document.createElement("option");
-      option.value = currentId;
-      option.textContent = `${currentId} (manual)`;
-      select.appendChild(option);
-    }
-    select.value = currentId || "";
+    listed = accountsState.flowstageAccounts;
   } catch {
-    // Not configured or unreachable — the manual id field still works.
     accountsState.flowstageAccounts = null;
+  }
+
+  for (const item of listed) {
     const option = document.createElement("option");
-    option.value = "";
-    option.textContent = "Could not load — enter id manually";
+    option.value = item.id;
+    option.dataset.handle = item.handle || item.id;
+    option.textContent = `${item.handle || item.id}${item.platform ? ` (${item.platform})` : ""}`;
     select.appendChild(option);
+  }
+  const customOption = document.createElement("option");
+  customOption.value = "__custom__";
+  customOption.textContent = "Custom name (not on FlowStage)";
+  select.appendChild(customOption);
+
+  // Decide the initial selection / whether to show the custom text field.
+  if (currentId && listed.some((item) => item.id === currentId)) {
+    select.value = currentId;
+    els.accountNameCustomRow.hidden = true;
+  } else if (currentName) {
+    // Editing a custom/unlinked account, or the list couldn't load.
+    select.value = "__custom__";
+    els.accountName.value = currentName;
+    els.accountNameCustomRow.hidden = false;
+  } else {
     select.value = "";
+    els.accountNameCustomRow.hidden = true;
   }
 }
 
@@ -1950,21 +1974,33 @@ function syncStepFromEvent(event) {
 async function saveAccount(event) {
   event.preventDefault();
   const id = els.accountId.value;
+
+  // Resolve the name + FlowStage link from the merged Account Name dropdown.
+  const selected = els.accountNameSelect.value;
+  let name = "";
+  let flowstageId = "";
+  if (selected === "__custom__") {
+    name = els.accountName.value.trim();
+  } else if (selected) {
+    name = els.accountNameSelect.selectedOptions[0]?.dataset.handle || els.accountNameSelect.selectedOptions[0]?.textContent || "";
+    flowstageId = selected;
+  }
+
   const payload = {
-    name: els.accountName.value.trim(),
+    name,
     ae_project_url: els.accountAeUrl.value.trim(),
     tutorial_url: els.accountTutorialUrl.value.trim(),
     username: els.accountUsername.value.trim(),
     email: els.accountEmail.value.trim(),
     password: els.accountPassword.value,
     scheduled_through: els.accountScheduledThrough.value || "",
-    flowstage_account_id: els.accountFlowstageId.value.trim(),
+    flowstage_account_id: flowstageId,
     steps: accountsState.steps
       .map((step) => ({ label: step.label.trim(), assignee: step.assignee }))
       .filter((step) => step.label)
   };
   if (!payload.name) {
-    showNotice("Account name is required.", "bad");
+    showNotice("Choose a FlowStage account or enter a custom name.", "bad");
     return;
   }
   if (id) await api(`/api/tiktok-accounts/${id}`, { method: "PATCH", body: payload });

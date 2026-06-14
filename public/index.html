@@ -255,7 +255,11 @@
 
         <label>
           <span>Account Name</span>
-          <input id="accountName" type="text" required>
+          <select id="accountNameSelect"></select>
+        </label>
+        <label id="accountNameCustomRow" hidden>
+          <span>Custom Account Name</span>
+          <input id="accountName" type="text" autocomplete="off">
         </label>
         <div class="form-grid form-grid-2">
           <label>
@@ -287,18 +291,7 @@
             <input id="accountScheduledThrough" type="date">
           </label>
         </div>
-        <div class="form-grid form-grid-2">
-          <label>
-            <span>FlowStage Account</span>
-            <select id="accountFlowstageSelect">
-              <option value="">Not linked</option>
-            </select>
-          </label>
-          <label>
-            <span>FlowStage Account ID</span>
-            <input id="accountFlowstageId" type="text" autocomplete="off" placeholder="Auto-filled when you pick at left">
-          </label>
-        </div>
+        <input type="hidden" id="accountFlowstageId">
         <div class="workflow-section">
           <div class="section-line">
             <span>Process Steps</span>
