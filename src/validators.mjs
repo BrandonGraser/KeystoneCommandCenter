@@ -156,6 +156,46 @@ export function validateWorkflowStepPayload(input) {
   return { label };
 }
 
+// --- TikTok accounts (FlowStage tab) -------------------------------------
+// These are wholly independent of tasks; they share only generic helpers.
+
+export const DEFAULT_ACCOUNT_STEPS = ["AI", "Editor", "Scheduler", "Poster"];
+
+export function validateAccountStepPayload(input) {
+  const label = cleanText(input?.label);
+  if (!label) return null;
+  return { label, assignee: normalizeAssignee(input?.assignee) };
+}
+
+export function validateAccountPayload(input, { partial = false } = {}) {
+  const errors = [];
+  const output = {};
+
+  if (!partial || "name" in input) {
+    output.name = cleanText(input.name);
+    if (!output.name) errors.push("Account name is required.");
+  }
+
+  for (const field of ["ae_project_url", "tutorial_url", "username", "email", "password", "flowstage_account_id"]) {
+    if (field in input) output[field] = cleanText(input[field]);
+  }
+  if ("scheduled_through" in input) output.scheduled_through = normalizeDateInput(input.scheduled_through);
+
+  if ("steps" in input) {
+    output.steps = Array.isArray(input.steps)
+      ? input.steps.map(validateAccountStepPayload).filter(Boolean)
+      : [];
+  }
+
+  if (errors.length) {
+    const error = new Error(errors.join(" "));
+    error.status = 400;
+    throw error;
+  }
+
+  return output;
+}
+
 export function normalizeDateInput(value) {
   const text = cleanText(value);
   if (!text) return null;

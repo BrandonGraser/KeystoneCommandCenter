@@ -84,7 +84,31 @@ const els = {
   resourceUrl: document.querySelector("#resourceUrl"),
   resourceLoginFields: document.querySelector("#resourceLoginFields"),
   resourceUsername: document.querySelector("#resourceUsername"),
-  resourcePassword: document.querySelector("#resourcePassword")
+  resourcePassword: document.querySelector("#resourcePassword"),
+  mainTabs: document.querySelector("#mainTabs"),
+  tasksView: document.querySelector("#tasksView"),
+  accountsView: document.querySelector("#accountsView"),
+  accountBoard: document.querySelector("#accountBoard"),
+  addAccount: document.querySelector("#addAccount"),
+  syncAllAccounts: document.querySelector("#syncAllAccounts"),
+  accountDialog: document.querySelector("#accountDialog"),
+  accountForm: document.querySelector("#accountForm"),
+  accountDialogTitle: document.querySelector("#accountDialogTitle"),
+  accountDialogMode: document.querySelector("#accountDialogMode"),
+  closeAccountDialog: document.querySelector("#closeAccountDialog"),
+  cancelAccount: document.querySelector("#cancelAccount"),
+  deleteAccount: document.querySelector("#deleteAccount"),
+  accountId: document.querySelector("#accountId"),
+  accountName: document.querySelector("#accountName"),
+  accountAeUrl: document.querySelector("#accountAeUrl"),
+  accountTutorialUrl: document.querySelector("#accountTutorialUrl"),
+  accountUsername: document.querySelector("#accountUsername"),
+  accountEmail: document.querySelector("#accountEmail"),
+  accountPassword: document.querySelector("#accountPassword"),
+  accountScheduledThrough: document.querySelector("#accountScheduledThrough"),
+  accountFlowstageId: document.querySelector("#accountFlowstageId"),
+  accountSteps: document.querySelector("#accountSteps"),
+  addAccountStep: document.querySelector("#addAccountStep")
 };
 
 const SYNC_INTERVAL_MS = 5000;
@@ -103,6 +127,9 @@ async function init() {
   renderLinkInputs();
   applyStoredResourceCollapse();
   await Promise.all([loadTasks(), loadResources()]);
+  // Restore the last-used tab here (not during bindEvents): this runs after the
+  // module has fully evaluated, so the accounts state/consts are initialized.
+  switchTab(getStoredTab());
   startLiveSync();
 }
 
@@ -250,6 +277,7 @@ function bindEvents() {
   els.taskWorkflow.addEventListener("click", removeWorkflowStep);
   els.taskForm.addEventListener("submit", saveTask);
   els.archiveTask.addEventListener("click", archiveCurrentTask);
+  bindAccountEvents();
   els.taskImages.addEventListener("click", (event) => {
     if (event.target.closest(".task-image-browse")) {
       els.taskImages.querySelector(".task-image-input")?.click();
@@ -1688,4 +1716,253 @@ function taskStatusMeta(status, done = false) {
     "BRB": { className: "brb", label: "BRB" }
   };
   return map[status] || { className: "misc", label: status };
+}
+
+// ===================================================================
+// TikTok Accounts tab (FlowStage content tracking).
+// Fully independent of the task board: own state, render, dialog, API.
+// ===================================================================
+
+const DEFAULT_ACCOUNT_STEPS_UI = ["AI", "Editor", "Scheduler", "Poster"];
+
+const accountsState = {
+  accounts: [],
+  loaded: false,
+  editing: null,
+  steps: [] // working copy while the dialog is open
+};
+
+function getStoredTab() {
+  try {
+    return localStorage.getItem("keystone-active-tab") || "tasks";
+  } catch {
+    return "tasks";
+  }
+}
+
+function setStoredTab(tab) {
+  try {
+    localStorage.setItem("keystone-active-tab", tab);
+  } catch {
+    // Tab choice just won't persist if storage is unavailable.
+  }
+}
+
+function bindAccountEvents() {
+  els.mainTabs.addEventListener("click", (event) => {
+    const button = event.target.closest(".main-tab");
+    if (button) switchTab(button.dataset.tab);
+  });
+  els.addAccount.addEventListener("click", () => openAccountDialog());
+  els.syncAllAccounts.addEventListener("click", syncAllAccountsNow);
+  els.closeAccountDialog.addEventListener("click", () => els.accountDialog.close());
+  els.cancelAccount.addEventListener("click", () => els.accountDialog.close());
+  els.addAccountStep.addEventListener("click", () => {
+    accountsState.steps.push({ label: "", assignee: "" });
+    renderAccountSteps();
+  });
+  els.accountSteps.addEventListener("input", syncStepFromEvent);
+  els.accountSteps.addEventListener("change", syncStepFromEvent);
+  els.accountSteps.addEventListener("click", (event) => {
+    const remove = event.target.closest(".account-step-remove");
+    if (!remove) return;
+    accountsState.steps.splice(Number(remove.dataset.stepIndex), 1);
+    renderAccountSteps();
+  });
+  els.accountForm.addEventListener("submit", saveAccount);
+  els.deleteAccount.addEventListener("click", deleteCurrentAccount);
+  els.accountBoard.addEventListener("click", onAccountBoardClick);
+}
+
+function switchTab(tab) {
+  const isAccounts = tab === "accounts";
+  els.tasksView.hidden = isAccounts;
+  els.accountsView.hidden = !isAccounts;
+  els.mainTabs.querySelectorAll(".main-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.tab === tab);
+  });
+  setStoredTab(tab);
+  if (isAccounts && !accountsState.loaded) loadAccounts();
+}
+
+async function loadAccounts() {
+  const data = await api("/api/tiktok-accounts");
+  accountsState.accounts = data.accounts || [];
+  accountsState.loaded = true;
+  renderAccounts();
+}
+
+function renderAccounts() {
+  if (!accountsState.accounts.length) {
+    els.accountBoard.innerHTML = `<p class="detail-empty account-empty">No accounts yet. Add one to start tracking content runout.</p>`;
+    return;
+  }
+  els.accountBoard.innerHTML = accountsState.accounts.map(renderAccountRow).join("");
+}
+
+// Days of scheduled content left, color-coded by how soon the account runs dry.
+function runoutState(dateStr) {
+  if (!dateStr) return { className: "none", label: "No schedule", title: "No scheduled-through date set" };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(`${dateStr}T00:00:00`);
+  const days = Math.round((target - today) / 86400000);
+  const title = `Content scheduled through ${dateStr}`;
+  if (days < 0) return { className: "overdue", label: "Out of content", title };
+  if (days === 0) return { className: "today", label: "Runs out today", title };
+  if (days === 1) return { className: "today", label: "1 day left", title };
+  if (days <= 3) return { className: "soon", label: `${days} days left`, title };
+  if (days <= 7) return { className: "week", label: `${days} days left`, title };
+  return { className: "ok", label: `${days} days left`, title };
+}
+
+function renderAccountRow(account) {
+  const runout = runoutState(account.runout_date);
+  const stepChips = (account.steps || []).map((step) => `
+    <span class="account-step-chip">
+      <span class="account-step-chip-label">${escapeHtml(step.label)}</span>
+      ${step.assignee
+        ? `<span class="author-name author-${authorSlug(step.assignee)}">${escapeHtml(step.assignee)}</span>`
+        : `<span class="account-step-unassigned">—</span>`}
+    </span>
+  `).join("");
+  const links = [];
+  if (account.ae_project_url) links.push(`<a href="${escapeHtml(account.ae_project_url)}" target="_blank" rel="noreferrer">AE Project</a>`);
+  if (account.tutorial_url) links.push(`<a href="${escapeHtml(account.tutorial_url)}" target="_blank" rel="noreferrer">Tutorial</a>`);
+  return `
+    <article class="account-row" data-account-id="${account.id}">
+      <div class="account-main">
+        <div class="account-headline">
+          <span class="account-name">${escapeHtml(account.name)}</span>
+          <span class="runout-badge runout-${runout.className}" title="${escapeHtml(runout.title)}">${escapeHtml(runout.label)}</span>
+        </div>
+        <div class="account-steps-row">${stepChips || `<span class="detail-empty">No steps</span>`}</div>
+        ${links.length ? `<div class="account-links">${links.join("")}</div>` : ""}
+      </div>
+      <div class="account-actions">
+        <button type="button" data-action="sync-account" title="Pull scheduled-through date from FlowStage">Sync</button>
+        <button type="button" data-action="edit-account">Edit</button>
+      </div>
+    </article>
+  `;
+}
+
+async function onAccountBoardClick(event) {
+  const row = event.target.closest(".account-row");
+  if (!row) return;
+  const id = Number(row.dataset.accountId);
+  const account = accountsState.accounts.find((item) => item.id === id);
+  if (event.target.closest("[data-action='edit-account']")) {
+    openAccountDialog(account);
+    return;
+  }
+  if (event.target.closest("[data-action='sync-account']")) {
+    await syncAccount(id);
+  }
+}
+
+function openAccountDialog(account = null) {
+  accountsState.editing = account;
+  els.accountDialogTitle.textContent = account ? "Edit account" : "Add account";
+  els.accountDialogMode.textContent = account ? `Account #${account.id}` : "New TikTok account";
+  els.accountId.value = account?.id || "";
+  els.accountName.value = account?.name || "";
+  els.accountAeUrl.value = account?.ae_project_url || "";
+  els.accountTutorialUrl.value = account?.tutorial_url || "";
+  els.accountUsername.value = account?.username || "";
+  els.accountEmail.value = account?.email || "";
+  els.accountPassword.value = account?.password || "";
+  els.accountScheduledThrough.value = account?.scheduled_through || "";
+  els.accountFlowstageId.value = account?.flowstage_account_id || "";
+  accountsState.steps = account
+    ? (account.steps || []).map((step) => ({ label: step.label, assignee: step.assignee || "" }))
+    : DEFAULT_ACCOUNT_STEPS_UI.map((label) => ({ label, assignee: "" }));
+  renderAccountSteps();
+  els.deleteAccount.hidden = !account;
+  els.accountDialog.showModal();
+}
+
+function renderAccountSteps() {
+  els.accountSteps.innerHTML = accountsState.steps.map((step, index) => `
+    <div class="account-step-item">
+      <input class="account-step-input" data-step-index="${index}" data-field="label" value="${escapeHtml(step.label)}" placeholder="Step (e.g. Editor)" aria-label="Step name">
+      <select class="account-step-select" data-step-index="${index}" data-field="assignee" aria-label="Assignee">
+        <option value="">Unassigned</option>
+        ${state.assignees.map((name) => `<option value="${escapeHtml(name)}"${name === step.assignee ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+      </select>
+      <button type="button" class="account-step-remove" data-step-index="${index}" title="Remove step">×</button>
+    </div>
+  `).join("");
+}
+
+// Keep the in-memory step list in sync with edits so add/remove re-renders
+// don't wipe out what the user just typed.
+function syncStepFromEvent(event) {
+  const field = event.target.closest("[data-field]");
+  if (!field) return;
+  const index = Number(field.dataset.stepIndex);
+  if (accountsState.steps[index]) accountsState.steps[index][field.dataset.field] = field.value;
+}
+
+async function saveAccount(event) {
+  event.preventDefault();
+  const id = els.accountId.value;
+  const payload = {
+    name: els.accountName.value.trim(),
+    ae_project_url: els.accountAeUrl.value.trim(),
+    tutorial_url: els.accountTutorialUrl.value.trim(),
+    username: els.accountUsername.value.trim(),
+    email: els.accountEmail.value.trim(),
+    password: els.accountPassword.value,
+    scheduled_through: els.accountScheduledThrough.value || "",
+    flowstage_account_id: els.accountFlowstageId.value.trim(),
+    steps: accountsState.steps
+      .map((step) => ({ label: step.label.trim(), assignee: step.assignee }))
+      .filter((step) => step.label)
+  };
+  if (!payload.name) {
+    showNotice("Account name is required.", "bad");
+    return;
+  }
+  if (id) await api(`/api/tiktok-accounts/${id}`, { method: "PATCH", body: payload });
+  else await api("/api/tiktok-accounts", { method: "POST", body: payload });
+  els.accountDialog.close();
+  await loadAccounts();
+}
+
+async function deleteCurrentAccount() {
+  const id = els.accountId.value;
+  if (!id) return;
+  if (!window.confirm("Delete this account? This cannot be undone.")) return;
+  await api(`/api/tiktok-accounts/${id}`, { method: "DELETE" });
+  els.accountDialog.close();
+  await loadAccounts();
+}
+
+async function syncAccount(id) {
+  try {
+    showNotice("Syncing with FlowStage…");
+    await api(`/api/tiktok-accounts/${id}/sync`, { method: "POST" });
+    await loadAccounts();
+    showNotice("FlowStage sync complete.", "good");
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
+}
+
+async function syncAllAccountsNow() {
+  try {
+    showNotice("Syncing all accounts with FlowStage…");
+    const data = await api("/api/tiktok-accounts/sync", { method: "POST" });
+    await loadAccounts();
+    const results = data.results || [];
+    const failures = results.filter((result) => !result.ok);
+    if (results.length && failures.length === results.length) {
+      showNotice(failures[0].reason, "bad");
+    } else {
+      showNotice("FlowStage sync complete.", "good");
+    }
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
 }

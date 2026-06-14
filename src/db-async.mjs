@@ -1,5 +1,5 @@
 import { createClient } from "@libsql/client";
-import { ASSIGNEES, DAILY_CATEGORIES, STATUSES, cleanMultiline, validateTaskPayload } from "./validators.mjs";
+import { ASSIGNEES, DAILY_CATEGORIES, DEFAULT_ACCOUNT_STEPS, STATUSES, cleanMultiline, validateAccountPayload, validateTaskPayload } from "./validators.mjs";
 
 let _initPromise = null;
 
@@ -173,6 +173,35 @@ async function migrate(client) {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS tiktok_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        ae_project_url TEXT,
+        tutorial_url TEXT,
+        username TEXT,
+        email TEXT,
+        password TEXT,
+        scheduled_through TEXT,
+        flowstage_account_id TEXT,
+        flowstage_synced_through TEXT,
+        flowstage_synced_at TEXT,
+        archived INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS tiktok_account_steps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        label TEXT NOT NULL,
+        assignee TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (account_id) REFERENCES tiktok_accounts(id) ON DELETE CASCADE
+      )`
     }
   ], "write");
 
@@ -189,7 +218,8 @@ async function migrate(client) {
     { sql: "CREATE INDEX IF NOT EXISTS idx_resource_items_section ON resource_items (section, sort_order)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks (category)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_daily_notes_category ON daily_notes (category)" },
-    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks (archived_at)" }
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks (archived_at)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_account_steps_account ON tiktok_account_steps (account_id)" }
   ], "write");
 
   const dailyCols = await client.execute("PRAGMA table_info(daily_notes)");
@@ -649,6 +679,120 @@ export async function deleteResourceItem(id) {
   const client = await getDb();
   await client.execute({ sql: "DELETE FROM resource_items WHERE id = ?", args: [Number(id)] });
   return { ok: true };
+}
+
+// --- TikTok accounts (FlowStage tab) -------------------------------------
+// Fully independent of tasks: own tables, own helpers.
+
+async function hydrateAccount(row, columns, client) {
+  const account = toRow(columns, row);
+  const steps = await client.execute({
+    sql: "SELECT id, label, assignee, position FROM tiktok_account_steps WHERE account_id = ? ORDER BY position ASC, id ASC",
+    args: [account.id]
+  });
+  return {
+    ...account,
+    archived: Boolean(account.archived),
+    runout_date: account.flowstage_synced_through || account.scheduled_through || null,
+    steps: steps.rows.map((r) => toRow(steps.columns, r))
+  };
+}
+
+export async function listTikTokAccounts() {
+  const client = await getDb();
+  const result = await client.execute(`
+    SELECT * FROM tiktok_accounts
+    WHERE archived = 0
+    ORDER BY
+      coalesce(flowstage_synced_through, scheduled_through) IS NULL ASC,
+      coalesce(flowstage_synced_through, scheduled_through) ASC,
+      sort_order ASC, id ASC
+  `);
+  return Promise.all(result.rows.map((row) => hydrateAccount(row, result.columns, client)));
+}
+
+export async function getTikTokAccount(id) {
+  const client = await getDb();
+  const result = await client.execute({ sql: "SELECT * FROM tiktok_accounts WHERE id = ?", args: [Number(id)] });
+  if (!result.rows[0]) return null;
+  return hydrateAccount(result.rows[0], result.columns, client);
+}
+
+export async function createTikTokAccount(input) {
+  const payload = validateAccountPayload(input);
+  const client = await getDb();
+  const maxR = await client.execute("SELECT coalesce(max(sort_order), 0) AS sort_order FROM tiktok_accounts");
+  const maxOrder = Number(maxR.rows[0]?.["sort_order"] ?? 0);
+  const result = await client.execute({
+    sql: `INSERT INTO tiktok_accounts (
+      name, ae_project_url, tutorial_url, username, email, password,
+      scheduled_through, flowstage_account_id, sort_order
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      payload.name,
+      payload.ae_project_url || null,
+      payload.tutorial_url || null,
+      payload.username || null,
+      payload.email || null,
+      payload.password || null,
+      payload.scheduled_through || null,
+      payload.flowstage_account_id || null,
+      maxOrder + 1
+    ]
+  });
+  const accountId = Number(result.lastInsertRowid);
+  const steps = payload.steps && payload.steps.length
+    ? payload.steps
+    : DEFAULT_ACCOUNT_STEPS.map((label) => ({ label, assignee: null }));
+  await _replaceAccountSteps(accountId, steps, client);
+  return getTikTokAccount(accountId);
+}
+
+export async function updateTikTokAccount(id, input) {
+  const account = await getTikTokAccount(id);
+  if (!account) return null;
+  const payload = validateAccountPayload(input, { partial: true });
+  const sets = [];
+  const params = [];
+  for (const field of ["name", "ae_project_url", "tutorial_url", "username", "email", "password", "scheduled_through", "flowstage_account_id"]) {
+    if (field in payload) {
+      sets.push(`${field} = ?`);
+      params.push(payload[field] || null);
+    }
+  }
+  const client = await getDb();
+  if (sets.length) {
+    sets.push("updated_at = datetime('now')");
+    params.push(Number(id));
+    await client.execute({ sql: `UPDATE tiktok_accounts SET ${sets.join(", ")} WHERE id = ?`, args: params });
+  }
+  if ("steps" in payload) await _replaceAccountSteps(Number(id), payload.steps || [], client);
+  return getTikTokAccount(id);
+}
+
+async function _replaceAccountSteps(accountId, steps, client) {
+  await client.execute({ sql: "DELETE FROM tiktok_account_steps WHERE account_id = ?", args: [accountId] });
+  for (let i = 0; i < steps.length; i++) {
+    await client.execute({
+      sql: "INSERT INTO tiktok_account_steps (account_id, label, assignee, position) VALUES (?, ?, ?, ?)",
+      args: [accountId, steps[i].label, steps[i].assignee || null, i + 1]
+    });
+  }
+}
+
+export async function setAccountFlowstageSync(id, scheduledThrough) {
+  const client = await getDb();
+  await client.execute({
+    sql: "UPDATE tiktok_accounts SET flowstage_synced_through = ?, flowstage_synced_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+    args: [scheduledThrough || null, Number(id)]
+  });
+  return getTikTokAccount(id);
+}
+
+export async function deleteTikTokAccount(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM tiktok_accounts WHERE id = ?", args: [Number(id)] });
+  return { deleted: true };
 }
 
 export async function getBootstrap() {

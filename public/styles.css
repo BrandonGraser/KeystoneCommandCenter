@@ -1819,3 +1819,201 @@ dialog::backdrop {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* ------------------------------------------------------------------
+   TikTok Accounts tab (FlowStage) — reuses the terminal tokens.
+------------------------------------------------------------------- */
+
+.main-tabs {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+
+.main-tab {
+  min-height: 36px;
+  padding: 0 18px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.main-tab:last-child {
+  border-right: 0;
+}
+
+.main-tab.active {
+  background: var(--invert-bg);
+  color: var(--invert-ink);
+}
+
+.accounts-controls {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.accounts-subhead {
+  margin: 4px 0 0;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.accounts-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.account-board {
+  display: grid;
+  gap: 10px;
+}
+
+.account-empty {
+  padding: 24px 14px;
+  text-align: center;
+}
+
+.account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 12px 14px;
+}
+
+.account-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.account-headline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.account-name {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.runout-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.runout-overdue { color: var(--due-overdue); border-color: var(--due-overdue); }
+.runout-today   { color: var(--due-today); border-color: var(--due-today); }
+.runout-soon    { color: var(--due-tomorrow); border-color: var(--due-tomorrow); }
+.runout-week    { color: var(--due-soon); border-color: var(--due-soon); }
+.runout-ok      { color: var(--due-upcoming); border-color: var(--due-upcoming); }
+.runout-none    { color: var(--due-none); border-color: var(--line); }
+
+.account-steps-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.account-step-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  font-size: 10px;
+}
+
+.account-step-chip-label {
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.account-step-unassigned {
+  color: var(--muted-2);
+}
+
+.account-links {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.account-actions button {
+  min-height: 26px;
+  padding: 0 10px;
+  border-color: var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.account-actions button:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+/* Account dialog — configurable steps builder */
+.account-step-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.account-step-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px 30px;
+  gap: 8px;
+  align-items: center;
+}
+
+.account-step-remove {
+  min-height: 30px;
+  padding: 0;
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.account-step-remove:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  .account-row {
+    grid-template-columns: 1fr;
+  }
+
+  .account-actions {
+    justify-content: flex-end;
+  }
+
+  .account-step-item {
+    grid-template-columns: minmax(0, 1fr) 100px 30px;
+  }
+}

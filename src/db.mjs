@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ASSIGNEES, DAILY_CATEGORIES, STATUSES, cleanMultiline, validateTaskPayload } from "./validators.mjs";
+import { ASSIGNEES, DAILY_CATEGORIES, DEFAULT_ACCOUNT_STEPS, STATUSES, cleanMultiline, validateAccountPayload, validateTaskPayload } from "./validators.mjs";
 
 const DB_PATH = process.env.DB_PATH
   ? resolve(process.env.DB_PATH)
@@ -134,6 +134,34 @@ function migrate(database) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS tiktok_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      ae_project_url TEXT,
+      tutorial_url TEXT,
+      username TEXT,
+      email TEXT,
+      password TEXT,
+      scheduled_through TEXT,
+      flowstage_account_id TEXT,
+      flowstage_synced_through TEXT,
+      flowstage_synced_at TEXT,
+      archived INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS tiktok_account_steps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      assignee TEXT,
+      position INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (account_id) REFERENCES tiktok_accounts(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tiktok_account_steps_account ON tiktok_account_steps (account_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks (assignee);
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status);
     CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks (due_date);
@@ -554,6 +582,115 @@ export function createResourceItem(input) {
 export function deleteResourceItem(id) {
   getDb().prepare("DELETE FROM resource_items WHERE id = ?").run(Number(id));
   return { ok: true };
+}
+
+// --- TikTok accounts (FlowStage tab) -------------------------------------
+// Fully independent of tasks: own tables, own helpers.
+
+function hydrateAccount(row) {
+  const database = getDb();
+  const steps = database
+    .prepare("SELECT id, label, assignee, position FROM tiktok_account_steps WHERE account_id = ? ORDER BY position ASC, id ASC")
+    .all(row.id);
+  return {
+    ...row,
+    archived: Boolean(row.archived),
+    // Effective runout date: a live FlowStage sync wins over the manual date.
+    runout_date: row.flowstage_synced_through || row.scheduled_through || null,
+    steps
+  };
+}
+
+export function listTikTokAccounts() {
+  const rows = getDb()
+    .prepare(`
+      SELECT * FROM tiktok_accounts
+      WHERE archived = 0
+      ORDER BY
+        coalesce(flowstage_synced_through, scheduled_through) IS NULL ASC,
+        coalesce(flowstage_synced_through, scheduled_through) ASC,
+        sort_order ASC, id ASC
+    `)
+    .all();
+  return rows.map(hydrateAccount);
+}
+
+export function getTikTokAccount(id) {
+  const row = getDb().prepare("SELECT * FROM tiktok_accounts WHERE id = ?").get(Number(id));
+  return row ? hydrateAccount(row) : null;
+}
+
+export function createTikTokAccount(input) {
+  const payload = validateAccountPayload(input);
+  const database = getDb();
+  const maxOrder = database.prepare("SELECT coalesce(max(sort_order), 0) AS sort_order FROM tiktok_accounts").get().sort_order;
+  const result = database
+    .prepare(`
+      INSERT INTO tiktok_accounts (
+        name, ae_project_url, tutorial_url, username, email, password,
+        scheduled_through, flowstage_account_id, sort_order
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    .run(
+      payload.name,
+      payload.ae_project_url || null,
+      payload.tutorial_url || null,
+      payload.username || null,
+      payload.email || null,
+      payload.password || null,
+      payload.scheduled_through || null,
+      payload.flowstage_account_id || null,
+      Number(maxOrder) + 1
+    );
+  const accountId = Number(result.lastInsertRowid);
+  // Seed the default process steps unless the caller supplied their own.
+  const steps = payload.steps && payload.steps.length
+    ? payload.steps
+    : DEFAULT_ACCOUNT_STEPS.map((label) => ({ label, assignee: null }));
+  replaceAccountSteps(accountId, steps);
+  return getTikTokAccount(accountId);
+}
+
+export function updateTikTokAccount(id, input) {
+  const account = getTikTokAccount(id);
+  if (!account) return null;
+  const payload = validateAccountPayload(input, { partial: true });
+  const sets = [];
+  const params = [];
+  for (const field of ["name", "ae_project_url", "tutorial_url", "username", "email", "password", "scheduled_through", "flowstage_account_id"]) {
+    if (field in payload) {
+      sets.push(`${field} = ?`);
+      params.push(payload[field] || null);
+    }
+  }
+  if (sets.length) {
+    sets.push("updated_at = datetime('now')");
+    params.push(Number(id));
+    getDb().prepare(`UPDATE tiktok_accounts SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+  }
+  if ("steps" in payload) replaceAccountSteps(Number(id), payload.steps || []);
+  return getTikTokAccount(id);
+}
+
+export function replaceAccountSteps(accountId, steps) {
+  const database = getDb();
+  database.prepare("DELETE FROM tiktok_account_steps WHERE account_id = ?").run(accountId);
+  const insert = database.prepare(
+    "INSERT INTO tiktok_account_steps (account_id, label, assignee, position) VALUES (?, ?, ?, ?)"
+  );
+  steps.forEach((step, index) => insert.run(accountId, step.label, step.assignee || null, index + 1));
+}
+
+export function setAccountFlowstageSync(id, scheduledThrough) {
+  getDb()
+    .prepare("UPDATE tiktok_accounts SET flowstage_synced_through = ?, flowstage_synced_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
+    .run(scheduledThrough || null, Number(id));
+  return getTikTokAccount(id);
+}
+
+export function deleteTikTokAccount(id) {
+  getDb().prepare("DELETE FROM tiktok_accounts WHERE id = ?").run(Number(id));
+  return { deleted: true };
 }
 
 export function createImport(filename) {

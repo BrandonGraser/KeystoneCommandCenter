@@ -9,8 +9,10 @@ import {
   archiveTask,
   createTaskMessage,
   createTask,
+  createTikTokAccount,
   deleteDailyNote,
   deleteTask,
+  deleteTikTokAccount,
   deleteTaskImage,
   deleteTaskLink,
   deleteTaskMessage,
@@ -23,15 +25,20 @@ import {
   listTaskImages,
   listTaskMessages,
   listTasks,
+  listTikTokAccounts,
   createResourceItem,
   restoreTask,
   saveDailyNote,
+  setAccountFlowstageSync,
   updateTask,
-  updateTaskLink
+  updateTaskLink,
+  updateTikTokAccount,
+  getTikTokAccount
 } from "./src/db.mjs";
 import { importWorkbook } from "./src/importer.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "./src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "./src/validators.mjs";
+import { getScheduledThrough } from "./src/flowstage.mjs";
 import { buildAuthCookie, isAuthed, verifyPassword, LOGIN_PATH } from "./src/auth.mjs";
 
 const PORT = Number(process.env.PORT || 4242);
@@ -223,6 +230,37 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  // --- TikTok accounts (FlowStage tab) -----------------------------------
+  if (url.pathname === "/api/tiktok-accounts" && method === "GET") {
+    sendJson(response, 200, { accounts: listTikTokAccounts() });
+    return;
+  }
+  if (url.pathname === "/api/tiktok-accounts" && method === "POST") {
+    const account = createTikTokAccount(await readJson(request));
+    sendJson(response, 201, { account });
+    return;
+  }
+  if (url.pathname === "/api/tiktok-accounts/sync" && method === "POST") {
+    sendJson(response, 200, await syncAllAccounts());
+    return;
+  }
+  const accountSyncMatch = url.pathname.match(/^\/api\/tiktok-accounts\/(\d+)\/sync$/);
+  if (accountSyncMatch && method === "POST") {
+    sendJson(response, 200, await syncOneAccount(Number(accountSyncMatch[1])));
+    return;
+  }
+  const accountMatch = url.pathname.match(/^\/api\/tiktok-accounts\/(\d+)$/);
+  if (accountMatch && method === "PATCH") {
+    const account = updateTikTokAccount(Number(accountMatch[1]), await readJson(request));
+    if (!account) throw notFound("Account not found.");
+    sendJson(response, 200, { account });
+    return;
+  }
+  if (accountMatch && method === "DELETE") {
+    sendJson(response, 200, deleteTikTokAccount(Number(accountMatch[1])));
+    return;
+  }
+
   if (url.pathname === "/api/task-links" && method === "POST") {
     const body = await readJson(request);
     const link = validateLinkPayload(body);
@@ -280,6 +318,30 @@ async function handleApi(request, response, url) {
   }
 
   throw notFound("Route not found.");
+}
+
+// Pull the latest scheduled date from FlowStage for one account and store it.
+async function syncOneAccount(id) {
+  const account = getTikTokAccount(id);
+  if (!account) throw notFound("Account not found.");
+  const through = await getScheduledThrough(account.flowstage_account_id);
+  return { account: setAccountFlowstageSync(id, through) };
+}
+
+// Best-effort sync of every account; per-account failures don't abort the rest.
+async function syncAllAccounts() {
+  const accounts = listTikTokAccounts();
+  const results = [];
+  for (const account of accounts) {
+    try {
+      const through = await getScheduledThrough(account.flowstage_account_id);
+      setAccountFlowstageSync(account.id, through);
+      results.push({ id: account.id, ok: true, through });
+    } catch (error) {
+      results.push({ id: account.id, ok: false, reason: error.message });
+    }
+  }
+  return { accounts: listTikTokAccounts(), results };
 }
 
 async function notifyTaskDone(task) {
