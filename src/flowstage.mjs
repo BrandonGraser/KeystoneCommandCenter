@@ -82,24 +82,32 @@ export async function getAccountStats(flowstageAccountId) {
   );
   const posts = data.posts || [];
 
-  const cutoff = new Date(Date.now() - METRICS_WINDOW_DAYS * 86400000);
+  const now = Date.now();
+  const cutCurrent = now - METRICS_WINDOW_DAYS * 86400000;        // last 14 days
+  const cutPrevious = now - 2 * METRICS_WINDOW_DAYS * 86400000;   // the 14 days before that
+
+  const blank = () => ({ views: 0, likes: 0, comments: 0, shares: 0, postCount: 0 });
+  const current = blank();
+  const previous = blank();
   let latest = null;
-  const metrics = { views: 0, likes: 0, comments: 0, shares: 0, postCount: 0, windowDays: METRICS_WINDOW_DAYS };
+
   for (const post of posts) {
     if (post?.is_posted) {
-      // Only count posts published within the trailing window.
       const when = post.time_posted || post.time_scheduled;
-      const date = when ? new Date(when) : null;
-      if (!date || Number.isNaN(date.getTime()) || date < cutoff) continue;
-      metrics.postCount += 1;
-      metrics.views += Number(post.views) || 0;
-      metrics.likes += Number(post.likes) || 0;
-      metrics.comments += Number(post.comments) || 0;
-      metrics.shares += Number(post.shares) || 0;
+      const t = when ? new Date(when).getTime() : NaN;
+      if (Number.isNaN(t)) continue;
+      const bucket = t >= cutCurrent ? current : (t >= cutPrevious ? previous : null);
+      if (!bucket) continue;
+      bucket.postCount += 1;
+      bucket.views += Number(post.views) || 0;
+      bucket.likes += Number(post.likes) || 0;
+      bucket.comments += Number(post.comments) || 0;
+      bucket.shares += Number(post.shares) || 0;
     } else {
       const date = post?.time_scheduled ? new Date(post.time_scheduled) : null;
       if (date && !Number.isNaN(date.getTime()) && (!latest || date > latest)) latest = date;
     }
   }
+  const metrics = { ...current, windowDays: METRICS_WINDOW_DAYS, prev: previous };
   return { scheduledThrough: latest ? isoDate(latest) : null, metrics };
 }

@@ -2155,6 +2155,28 @@ dialog::backdrop {
   text-transform: uppercase;
 }
 
+.account-metrics-sub {
+  color: var(--muted-2);
+  opacity: 0.7;
+  letter-spacing: 0.08em;
+}
+
+/* Period-over-period change chips. */
+.delta {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.delta-up { color: var(--good); }
+.delta-down { color: var(--danger); }
+.delta-flat { color: var(--muted-2); }
+
+.account-stat .delta {
+  display: block;
+  margin-top: 3px;
+}
+
 .account-metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));

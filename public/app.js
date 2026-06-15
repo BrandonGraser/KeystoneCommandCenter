@@ -2000,6 +2000,19 @@ function formatCount(value) {
 
 const METRICS_WINDOW_LABEL = "Last 14 days";
 
+// Red/green change vs the previous 14-day window. "▲ new" when there was no
+// prior activity, nothing when both windows are zero.
+function renderDelta(current, previous) {
+  const cur = Number(current) || 0;
+  const prev = Number(previous) || 0;
+  if (cur === 0 && prev === 0) return "";
+  if (prev === 0) return `<span class="delta delta-up" title="No activity in the prior 14 days">▲ new</span>`;
+  const pct = (cur - prev) / prev * 100;
+  const dir = pct > 0.5 ? "up" : (pct < -0.5 ? "down" : "flat");
+  const arrow = dir === "up" ? "▲" : (dir === "down" ? "▼" : "▬");
+  return `<span class="delta delta-${dir}" title="vs previous 14 days">${arrow} ${Math.abs(pct).toFixed(0)}%</span>`;
+}
+
 function renderAccountInlineStats(account) {
   if (account.post_count == null) return "";
   if (account.post_count === 0) {
@@ -2007,8 +2020,8 @@ function renderAccountInlineStats(account) {
   }
   return `
     <div class="account-inline-stats">
-      <span><strong>${formatCount(account.total_views)}</strong> views</span>
-      <span><strong>${formatCount(account.total_likes)}</strong> likes</span>
+      <span><strong>${formatCount(account.total_views)}</strong> views ${renderDelta(account.total_views, account.prev_views)}</span>
+      <span><strong>${formatCount(account.total_likes)}</strong> likes ${renderDelta(account.total_likes, account.prev_likes)}</span>
       <span class="account-inline-posts">${formatCount(account.post_count)} posts · 14d</span>
     </div>
   `;
@@ -2049,24 +2062,29 @@ function renderAccountMetricsPanel(account) {
     `;
   }
   const views = Number(account.total_views) || 0;
+  const prevPosts = Number(account.prev_post_count) || 0;
+  const prevViews = Number(account.prev_views) || 0;
   const avg = posts ? Math.round(views / posts) : 0;
-  const engagement = views ? ((Number(account.total_likes) || 0) / views * 100).toFixed(1) : "0.0";
-  const stat = (label, value) => `
+  const prevAvg = prevPosts ? Math.round(prevViews / prevPosts) : 0;
+  const engagement = views ? (Number(account.total_likes) || 0) / views * 100 : 0;
+  const prevEngagement = prevViews ? (Number(account.prev_likes) || 0) / prevViews * 100 : 0;
+  const stat = (label, value, cur, prev) => `
     <div class="account-stat">
       <strong>${value}</strong>
       <span>${label}</span>
+      ${renderDelta(cur, prev)}
     </div>
   `;
   return `
-    <p class="account-metrics-heading">${METRICS_WINDOW_LABEL}</p>
+    <p class="account-metrics-heading">${METRICS_WINDOW_LABEL} <span class="account-metrics-sub">vs previous 14</span></p>
     <div class="account-metrics-grid">
-      ${stat("Views", formatCount(views))}
-      ${stat("Likes", formatCount(account.total_likes))}
-      ${stat("Comments", formatCount(account.total_comments))}
-      ${stat("Shares", formatCount(account.total_shares))}
-      ${stat("Posts", formatCount(posts))}
-      ${stat("Avg views", formatCount(avg))}
-      ${stat("Engagement", `${engagement}%`)}
+      ${stat("Views", formatCount(views), views, prevViews)}
+      ${stat("Likes", formatCount(account.total_likes), account.total_likes, account.prev_likes)}
+      ${stat("Comments", formatCount(account.total_comments), account.total_comments, account.prev_comments)}
+      ${stat("Shares", formatCount(account.total_shares), account.total_shares, account.prev_shares)}
+      ${stat("Posts", formatCount(posts), posts, prevPosts)}
+      ${stat("Avg views", formatCount(avg), avg, prevAvg)}
+      ${stat("Engagement", `${engagement.toFixed(1)}%`, engagement, prevEngagement)}
     </div>
     ${stamp}
   `;

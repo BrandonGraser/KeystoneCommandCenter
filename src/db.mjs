@@ -152,6 +152,11 @@ function migrate(database) {
       total_comments INTEGER,
       total_shares INTEGER,
       post_count INTEGER,
+      prev_views INTEGER,
+      prev_likes INTEGER,
+      prev_comments INTEGER,
+      prev_shares INTEGER,
+      prev_post_count INTEGER,
       metrics_synced_at TEXT,
       archived INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0,
@@ -208,7 +213,7 @@ function migrate(database) {
   if (!accountColNames.includes("group_name")) {
     database.exec("ALTER TABLE tiktok_accounts ADD COLUMN group_name TEXT;");
   }
-  for (const col of ["total_views", "total_likes", "total_comments", "total_shares", "post_count"]) {
+  for (const col of ["total_views", "total_likes", "total_comments", "total_shares", "post_count", "prev_views", "prev_likes", "prev_comments", "prev_shares", "prev_post_count"]) {
     if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER;`);
   }
   if (!accountColNames.includes("metrics_synced_at")) {
@@ -702,12 +707,14 @@ export function replaceAccountSteps(accountId, steps) {
 
 export function setAccountSync(id, { scheduledThrough = null, metrics = null } = {}) {
   const m = metrics || {};
+  const p = m.prev || {};
   getDb()
     .prepare(`
       UPDATE tiktok_accounts SET
         flowstage_synced_through = ?, flowstage_synced_at = datetime('now'),
-        total_views = ?, total_likes = ?, total_comments = ?, total_shares = ?,
-        post_count = ?, metrics_synced_at = datetime('now'), updated_at = datetime('now')
+        total_views = ?, total_likes = ?, total_comments = ?, total_shares = ?, post_count = ?,
+        prev_views = ?, prev_likes = ?, prev_comments = ?, prev_shares = ?, prev_post_count = ?,
+        metrics_synced_at = datetime('now'), updated_at = datetime('now')
       WHERE id = ?
     `)
     .run(
@@ -717,6 +724,11 @@ export function setAccountSync(id, { scheduledThrough = null, metrics = null } =
       metrics ? (Number(m.comments) || 0) : null,
       metrics ? (Number(m.shares) || 0) : null,
       metrics ? (Number(m.postCount) || 0) : null,
+      metrics ? (Number(p.views) || 0) : null,
+      metrics ? (Number(p.likes) || 0) : null,
+      metrics ? (Number(p.comments) || 0) : null,
+      metrics ? (Number(p.shares) || 0) : null,
+      metrics ? (Number(p.postCount) || 0) : null,
       Number(id)
     );
   return getTikTokAccount(id);
