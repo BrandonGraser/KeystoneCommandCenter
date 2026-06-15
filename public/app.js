@@ -1998,13 +1998,18 @@ function formatCount(value) {
   return String(n);
 }
 
+const METRICS_WINDOW_LABEL = "Last 14 days";
+
 function renderAccountInlineStats(account) {
   if (account.post_count == null) return "";
+  if (account.post_count === 0) {
+    return `<div class="account-inline-stats"><span class="account-inline-posts">No posts · last 14 days</span></div>`;
+  }
   return `
     <div class="account-inline-stats">
       <span><strong>${formatCount(account.total_views)}</strong> views</span>
       <span><strong>${formatCount(account.total_likes)}</strong> likes</span>
-      <span class="account-inline-posts">${formatCount(account.post_count)} posts</span>
+      <span class="account-inline-posts">${formatCount(account.post_count)} posts · 14d</span>
     </div>
   `;
 }
@@ -2033,6 +2038,16 @@ function renderAccountMetricsPanel(account) {
     return `<p class="detail-empty account-metrics-empty">No engagement data yet — hit Sync to pull it from FlowStage.</p>`;
   }
   const posts = Number(account.post_count) || 0;
+  const stamp = account.metrics_synced_at
+    ? `<p class="account-metrics-stamp">Synced ${escapeHtml(shortDateTime(account.metrics_synced_at))}</p>`
+    : "";
+  if (posts === 0) {
+    return `
+      <p class="account-metrics-heading">${METRICS_WINDOW_LABEL}</p>
+      <p class="detail-empty account-metrics-empty">No posts in the last 14 days.</p>
+      ${stamp}
+    `;
+  }
   const views = Number(account.total_views) || 0;
   const avg = posts ? Math.round(views / posts) : 0;
   const engagement = views ? ((Number(account.total_likes) || 0) / views * 100).toFixed(1) : "0.0";
@@ -2043,6 +2058,7 @@ function renderAccountMetricsPanel(account) {
     </div>
   `;
   return `
+    <p class="account-metrics-heading">${METRICS_WINDOW_LABEL}</p>
     <div class="account-metrics-grid">
       ${stat("Views", formatCount(views))}
       ${stat("Likes", formatCount(account.total_likes))}
@@ -2052,7 +2068,7 @@ function renderAccountMetricsPanel(account) {
       ${stat("Avg views", formatCount(avg))}
       ${stat("Engagement", `${engagement}%`)}
     </div>
-    ${account.metrics_synced_at ? `<p class="account-metrics-stamp">Metrics synced ${escapeHtml(shortDateTime(account.metrics_synced_at))}</p>` : ""}
+    ${stamp}
   `;
 }
 

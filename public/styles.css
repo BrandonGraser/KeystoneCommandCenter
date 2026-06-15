@@ -2147,6 +2147,14 @@ dialog::backdrop {
   border-top: 1px solid var(--line);
 }
 
+.account-metrics-heading {
+  margin: 0 0 6px;
+  color: var(--muted-2);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .account-metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));

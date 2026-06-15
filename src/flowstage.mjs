@@ -12,6 +12,9 @@
 const FLOWSTAGE_API_KEY = process.env.FLOWSTAGE_API_KEY || "";
 const FLOWSTAGE_BASE_URL = (process.env.FLOWSTAGE_BASE_URL || "https://api.theflowstage.com").replace(/\/$/, "");
 
+// Engagement metrics are summed over posts published within this trailing window.
+export const METRICS_WINDOW_DAYS = 14;
+
 export function isFlowStageConfigured() {
   return Boolean(FLOWSTAGE_API_KEY);
 }
@@ -65,7 +68,8 @@ function isoDate(date) {
 //   - scheduledThrough: ISO date of the furthest-out un-posted post (the date the
 //     account is queued through; null if nothing scheduled; a past date = out of
 //     content). We do NOT bound the lower date so a past date isn't hidden.
-//   - metrics: summed views/likes/comments/shares + postCount across posted content.
+//   - metrics: summed views/likes/comments/shares + postCount across posts
+//     published within the trailing METRICS_WINDOW_DAYS window.
 // Throws (status-tagged) on config/network errors.
 export async function getAccountStats(flowstageAccountId) {
   if (!flowstageAccountId) {
@@ -78,10 +82,15 @@ export async function getAccountStats(flowstageAccountId) {
   );
   const posts = data.posts || [];
 
+  const cutoff = new Date(Date.now() - METRICS_WINDOW_DAYS * 86400000);
   let latest = null;
-  const metrics = { views: 0, likes: 0, comments: 0, shares: 0, postCount: 0 };
+  const metrics = { views: 0, likes: 0, comments: 0, shares: 0, postCount: 0, windowDays: METRICS_WINDOW_DAYS };
   for (const post of posts) {
     if (post?.is_posted) {
+      // Only count posts published within the trailing window.
+      const when = post.time_posted || post.time_scheduled;
+      const date = when ? new Date(when) : null;
+      if (!date || Number.isNaN(date.getTime()) || date < cutoff) continue;
       metrics.postCount += 1;
       metrics.views += Number(post.views) || 0;
       metrics.likes += Number(post.likes) || 0;
