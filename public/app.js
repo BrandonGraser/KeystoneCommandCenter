@@ -1831,6 +1831,25 @@ function bindAccountEvents() {
     accountsState.overallMetric = tab.dataset.metric;
     renderAccountOverall();
   });
+  // Hovering a bar segment or a legend entry highlights that account across
+  // every bar and dims the rest.
+  els.accountOverall.addEventListener("mouseover", (event) => {
+    const target = event.target.closest("[data-acct]");
+    focusOverallAccount(target ? target.dataset.acct : null);
+  });
+  els.accountOverall.addEventListener("mouseleave", () => focusOverallAccount(null));
+}
+
+function focusOverallAccount(acct) {
+  els.accountOverall.querySelectorAll("[data-acct]").forEach((el) => {
+    if (acct == null) {
+      el.classList.remove("acct-dim", "acct-on");
+      return;
+    }
+    const match = el.dataset.acct === String(acct);
+    el.classList.toggle("acct-dim", !match);
+    el.classList.toggle("acct-on", match);
+  });
 }
 
 function renderAvatarPreview() {
@@ -1968,9 +1987,17 @@ function renderAccountMetrics() {
   `;
 }
 
-// Distinct per-account color via the golden angle, stable for a given index.
+// Distinct per-account color. Hues are hand-spread across the wheel (not the
+// golden angle, which clustered too many greens/blues), with saturation and
+// lightness varied per index and dimmed on later cycles so repeats differ.
+const ACCOUNT_HUES = [212, 8, 158, 280, 45, 330, 100, 188, 28, 255, 342, 72, 130, 312];
+
 function accountColor(index) {
-  return `hsl(${((index * 137.508) % 360).toFixed(0)} 62% 60%)`;
+  const hue = ACCOUNT_HUES[index % ACCOUNT_HUES.length];
+  const cycle = Math.floor(index / ACCOUNT_HUES.length);
+  const sat = 58 + (index % 3) * 10;            // 58 / 68 / 78
+  const light = Math.max(42, 62 - cycle * 12 - (index % 2) * 6);
+  return `hsl(${hue} ${sat}% ${light}%)`;
 }
 
 const OVERALL_METRICS = [["views", "Views"], ["likes", "Likes"], ["comments", "Comments"], ["posts", "Posts"]];
@@ -2006,7 +2033,7 @@ function renderAccountOverall() {
       if (pos >= 0 && pos < days) perDay[pos] += Number(v) || 0;
     });
     const total = perDay.reduce((s, x) => s + x, 0);
-    if (total > 0) contributors.push({ name: account.name, color: colorOf[account.id], perDay, total });
+    if (total > 0) contributors.push({ id: account.id, name: account.name, color: colorOf[account.id], perDay, total });
   }
   contributors.sort((a, b) => b.total - a.total);
 
@@ -2018,11 +2045,15 @@ function renderAccountOverall() {
   const tabs = OVERALL_METRICS.map(([k, label]) =>
     `<button type="button" class="overall-tab ${k === metric ? "active" : ""}" data-metric="${k}">${label}</button>`
   ).join("");
+  const fracs = [1, 0.75, 0.5, 0.25, 0];
+  const yAxis = fracs.map((f) =>
+    `<span style="top:${((1 - f) * 100).toFixed(1)}%">${formatCount(Math.round(maxTotal * f))}</span>`
+  ).join("");
   const chart = grand > 0
-    ? stackedBarsSvg(contributors, maxTotal, days)
+    ? `<div class="overall-yaxis">${yAxis}</div>${stackedBarsSvg(contributors, maxTotal, days)}`
     : `<p class="detail-empty overall-empty">No ${escapeHtml(metric)} recorded in the last 14 days yet. Sync accounts to populate this.</p>`;
   const legend = contributors.map((c) =>
-    `<span class="overall-legend-item"><i style="background:${c.color}"></i>${escapeHtml(c.name)} <strong>${formatCount(c.total)}</strong></span>`
+    `<span class="overall-legend-item" data-acct="${c.id}"><i style="background:${c.color}"></i>${escapeHtml(c.name)} <strong>${formatCount(c.total)}</strong></span>`
   ).join("");
 
   els.accountOverall.innerHTML = `
@@ -2033,7 +2064,7 @@ function renderAccountOverall() {
       </div>
       <div class="overall-tabs segmented">${tabs}</div>
     </div>
-    <div class="overall-chart">${chart}</div>
+    <div class="overall-chart ${grand > 0 ? "has-axis" : ""}">${chart}</div>
     ${grand > 0 ? `<div class="overall-axis">${labels.map((l) => `<span>${l}</span>`).join("")}</div>` : ""}
     ${legend ? `<div class="overall-legend">${legend}</div>` : ""}
   `;
@@ -2044,18 +2075,22 @@ function stackedBarsSvg(contributors, maxTotal, days) {
   const H = 150;
   const gap = 6;
   const bw = (W - (days - 1) * gap) / days;
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const y = ((1 - f) * H).toFixed(1);
+    return `<line class="overall-grid" x1="0" y1="${y}" x2="${W}" y2="${y}" vector-effect="non-scaling-stroke"></line>`;
+  }).join("");
   let rects = "";
   for (let p = 0; p < days; p++) {
     let yTop = H;
     for (const c of contributors) {
       const v = c.perDay[p];
       if (!v) continue;
-      const h = (v / maxTotal) * (H - 2);
+      const h = (v / maxTotal) * H;
       yTop -= h;
-      rects += `<rect x="${(p * (bw + gap)).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${c.color}"><title>${escapeHtml(c.name)}: ${formatCount(v)}</title></rect>`;
+      rects += `<rect data-acct="${c.id}" x="${(p * (bw + gap)).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${c.color}"><title>${escapeHtml(c.name)}: ${formatCount(v)}</title></rect>`;
     }
   }
-  return `<svg class="overall-bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${rects}</svg>`;
+  return `<svg class="overall-bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${grid}${rects}</svg>`;
 }
 
 // Group collapse state, remembered per group name in localStorage.
