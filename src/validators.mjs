@@ -176,7 +176,7 @@ export function validateAccountPayload(input, { partial = false } = {}) {
     if (!output.name) errors.push("Account name is required.");
   }
 
-  for (const field of ["ae_project_url", "tutorial_url", "username", "email", "password", "flowstage_account_id"]) {
+  for (const field of ["ae_project_url", "tutorial_url", "username", "email", "password", "flowstage_account_id", "group_name"]) {
     if (field in input) output[field] = cleanText(input[field]);
   }
   if ("scheduled_through" in input) output.scheduled_through = normalizeDateInput(input.scheduled_through);

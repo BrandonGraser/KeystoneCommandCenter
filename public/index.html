@@ -71,11 +71,24 @@
       </div>
 
       <div id="accountsView" hidden>
+        <section class="metrics account-metrics" id="accountMetrics"></section>
         <section class="controls accounts-controls">
           <div>
             <span class="control-label">TikTok Accounts</span>
             <p class="accounts-subhead">Content runout tracking via FlowStage</p>
           </div>
+          <label class="search account-search">
+            <span class="control-label">Search</span>
+            <input id="accountSearch" type="search" placeholder="Account name">
+          </label>
+          <label>
+            <span class="control-label">Sort</span>
+            <select id="accountSort">
+              <option value="runout">Runs out soonest</option>
+              <option value="name-asc">Name A–Z</option>
+              <option value="name-desc">Name Z–A</option>
+            </select>
+          </label>
           <div class="accounts-actions">
             <button type="button" id="syncAllAccounts" class="secondary" title="Pull scheduled-through dates from FlowStage">Sync all</button>
             <button type="button" id="addAccount" class="primary">Add account</button>
@@ -292,6 +305,11 @@
           </label>
         </div>
         <input type="hidden" id="accountFlowstageId">
+        <label>
+          <span>Group</span>
+          <input id="accountGroup" type="text" list="accountGroupList" autocomplete="off" placeholder="Pick a group or type a new one">
+          <datalist id="accountGroupList"></datalist>
+        </label>
         <div class="workflow-section">
           <div class="section-line">
             <span>Process Steps</span>

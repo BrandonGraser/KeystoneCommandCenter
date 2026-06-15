@@ -2017,3 +2017,135 @@ dialog::backdrop {
     grid-template-columns: minmax(0, 1fr) 100px 30px;
   }
 }
+
+/* Accounts metrics bar — three buckets, reuses the .metric cell styling. */
+.account-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.account-metric-out strong {
+  color: var(--due-overdue);
+}
+
+.account-metric-low strong {
+  color: var(--due-tomorrow);
+}
+
+.account-metric-stocked strong {
+  color: var(--due-upcoming);
+}
+
+/* Account search/sort controls live in the accounts controls row. */
+.accounts-controls .account-search {
+  min-width: 180px;
+}
+
+/* Collapsible group sections. */
+.account-group {
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.account-group + .account-group {
+  margin-top: 10px;
+}
+
+.account-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--panel-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.account-group.collapsed .account-group-head {
+  border-bottom: 0;
+}
+
+.account-group-head h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.account-group-count {
+  margin-left: auto;
+  color: var(--muted-2);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.account-group.collapsed .account-group-rows {
+  display: none;
+}
+
+.account-group .account-row {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.account-group .account-row:last-child {
+  border-bottom: 0;
+}
+
+/* Expandable row: chevron + credentials panel. */
+.account-row {
+  cursor: pointer;
+}
+
+.account-headline {
+  position: relative;
+}
+
+.expand-indicator::before {
+  content: "\25B8";
+  margin-right: 2px;
+  color: var(--muted-2);
+  font-size: 9px;
+}
+
+.account-row.expanded .expand-indicator::before {
+  content: "\25BE";
+}
+
+.account-actions button {
+  cursor: pointer;
+}
+
+.account-credentials {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.account-credential {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.account-credential-label {
+  color: var(--muted-2);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.account-credential-value {
+  color: var(--ink);
+  font-size: 12px;
+  word-break: break-all;
+}

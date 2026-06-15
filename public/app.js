@@ -89,6 +89,11 @@ const els = {
   tasksView: document.querySelector("#tasksView"),
   accountsView: document.querySelector("#accountsView"),
   accountBoard: document.querySelector("#accountBoard"),
+  accountMetrics: document.querySelector("#accountMetrics"),
+  accountSearch: document.querySelector("#accountSearch"),
+  accountSort: document.querySelector("#accountSort"),
+  accountGroup: document.querySelector("#accountGroup"),
+  accountGroupList: document.querySelector("#accountGroupList"),
   addAccount: document.querySelector("#addAccount"),
   syncAllAccounts: document.querySelector("#syncAllAccounts"),
   accountDialog: document.querySelector("#accountDialog"),
@@ -1732,8 +1737,13 @@ const accountsState = {
   loaded: false,
   editing: null,
   steps: [], // working copy while the dialog is open
-  flowstageAccounts: null // cached list of connected FlowStage accounts
+  flowstageAccounts: null, // cached list of connected FlowStage accounts
+  search: "",
+  sort: "runout",
+  expanded: new Set() // account ids whose credentials panel is open
 };
+
+const UNGROUPED_LABEL = "Ungrouped";
 
 function getStoredTab() {
   try {
@@ -1776,6 +1786,14 @@ function bindAccountEvents() {
   els.deleteAccount.addEventListener("click", deleteCurrentAccount);
   els.accountBoard.addEventListener("click", onAccountBoardClick);
   els.accountNameSelect.addEventListener("change", onAccountNameSelectChange);
+  els.accountSearch.addEventListener("input", debounce(() => {
+    accountsState.search = els.accountSearch.value.trim();
+    renderAccounts();
+  }, 150));
+  els.accountSort.addEventListener("change", () => {
+    accountsState.sort = els.accountSort.value;
+    renderAccounts();
+  });
 }
 
 // The account name IS the FlowStage account: picking one sets the name + links
@@ -1812,11 +1830,113 @@ async function loadAccounts() {
 }
 
 function renderAccounts() {
+  renderAccountMetrics();
   if (!accountsState.accounts.length) {
     els.accountBoard.innerHTML = `<p class="detail-empty account-empty">No accounts yet. Add one to start tracking content runout.</p>`;
     return;
   }
-  els.accountBoard.innerHTML = accountsState.accounts.map(renderAccountRow).join("");
+
+  // Filter by search, then sort, then group.
+  const search = accountsState.search.toLowerCase();
+  const filtered = accountsState.accounts.filter((account) =>
+    !search || account.name.toLowerCase().includes(search)
+  );
+  if (!filtered.length) {
+    els.accountBoard.innerHTML = `<p class="detail-empty account-empty">No accounts match “${escapeHtml(accountsState.search)}”.</p>`;
+    return;
+  }
+  const sorted = sortAccounts(filtered);
+
+  const groups = new Map();
+  for (const account of sorted) {
+    const key = account.group_name || UNGROUPED_LABEL;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(account);
+  }
+  // Named groups alphabetically, with Ungrouped always last.
+  const groupNames = [...groups.keys()]
+    .filter((name) => name !== UNGROUPED_LABEL)
+    .sort((a, b) => a.localeCompare(b));
+  if (groups.has(UNGROUPED_LABEL)) groupNames.push(UNGROUPED_LABEL);
+
+  els.accountBoard.innerHTML = groupNames.map((name) => {
+    const rows = groups.get(name).map(renderAccountRow).join("");
+    const collapsed = isAccountGroupCollapsed(name);
+    return `
+      <section class="account-group ${collapsed ? "collapsed" : ""}" data-group="${escapeHtml(name)}">
+        <button type="button" class="account-group-head" aria-expanded="${!collapsed}">
+          <span class="collapse-indicator" aria-hidden="true"></span>
+          <h3>${escapeHtml(name)}</h3>
+          <span class="account-group-count">${groups.get(name).length}</span>
+        </button>
+        <div class="account-group-rows">${rows}</div>
+      </section>
+    `;
+  }).join("");
+}
+
+function sortAccounts(accounts) {
+  const list = [...accounts];
+  if (accountsState.sort === "name-asc") {
+    list.sort((a, b) => a.name.localeCompare(b.name));
+  } else if (accountsState.sort === "name-desc") {
+    list.sort((a, b) => b.name.localeCompare(a.name));
+  } else {
+    // Runout soonest first; accounts with no date sink to the bottom.
+    list.sort((a, b) => {
+      const da = a.runout_date || "9999-12-31";
+      const db = b.runout_date || "9999-12-31";
+      return da.localeCompare(db) || a.name.localeCompare(b.name);
+    });
+  }
+  return list;
+}
+
+// Buckets: out (no date or <= 0 days), low (1–4 days), stocked (5+ days).
+function runoutBucket(dateStr) {
+  if (!dateStr) return "out";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((new Date(`${dateStr}T00:00:00`) - today) / 86400000);
+  if (days <= 0) return "out";
+  if (days <= 4) return "low";
+  return "stocked";
+}
+
+function renderAccountMetrics() {
+  const counts = { stocked: 0, low: 0, out: 0 };
+  for (const account of accountsState.accounts) counts[runoutBucket(account.runout_date)]++;
+  els.accountMetrics.innerHTML = `
+    <div class="metric account-metric-stocked">
+      <strong>${counts.stocked}</strong>
+      <span>Stocked · 5+ days</span>
+    </div>
+    <div class="metric account-metric-low">
+      <strong>${counts.low}</strong>
+      <span>Running low · 1–4 days</span>
+    </div>
+    <div class="metric account-metric-out">
+      <strong>${counts.out}</strong>
+      <span>Out of content</span>
+    </div>
+  `;
+}
+
+// Group collapse state, remembered per group name in localStorage.
+function isAccountGroupCollapsed(name) {
+  try {
+    return localStorage.getItem(`keystone-account-group-${name}`) === "collapsed";
+  } catch {
+    return false;
+  }
+}
+
+function setAccountGroupCollapsed(name, collapsed) {
+  try {
+    localStorage.setItem(`keystone-account-group-${name}`, collapsed ? "collapsed" : "open");
+  } catch {
+    // Collapse state just won't persist if storage is unavailable.
+  }
 }
 
 // Days of scheduled content left, color-coded by how soon the account runs dry.
@@ -1848,10 +1968,12 @@ function renderAccountRow(account) {
   const links = [];
   if (account.ae_project_url) links.push(`<a href="${escapeHtml(account.ae_project_url)}" target="_blank" rel="noreferrer">AE Project</a>`);
   if (account.tutorial_url) links.push(`<a href="${escapeHtml(account.tutorial_url)}" target="_blank" rel="noreferrer">Tutorial</a>`);
+  const expanded = accountsState.expanded.has(account.id);
   return `
-    <article class="account-row" data-account-id="${account.id}">
+    <article class="account-row ${expanded ? "expanded" : ""}" data-account-id="${account.id}">
       <div class="account-main">
         <div class="account-headline">
+          <span class="expand-indicator" aria-hidden="true"></span>
           <span class="account-name">${escapeHtml(account.name)}</span>
           <span class="runout-badge runout-${runout.className}" title="${escapeHtml(runout.title)}">${escapeHtml(runout.label)}</span>
         </div>
@@ -1862,11 +1984,38 @@ function renderAccountRow(account) {
         <button type="button" data-action="sync-account" title="Pull scheduled-through date from FlowStage">Sync</button>
         <button type="button" data-action="edit-account">Edit</button>
       </div>
+      ${expanded ? renderAccountCredentials(account) : ""}
     </article>
   `;
 }
 
+function renderAccountCredentials(account) {
+  const row = (label, value) => `
+    <div class="account-credential">
+      <span class="account-credential-label">${label}</span>
+      <span class="account-credential-value">${value ? escapeHtml(value) : "<span class='detail-empty'>—</span>"}</span>
+    </div>
+  `;
+  return `
+    <div class="account-credentials">
+      ${row("Username", account.username)}
+      ${row("Email", account.email)}
+      ${row("Password", account.password)}
+    </div>
+  `;
+}
+
 async function onAccountBoardClick(event) {
+  // Collapsing/expanding a group section.
+  const groupHead = event.target.closest(".account-group-head");
+  if (groupHead) {
+    const section = groupHead.closest(".account-group");
+    const collapsed = section.classList.toggle("collapsed");
+    groupHead.setAttribute("aria-expanded", String(!collapsed));
+    setAccountGroupCollapsed(section.dataset.group, collapsed);
+    return;
+  }
+
   const row = event.target.closest(".account-row");
   if (!row) return;
   const id = Number(row.dataset.accountId);
@@ -1877,7 +2026,12 @@ async function onAccountBoardClick(event) {
   }
   if (event.target.closest("[data-action='sync-account']")) {
     await syncAccount(id);
+    return;
   }
+  // Otherwise, toggle the credentials panel for this account.
+  if (accountsState.expanded.has(id)) accountsState.expanded.delete(id);
+  else accountsState.expanded.add(id);
+  renderAccounts();
 }
 
 function openAccountDialog(account = null) {
@@ -1893,6 +2047,8 @@ function openAccountDialog(account = null) {
   els.accountPassword.value = account?.password || "";
   els.accountScheduledThrough.value = account?.scheduled_through || "";
   els.accountFlowstageId.value = account?.flowstage_account_id || "";
+  els.accountGroup.value = account?.group_name || "";
+  populateGroupOptions();
   accountsState.steps = account
     ? (account.steps || []).map((step) => ({ label: step.label, assignee: step.assignee || "" }))
     : DEFAULT_ACCOUNT_STEPS_UI.map((label) => ({ label, assignee: "" }));
@@ -1900,6 +2056,14 @@ function openAccountDialog(account = null) {
   populateAccountNameOptions(account);
   els.deleteAccount.hidden = !account;
   els.accountDialog.showModal();
+}
+
+// Offer existing group names as autocomplete in the dialog's Group field.
+function populateGroupOptions() {
+  const names = [...new Set(
+    accountsState.accounts.map((account) => account.group_name).filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b));
+  els.accountGroupList.innerHTML = names.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
 }
 
 // Build the Account Name dropdown from the team's connected FlowStage accounts.
@@ -1995,6 +2159,7 @@ async function saveAccount(event) {
     password: els.accountPassword.value,
     scheduled_through: els.accountScheduledThrough.value || "",
     flowstage_account_id: flowstageId,
+    group_name: els.accountGroup.value.trim(),
     steps: accountsState.steps
       .map((step) => ({ label: step.label.trim(), assignee: step.assignee }))
       .filter((step) => step.label)

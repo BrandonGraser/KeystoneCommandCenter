@@ -187,6 +187,7 @@ async function migrate(client) {
         flowstage_account_id TEXT,
         flowstage_synced_through TEXT,
         flowstage_synced_at TEXT,
+        group_name TEXT,
         archived INTEGER NOT NULL DEFAULT 0,
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -248,6 +249,11 @@ async function migrate(client) {
   const messageCols = await client.execute("PRAGMA table_info(task_messages)");
   if (!messageCols.rows.some((r) => r["name"] === "image")) {
     await client.execute("ALTER TABLE task_messages ADD COLUMN image TEXT");
+  }
+
+  const accountCols = await client.execute("PRAGMA table_info(tiktok_accounts)");
+  if (!accountCols.rows.some((r) => r["name"] === "group_name")) {
+    await client.execute("ALTER TABLE tiktok_accounts ADD COLUMN group_name TEXT");
   }
 
   await client.batch([
@@ -726,8 +732,8 @@ export async function createTikTokAccount(input) {
   const result = await client.execute({
     sql: `INSERT INTO tiktok_accounts (
       name, ae_project_url, tutorial_url, username, email, password,
-      scheduled_through, flowstage_account_id, sort_order
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      scheduled_through, flowstage_account_id, group_name, sort_order
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       payload.name,
       payload.ae_project_url || null,
@@ -737,6 +743,7 @@ export async function createTikTokAccount(input) {
       payload.password || null,
       payload.scheduled_through || null,
       payload.flowstage_account_id || null,
+      payload.group_name || null,
       maxOrder + 1
     ]
   });
@@ -754,7 +761,7 @@ export async function updateTikTokAccount(id, input) {
   const payload = validateAccountPayload(input, { partial: true });
   const sets = [];
   const params = [];
-  for (const field of ["name", "ae_project_url", "tutorial_url", "username", "email", "password", "scheduled_through", "flowstage_account_id"]) {
+  for (const field of ["name", "ae_project_url", "tutorial_url", "username", "email", "password", "scheduled_through", "flowstage_account_id", "group_name"]) {
     if (field in payload) {
       sets.push(`${field} = ?`);
       params.push(payload[field] || null);
