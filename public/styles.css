@@ -2121,13 +2121,75 @@ dialog::backdrop {
   cursor: pointer;
 }
 
-.account-credentials {
+/* Inline engagement summary on each row. */
+.account-inline-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.account-inline-stats strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.account-inline-posts {
+  color: var(--muted-2);
+}
+
+/* Expanded detail: metrics panel + credentials. */
+.account-detail {
   grid-column: 1 / -1;
-  display: grid;
-  gap: 6px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
+}
+
+.account-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-bottom: 10px;
+}
+
+.account-stat {
+  padding: 8px 10px;
+  background: var(--panel);
+}
+
+.account-stat strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.account-stat span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted-2);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.account-metrics-stamp {
+  margin: 0 0 10px;
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.account-metrics-empty {
+  margin: 0 0 10px;
+}
+
+.account-credentials {
+  display: grid;
+  gap: 6px;
 }
 
 .account-credential {

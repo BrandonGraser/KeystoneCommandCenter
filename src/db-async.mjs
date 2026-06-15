@@ -188,6 +188,12 @@ async function migrate(client) {
         flowstage_synced_through TEXT,
         flowstage_synced_at TEXT,
         group_name TEXT,
+        total_views INTEGER,
+        total_likes INTEGER,
+        total_comments INTEGER,
+        total_shares INTEGER,
+        post_count INTEGER,
+        metrics_synced_at TEXT,
         archived INTEGER NOT NULL DEFAULT 0,
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -252,8 +258,15 @@ async function migrate(client) {
   }
 
   const accountCols = await client.execute("PRAGMA table_info(tiktok_accounts)");
-  if (!accountCols.rows.some((r) => r["name"] === "group_name")) {
+  const accountColNames = accountCols.rows.map((r) => r["name"]);
+  if (!accountColNames.includes("group_name")) {
     await client.execute("ALTER TABLE tiktok_accounts ADD COLUMN group_name TEXT");
+  }
+  for (const col of ["total_views", "total_likes", "total_comments", "total_shares", "post_count"]) {
+    if (!accountColNames.includes(col)) await client.execute(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER`);
+  }
+  if (!accountColNames.includes("metrics_synced_at")) {
+    await client.execute("ALTER TABLE tiktok_accounts ADD COLUMN metrics_synced_at TEXT");
   }
 
   await client.batch([
@@ -787,11 +800,24 @@ async function _replaceAccountSteps(accountId, steps, client) {
   }
 }
 
-export async function setAccountFlowstageSync(id, scheduledThrough) {
+export async function setAccountSync(id, { scheduledThrough = null, metrics = null } = {}) {
+  const m = metrics || {};
   const client = await getDb();
   await client.execute({
-    sql: "UPDATE tiktok_accounts SET flowstage_synced_through = ?, flowstage_synced_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-    args: [scheduledThrough || null, Number(id)]
+    sql: `UPDATE tiktok_accounts SET
+      flowstage_synced_through = ?, flowstage_synced_at = datetime('now'),
+      total_views = ?, total_likes = ?, total_comments = ?, total_shares = ?,
+      post_count = ?, metrics_synced_at = datetime('now'), updated_at = datetime('now')
+    WHERE id = ?`,
+    args: [
+      scheduledThrough || null,
+      metrics ? (Number(m.views) || 0) : null,
+      metrics ? (Number(m.likes) || 0) : null,
+      metrics ? (Number(m.comments) || 0) : null,
+      metrics ? (Number(m.shares) || 0) : null,
+      metrics ? (Number(m.postCount) || 0) : null,
+      Number(id)
+    ]
   });
   return getTikTokAccount(id);
 }

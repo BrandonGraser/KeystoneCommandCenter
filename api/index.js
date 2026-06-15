@@ -24,7 +24,7 @@ import {
   createResourceItem,
   restoreTask,
   saveDailyNote,
-  setAccountFlowstageSync,
+  setAccountSync,
   updateTask,
   updateTaskLink,
   updateTikTokAccount,
@@ -33,7 +33,7 @@ import {
 import { sendRingNotification, sendTaskDoneNotification } from "../src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "../src/validators.mjs";
 import { buildAuthCookie, verifyPassword } from "../src/auth.mjs";
-import { getScheduledThrough, listSocialAccounts } from "../src/flowstage.mjs";
+import { getAccountStats, listSocialAccounts } from "../src/flowstage.mjs";
 
 export const config = {
   api: { bodyParser: false }
@@ -202,6 +202,19 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  // Scheduled (Vercel Cron) daily resync of all accounts. Protected by
+  // CRON_SECRET when set: Vercel sends it as `Authorization: Bearer <secret>`.
+  if (url.pathname === "/api/cron/sync-accounts") {
+    const secret = process.env.CRON_SECRET;
+    if (secret && request.headers.authorization !== `Bearer ${secret}`) {
+      sendJson(response, 401, { error: "Unauthorized." });
+      return;
+    }
+    const result = await syncAllAccounts();
+    sendJson(response, 200, { ok: true, synced: result.results.length, results: result.results });
+    return;
+  }
+
   // --- TikTok accounts (FlowStage tab) -----------------------------------
   if (url.pathname === "/api/flowstage/social-accounts" && method === "GET") {
     sendJson(response, 200, { accounts: await listSocialAccounts() });
@@ -296,8 +309,8 @@ async function handleApi(request, response, url) {
 async function syncOneAccount(id) {
   const account = await getTikTokAccount(id);
   if (!account) throw notFound("Account not found.");
-  const through = await getScheduledThrough(account.flowstage_account_id);
-  return { account: await setAccountFlowstageSync(id, through) };
+  const stats = await getAccountStats(account.flowstage_account_id);
+  return { account: await setAccountSync(id, stats) };
 }
 
 async function syncAllAccounts() {
@@ -305,9 +318,9 @@ async function syncAllAccounts() {
   const results = [];
   for (const account of accounts) {
     try {
-      const through = await getScheduledThrough(account.flowstage_account_id);
-      await setAccountFlowstageSync(account.id, through);
-      results.push({ id: account.id, ok: true, through });
+      const stats = await getAccountStats(account.flowstage_account_id);
+      await setAccountSync(account.id, stats);
+      results.push({ id: account.id, ok: true, through: stats.scheduledThrough });
     } catch (error) {
       results.push({ id: account.id, ok: false, reason: error.message });
     }

@@ -147,6 +147,12 @@ function migrate(database) {
       flowstage_synced_through TEXT,
       flowstage_synced_at TEXT,
       group_name TEXT,
+      total_views INTEGER,
+      total_likes INTEGER,
+      total_comments INTEGER,
+      total_shares INTEGER,
+      post_count INTEGER,
+      metrics_synced_at TEXT,
       archived INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -198,8 +204,15 @@ function migrate(database) {
     database.exec("ALTER TABLE task_messages ADD COLUMN image TEXT;");
   }
   const accountColumns = database.prepare("PRAGMA table_info(tiktok_accounts)").all();
-  if (!accountColumns.some((column) => column.name === "group_name")) {
+  const accountColNames = accountColumns.map((column) => column.name);
+  if (!accountColNames.includes("group_name")) {
     database.exec("ALTER TABLE tiktok_accounts ADD COLUMN group_name TEXT;");
+  }
+  for (const col of ["total_views", "total_likes", "total_comments", "total_shares", "post_count"]) {
+    if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER;`);
+  }
+  if (!accountColNames.includes("metrics_synced_at")) {
+    database.exec("ALTER TABLE tiktok_accounts ADD COLUMN metrics_synced_at TEXT;");
   }
   database.exec("UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted';");
   database.exec("UPDATE tasks SET status = 'Not Started' WHERE status = 'Misc.';");
@@ -687,10 +700,25 @@ export function replaceAccountSteps(accountId, steps) {
   steps.forEach((step, index) => insert.run(accountId, step.label, step.assignee || null, index + 1));
 }
 
-export function setAccountFlowstageSync(id, scheduledThrough) {
+export function setAccountSync(id, { scheduledThrough = null, metrics = null } = {}) {
+  const m = metrics || {};
   getDb()
-    .prepare("UPDATE tiktok_accounts SET flowstage_synced_through = ?, flowstage_synced_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
-    .run(scheduledThrough || null, Number(id));
+    .prepare(`
+      UPDATE tiktok_accounts SET
+        flowstage_synced_through = ?, flowstage_synced_at = datetime('now'),
+        total_views = ?, total_likes = ?, total_comments = ?, total_shares = ?,
+        post_count = ?, metrics_synced_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ?
+    `)
+    .run(
+      scheduledThrough || null,
+      metrics ? (Number(m.views) || 0) : null,
+      metrics ? (Number(m.likes) || 0) : null,
+      metrics ? (Number(m.comments) || 0) : null,
+      metrics ? (Number(m.shares) || 0) : null,
+      metrics ? (Number(m.postCount) || 0) : null,
+      Number(id)
+    );
   return getTikTokAccount(id);
 }
 

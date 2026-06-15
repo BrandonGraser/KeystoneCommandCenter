@@ -1978,30 +1978,81 @@ function renderAccountRow(account) {
           <span class="runout-badge runout-${runout.className}" title="${escapeHtml(runout.title)}">${escapeHtml(runout.label)}</span>
         </div>
         <div class="account-steps-row">${stepChips || `<span class="detail-empty">No steps</span>`}</div>
+        ${renderAccountInlineStats(account)}
         ${links.length ? `<div class="account-links">${links.join("")}</div>` : ""}
       </div>
       <div class="account-actions">
-        <button type="button" data-action="sync-account" title="Pull scheduled-through date from FlowStage">Sync</button>
+        <button type="button" data-action="sync-account" title="Pull runout + engagement metrics from FlowStage">Sync</button>
         <button type="button" data-action="edit-account">Edit</button>
       </div>
-      ${expanded ? renderAccountCredentials(account) : ""}
+      ${expanded ? renderAccountExpanded(account) : ""}
     </article>
   `;
 }
 
-function renderAccountCredentials(account) {
-  const row = (label, value) => `
+// Compact 1.2K / 3.4M formatting for big counts.
+function formatCount(value) {
+  const n = Number(value) || 0;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}K`;
+  return String(n);
+}
+
+function renderAccountInlineStats(account) {
+  if (account.post_count == null) return "";
+  return `
+    <div class="account-inline-stats">
+      <span><strong>${formatCount(account.total_views)}</strong> views</span>
+      <span><strong>${formatCount(account.total_likes)}</strong> likes</span>
+      <span class="account-inline-posts">${formatCount(account.post_count)} posts</span>
+    </div>
+  `;
+}
+
+function renderAccountExpanded(account) {
+  const cred = (label, value) => `
     <div class="account-credential">
       <span class="account-credential-label">${label}</span>
       <span class="account-credential-value">${value ? escapeHtml(value) : "<span class='detail-empty'>—</span>"}</span>
     </div>
   `;
   return `
-    <div class="account-credentials">
-      ${row("Username", account.username)}
-      ${row("Email", account.email)}
-      ${row("Password", account.password)}
+    <div class="account-detail">
+      ${renderAccountMetricsPanel(account)}
+      <div class="account-credentials">
+        ${cred("Username", account.username)}
+        ${cred("Email", account.email)}
+        ${cred("Password", account.password)}
+      </div>
     </div>
+  `;
+}
+
+function renderAccountMetricsPanel(account) {
+  if (account.post_count == null) {
+    return `<p class="detail-empty account-metrics-empty">No engagement data yet — hit Sync to pull it from FlowStage.</p>`;
+  }
+  const posts = Number(account.post_count) || 0;
+  const views = Number(account.total_views) || 0;
+  const avg = posts ? Math.round(views / posts) : 0;
+  const engagement = views ? ((Number(account.total_likes) || 0) / views * 100).toFixed(1) : "0.0";
+  const stat = (label, value) => `
+    <div class="account-stat">
+      <strong>${value}</strong>
+      <span>${label}</span>
+    </div>
+  `;
+  return `
+    <div class="account-metrics-grid">
+      ${stat("Views", formatCount(views))}
+      ${stat("Likes", formatCount(account.total_likes))}
+      ${stat("Comments", formatCount(account.total_comments))}
+      ${stat("Shares", formatCount(account.total_shares))}
+      ${stat("Posts", formatCount(posts))}
+      ${stat("Avg views", formatCount(avg))}
+      ${stat("Engagement", `${engagement}%`)}
+    </div>
+    ${account.metrics_synced_at ? `<p class="account-metrics-stamp">Metrics synced ${escapeHtml(shortDateTime(account.metrics_synced_at))}</p>` : ""}
   `;
 }
 

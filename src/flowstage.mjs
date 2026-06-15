@@ -61,32 +61,36 @@ function isoDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-// Returns an ISO date (YYYY-MM-DD) for the furthest-out scheduled, not-yet-posted
-// post — the date the account is queued *through* — or null if it has no scheduled
-// content at all. A date in the past means the account is out of content. We do
-// NOT bound the lower date, so a past "scheduled through" surfaces as out-of-content
-// rather than being hidden. Throws (status-tagged) on config/network errors.
-export async function getScheduledThrough(flowstageAccountId) {
+// One call returns everything we need for an account:
+//   - scheduledThrough: ISO date of the furthest-out un-posted post (the date the
+//     account is queued through; null if nothing scheduled; a past date = out of
+//     content). We do NOT bound the lower date so a past date isn't hidden.
+//   - metrics: summed views/likes/comments/shares + postCount across posted content.
+// Throws (status-tagged) on config/network errors.
+export async function getAccountStats(flowstageAccountId) {
   if (!flowstageAccountId) {
     const error = new Error("This account has no FlowStage account linked.");
     error.status = 400;
     throw error;
   }
   const data = await flowstageGet(
-    `/v1/social-accounts/${encodeURIComponent(flowstageAccountId)}/posts?include_posted=false`
+    `/v1/social-accounts/${encodeURIComponent(flowstageAccountId)}/posts?include_posted=true`
   );
-  return latestScheduledDate(data.posts || []);
-}
+  const posts = data.posts || [];
 
-function latestScheduledDate(posts) {
   let latest = null;
+  const metrics = { views: 0, likes: 0, comments: 0, shares: 0, postCount: 0 };
   for (const post of posts) {
-    if (post?.is_posted) continue;
-    const raw = post?.time_scheduled;
-    if (!raw) continue;
-    const date = new Date(raw);
-    if (Number.isNaN(date.getTime())) continue;
-    if (!latest || date > latest) latest = date;
+    if (post?.is_posted) {
+      metrics.postCount += 1;
+      metrics.views += Number(post.views) || 0;
+      metrics.likes += Number(post.likes) || 0;
+      metrics.comments += Number(post.comments) || 0;
+      metrics.shares += Number(post.shares) || 0;
+    } else {
+      const date = post?.time_scheduled ? new Date(post.time_scheduled) : null;
+      if (date && !Number.isNaN(date.getTime()) && (!latest || date > latest)) latest = date;
+    }
   }
-  return latest ? isoDate(latest) : null;
+  return { scheduledThrough: latest ? isoDate(latest) : null, metrics };
 }

@@ -29,7 +29,7 @@ import {
   createResourceItem,
   restoreTask,
   saveDailyNote,
-  setAccountFlowstageSync,
+  setAccountSync,
   updateTask,
   updateTaskLink,
   updateTikTokAccount,
@@ -38,13 +38,13 @@ import {
 import { importWorkbook } from "./src/importer.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "./src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "./src/validators.mjs";
-import { getScheduledThrough, listSocialAccounts } from "./src/flowstage.mjs";
+import { getAccountStats, listSocialAccounts } from "./src/flowstage.mjs";
 import { buildAuthCookie, isAuthed, verifyPassword, LOGIN_PATH } from "./src/auth.mjs";
 
 const PORT = Number(process.env.PORT || 4242);
 const PUBLIC_DIR = join(process.cwd(), "public");
 
-const PUBLIC_PATHS = new Set([LOGIN_PATH, "/api/login", "/healthz"]);
+const PUBLIC_PATHS = new Set([LOGIN_PATH, "/api/login", "/healthz", "/api/cron/sync-accounts"]);
 
 const server = createServer(async (request, response) => {
   try {
@@ -230,6 +230,19 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  // Scheduled (Vercel Cron) daily resync of all accounts. Protected by
+  // CRON_SECRET when set: Vercel sends it as `Authorization: Bearer <secret>`.
+  if (url.pathname === "/api/cron/sync-accounts") {
+    const secret = process.env.CRON_SECRET;
+    if (secret && request.headers.authorization !== `Bearer ${secret}`) {
+      sendJson(response, 401, { error: "Unauthorized." });
+      return;
+    }
+    const result = await syncAllAccounts();
+    sendJson(response, 200, { ok: true, synced: result.results.length, results: result.results });
+    return;
+  }
+
   // --- TikTok accounts (FlowStage tab) -----------------------------------
   if (url.pathname === "/api/flowstage/social-accounts" && method === "GET") {
     sendJson(response, 200, { accounts: await listSocialAccounts() });
@@ -324,12 +337,12 @@ async function handleApi(request, response, url) {
   throw notFound("Route not found.");
 }
 
-// Pull the latest scheduled date from FlowStage for one account and store it.
+// Pull runout + engagement metrics from FlowStage for one account and store them.
 async function syncOneAccount(id) {
   const account = getTikTokAccount(id);
   if (!account) throw notFound("Account not found.");
-  const through = await getScheduledThrough(account.flowstage_account_id);
-  return { account: setAccountFlowstageSync(id, through) };
+  const stats = await getAccountStats(account.flowstage_account_id);
+  return { account: setAccountSync(id, stats) };
 }
 
 // Best-effort sync of every account; per-account failures don't abort the rest.
@@ -338,9 +351,9 @@ async function syncAllAccounts() {
   const results = [];
   for (const account of accounts) {
     try {
-      const through = await getScheduledThrough(account.flowstage_account_id);
-      setAccountFlowstageSync(account.id, through);
-      results.push({ id: account.id, ok: true, through });
+      const stats = await getAccountStats(account.flowstage_account_id);
+      setAccountSync(account.id, stats);
+      results.push({ id: account.id, ok: true, through: stats.scheduledThrough });
     } catch (error) {
       results.push({ id: account.id, ok: false, reason: error.message });
     }

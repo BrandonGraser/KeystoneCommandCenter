@@ -8,7 +8,10 @@
   ],
   "functions": {
     "api/**/*.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    { "path": "/api/cron/sync-accounts", "schedule": "0 9 * * *" }
+  ]
 }
