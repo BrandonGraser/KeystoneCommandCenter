@@ -55,6 +55,26 @@ export async function exchangeCode(code) {
   return data; // { access_token, refresh_token, expires_in, open_id, scope, ... }
 }
 
+// Refresh an expired access token. TikTok may rotate the refresh token too.
+export async function refreshToken(refresh_token) {
+  const body = new URLSearchParams({
+    client_key: CLIENT_KEY,
+    client_secret: CLIENT_SECRET,
+    grant_type: "refresh_token",
+    refresh_token
+  });
+  const response = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) {
+    throw new Error(`Token refresh failed: ${JSON.stringify(data)}`);
+  }
+  return data;
+}
+
 // Page through the user's videos and return them with their real stats.
 export async function listVideos(accessToken, { maxPages = 6 } = {}) {
   const videos = [];
@@ -127,17 +147,24 @@ export function buildProbeHtml({ tiktok, flowstage, postCount, error } = {}) {
     <body><div class="card">${inner}<p style="margin-top:18px"><a href="/">← Back to app</a></p></div></body></html>`;
 }
 
-// Sum stats over videos created within the trailing window (create_time is unix seconds).
-export function aggregateWindow(videos, days = 14) {
-  const cutoff = Date.now() / 1000 - days * 86400;
-  const totals = { views: 0, likes: 0, comments: 0, shares: 0, postCount: 0 };
+// Sum stats into the last `days` window and the `days` window before it, so the
+// UI can show period-over-period deltas. create_time is unix seconds.
+export function aggregateWindows(videos, days = 14) {
+  const now = Date.now() / 1000;
+  const cutCurrent = now - days * 86400;
+  const cutPrevious = now - 2 * days * 86400;
+  const blank = () => ({ views: 0, likes: 0, comments: 0, shares: 0, postCount: 0 });
+  const current = blank();
+  const previous = blank();
   for (const v of videos) {
-    if ((Number(v.create_time) || 0) < cutoff) continue;
-    totals.postCount += 1;
-    totals.views += Number(v.view_count) || 0;
-    totals.likes += Number(v.like_count) || 0;
-    totals.comments += Number(v.comment_count) || 0;
-    totals.shares += Number(v.share_count) || 0;
+    const t = Number(v.create_time) || 0;
+    const bucket = t >= cutCurrent ? current : (t >= cutPrevious ? previous : null);
+    if (!bucket) continue;
+    bucket.postCount += 1;
+    bucket.views += Number(v.view_count) || 0;
+    bucket.likes += Number(v.like_count) || 0;
+    bucket.comments += Number(v.comment_count) || 0;
+    bucket.shares += Number(v.share_count) || 0;
   }
-  return totals;
+  return { ...current, windowDays: days, prev: previous };
 }

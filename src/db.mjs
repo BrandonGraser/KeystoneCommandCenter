@@ -158,6 +158,12 @@ function migrate(database) {
       prev_shares INTEGER,
       prev_post_count INTEGER,
       metrics_synced_at TEXT,
+      metrics_source TEXT,
+      tiktok_open_id TEXT,
+      tiktok_access_token TEXT,
+      tiktok_refresh_token TEXT,
+      tiktok_token_expires_at TEXT,
+      tiktok_connected_at TEXT,
       archived INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -216,8 +222,8 @@ function migrate(database) {
   for (const col of ["total_views", "total_likes", "total_comments", "total_shares", "post_count", "prev_views", "prev_likes", "prev_comments", "prev_shares", "prev_post_count"]) {
     if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER;`);
   }
-  if (!accountColNames.includes("metrics_synced_at")) {
-    database.exec("ALTER TABLE tiktok_accounts ADD COLUMN metrics_synced_at TEXT;");
+  for (const col of ["metrics_synced_at", "metrics_source", "tiktok_open_id", "tiktok_access_token", "tiktok_refresh_token", "tiktok_token_expires_at", "tiktok_connected_at"]) {
+    if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} TEXT;`);
   }
   database.exec("UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted';");
   database.exec("UPDATE tasks SET status = 'Not Started' WHERE status = 'Misc.';");
@@ -615,13 +621,45 @@ function hydrateAccount(row) {
   const steps = database
     .prepare("SELECT id, label, assignee, position FROM tiktok_account_steps WHERE account_id = ? ORDER BY position ASC, id ASC")
     .all(row.id);
+  // Never send OAuth tokens to the client — expose only a connected flag.
+  const { tiktok_access_token, tiktok_refresh_token, tiktok_token_expires_at, tiktok_open_id, ...safe } = row;
   return {
-    ...row,
+    ...safe,
     archived: Boolean(row.archived),
     // Effective runout date: a live FlowStage sync wins over the manual date.
     runout_date: row.flowstage_synced_through || row.scheduled_through || null,
+    tiktok_connected: Boolean(tiktok_access_token),
     steps
   };
+}
+
+// Token accessors are server-only (not exposed via the API).
+export function getAccountTokens(id) {
+  return getDb()
+    .prepare("SELECT tiktok_open_id, tiktok_access_token, tiktok_refresh_token, tiktok_token_expires_at FROM tiktok_accounts WHERE id = ?")
+    .get(Number(id)) || {};
+}
+
+export function saveAccountTikTokTokens(id, { open_id, access_token, refresh_token, expires_in }) {
+  const expiresAt = new Date(Date.now() + (Number(expires_in) || 0) * 1000).toISOString();
+  getDb()
+    .prepare(`
+      UPDATE tiktok_accounts SET
+        tiktok_open_id = coalesce(?, tiktok_open_id),
+        tiktok_access_token = ?, tiktok_refresh_token = ?, tiktok_token_expires_at = ?,
+        tiktok_connected_at = coalesce(tiktok_connected_at, datetime('now')),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `)
+    .run(open_id || null, access_token || null, refresh_token || null, expiresAt, Number(id));
+  return getTikTokAccount(id);
+}
+
+export function disconnectAccountTikTok(id) {
+  getDb()
+    .prepare("UPDATE tiktok_accounts SET tiktok_open_id = NULL, tiktok_access_token = NULL, tiktok_refresh_token = NULL, tiktok_token_expires_at = NULL, tiktok_connected_at = NULL, updated_at = datetime('now') WHERE id = ?")
+    .run(Number(id));
+  return getTikTokAccount(id);
 }
 
 export function listTikTokAccounts() {
@@ -705,7 +743,7 @@ export function replaceAccountSteps(accountId, steps) {
   steps.forEach((step, index) => insert.run(accountId, step.label, step.assignee || null, index + 1));
 }
 
-export function setAccountSync(id, { scheduledThrough = null, metrics = null } = {}) {
+export function setAccountSync(id, { scheduledThrough = null, metrics = null, metricsSource = null } = {}) {
   const m = metrics || {};
   const p = m.prev || {};
   getDb()
@@ -714,7 +752,7 @@ export function setAccountSync(id, { scheduledThrough = null, metrics = null } =
         flowstage_synced_through = ?, flowstage_synced_at = datetime('now'),
         total_views = ?, total_likes = ?, total_comments = ?, total_shares = ?, post_count = ?,
         prev_views = ?, prev_likes = ?, prev_comments = ?, prev_shares = ?, prev_post_count = ?,
-        metrics_synced_at = datetime('now'), updated_at = datetime('now')
+        metrics_source = ?, metrics_synced_at = datetime('now'), updated_at = datetime('now')
       WHERE id = ?
     `)
     .run(
@@ -729,6 +767,7 @@ export function setAccountSync(id, { scheduledThrough = null, metrics = null } =
       metrics ? (Number(p.comments) || 0) : null,
       metrics ? (Number(p.shares) || 0) : null,
       metrics ? (Number(p.postCount) || 0) : null,
+      metrics ? metricsSource : null,
       Number(id)
     );
   return getTikTokAccount(id);

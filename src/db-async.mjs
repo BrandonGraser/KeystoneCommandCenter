@@ -199,6 +199,12 @@ async function migrate(client) {
         prev_shares INTEGER,
         prev_post_count INTEGER,
         metrics_synced_at TEXT,
+        metrics_source TEXT,
+        tiktok_open_id TEXT,
+        tiktok_access_token TEXT,
+        tiktok_refresh_token TEXT,
+        tiktok_token_expires_at TEXT,
+        tiktok_connected_at TEXT,
         archived INTEGER NOT NULL DEFAULT 0,
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -270,8 +276,8 @@ async function migrate(client) {
   for (const col of ["total_views", "total_likes", "total_comments", "total_shares", "post_count", "prev_views", "prev_likes", "prev_comments", "prev_shares", "prev_post_count"]) {
     if (!accountColNames.includes(col)) await client.execute(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER`);
   }
-  if (!accountColNames.includes("metrics_synced_at")) {
-    await client.execute("ALTER TABLE tiktok_accounts ADD COLUMN metrics_synced_at TEXT");
+  for (const col of ["metrics_synced_at", "metrics_source", "tiktok_open_id", "tiktok_access_token", "tiktok_refresh_token", "tiktok_token_expires_at", "tiktok_connected_at"]) {
+    if (!accountColNames.includes(col)) await client.execute(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} TEXT`);
   }
 
   await client.batch([
@@ -714,12 +720,48 @@ async function hydrateAccount(row, columns, client) {
     sql: "SELECT id, label, assignee, position FROM tiktok_account_steps WHERE account_id = ? ORDER BY position ASC, id ASC",
     args: [account.id]
   });
+  // Never send OAuth tokens to the client — expose only a connected flag.
+  const { tiktok_access_token, tiktok_refresh_token, tiktok_token_expires_at, tiktok_open_id, ...safe } = account;
   return {
-    ...account,
+    ...safe,
     archived: Boolean(account.archived),
     runout_date: account.flowstage_synced_through || account.scheduled_through || null,
+    tiktok_connected: Boolean(tiktok_access_token),
     steps: steps.rows.map((r) => toRow(steps.columns, r))
   };
+}
+
+export async function getAccountTokens(id) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT tiktok_open_id, tiktok_access_token, tiktok_refresh_token, tiktok_token_expires_at FROM tiktok_accounts WHERE id = ?",
+    args: [Number(id)]
+  });
+  return r.rows[0] ? toRow(r.columns, r.rows[0]) : {};
+}
+
+export async function saveAccountTikTokTokens(id, { open_id, access_token, refresh_token, expires_in }) {
+  const expiresAt = new Date(Date.now() + (Number(expires_in) || 0) * 1000).toISOString();
+  const client = await getDb();
+  await client.execute({
+    sql: `UPDATE tiktok_accounts SET
+      tiktok_open_id = coalesce(?, tiktok_open_id),
+      tiktok_access_token = ?, tiktok_refresh_token = ?, tiktok_token_expires_at = ?,
+      tiktok_connected_at = coalesce(tiktok_connected_at, datetime('now')),
+      updated_at = datetime('now')
+    WHERE id = ?`,
+    args: [open_id || null, access_token || null, refresh_token || null, expiresAt, Number(id)]
+  });
+  return getTikTokAccount(id);
+}
+
+export async function disconnectAccountTikTok(id) {
+  const client = await getDb();
+  await client.execute({
+    sql: "UPDATE tiktok_accounts SET tiktok_open_id = NULL, tiktok_access_token = NULL, tiktok_refresh_token = NULL, tiktok_token_expires_at = NULL, tiktok_connected_at = NULL, updated_at = datetime('now') WHERE id = ?",
+    args: [Number(id)]
+  });
+  return getTikTokAccount(id);
 }
 
 export async function listTikTokAccounts() {
@@ -805,7 +847,7 @@ async function _replaceAccountSteps(accountId, steps, client) {
   }
 }
 
-export async function setAccountSync(id, { scheduledThrough = null, metrics = null } = {}) {
+export async function setAccountSync(id, { scheduledThrough = null, metrics = null, metricsSource = null } = {}) {
   const m = metrics || {};
   const p = m.prev || {};
   const client = await getDb();
@@ -814,7 +856,7 @@ export async function setAccountSync(id, { scheduledThrough = null, metrics = nu
       flowstage_synced_through = ?, flowstage_synced_at = datetime('now'),
       total_views = ?, total_likes = ?, total_comments = ?, total_shares = ?, post_count = ?,
       prev_views = ?, prev_likes = ?, prev_comments = ?, prev_shares = ?, prev_post_count = ?,
-      metrics_synced_at = datetime('now'), updated_at = datetime('now')
+      metrics_source = ?, metrics_synced_at = datetime('now'), updated_at = datetime('now')
     WHERE id = ?`,
     args: [
       scheduledThrough || null,
@@ -828,6 +870,7 @@ export async function setAccountSync(id, { scheduledThrough = null, metrics = nu
       metrics ? (Number(p.comments) || 0) : null,
       metrics ? (Number(p.shares) || 0) : null,
       metrics ? (Number(p.postCount) || 0) : null,
+      metrics ? metricsSource : null,
       Number(id)
     ]
   });

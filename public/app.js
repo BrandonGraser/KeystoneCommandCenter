@@ -134,9 +134,17 @@ async function init() {
   renderLinkInputs();
   applyStoredResourceCollapse();
   await Promise.all([loadTasks(), loadResources()]);
-  // Restore the last-used tab here (not during bindEvents): this runs after the
-  // module has fully evaluated, so the accounts state/consts are initialized.
-  switchTab(getStoredTab());
+  // Returning from a TikTok connect lands on /?tiktok=connected — show the
+  // Accounts tab with fresh numbers and a confirmation.
+  if (new URLSearchParams(location.search).get("tiktok") === "connected") {
+    switchTab("accounts");
+    showNotice("TikTok connected — engagement metrics updated.", "good");
+    try { history.replaceState(null, "", location.pathname); } catch {}
+  } else {
+    // Restore the last-used tab here (not during bindEvents): this runs after the
+    // module has fully evaluated, so the accounts state/consts are initialized.
+    switchTab(getStoredTab());
+  }
   startLiveSync();
 }
 
@@ -2034,13 +2042,17 @@ function renderAccountExpanded(account) {
       <span class="account-credential-value">${value ? escapeHtml(value) : "<span class='detail-empty'>—</span>"}</span>
     </div>
   `;
-  const verify = account.flowstage_account_id
-    ? `<a class="account-verify-link" href="/api/tiktok/connect?fsid=${encodeURIComponent(account.flowstage_account_id)}">Verify on TikTok →</a>`
-    : "";
+  const tiktok = account.tiktok_connected
+    ? `<div class="account-tiktok-row">
+        <span class="account-tiktok-status">● TikTok connected</span>
+        <a class="account-verify-link" href="/api/tiktok/connect?account=${account.id}">Reconnect</a>
+        <button type="button" class="account-tiktok-disconnect" data-action="disconnect-tiktok">Disconnect</button>
+      </div>`
+    : `<div class="account-tiktok-row"><a class="account-verify-link" href="/api/tiktok/connect?account=${account.id}">Connect TikTok →</a></div>`;
   return `
     <div class="account-detail">
       ${renderAccountMetricsPanel(account)}
-      ${verify}
+      ${tiktok}
       <div class="account-credentials">
         ${cred("Username", account.username)}
         ${cred("Email", account.email)}
@@ -2079,8 +2091,9 @@ function renderAccountMetricsPanel(account) {
       ${renderDelta(cur, prev)}
     </div>
   `;
+  const source = account.metrics_source === "tiktok" ? "via TikTok" : (account.metrics_source === "flowstage" ? "via FlowStage" : "");
   return `
-    <p class="account-metrics-heading">${METRICS_WINDOW_LABEL} <span class="account-metrics-sub">vs previous 14</span></p>
+    <p class="account-metrics-heading">${METRICS_WINDOW_LABEL} <span class="account-metrics-sub">vs previous 14${source ? ` · ${source}` : ""}</span></p>
     <div class="account-metrics-grid">
       ${stat("Views", formatCount(views), views, prevViews)}
       ${stat("Likes", formatCount(account.total_likes), account.total_likes, account.prev_likes)}
@@ -2105,6 +2118,9 @@ async function onAccountBoardClick(event) {
     return;
   }
 
+  // Let real links (Connect/Reconnect, AE/Tutorial) navigate without toggling.
+  if (event.target.closest("a")) return;
+
   const row = event.target.closest(".account-row");
   if (!row) return;
   const id = Number(row.dataset.accountId);
@@ -2115,6 +2131,13 @@ async function onAccountBoardClick(event) {
   }
   if (event.target.closest("[data-action='sync-account']")) {
     await syncAccount(id);
+    return;
+  }
+  if (event.target.closest("[data-action='disconnect-tiktok']")) {
+    if (!window.confirm("Disconnect TikTok for this account? Metrics will fall back to FlowStage.")) return;
+    await api(`/api/tiktok/disconnect/${id}`, { method: "POST" });
+    await loadAccounts();
+    showNotice("TikTok disconnected.");
     return;
   }
   // Otherwise, toggle the credentials panel for this account.

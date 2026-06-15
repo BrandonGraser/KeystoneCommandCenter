@@ -2222,11 +2222,35 @@ dialog::backdrop {
   gap: 6px;
 }
 
-.account-verify-link {
-  display: inline-block;
+.account-tiktok-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.account-verify-link {
   color: var(--author-brandon);
   font-size: 11px;
+}
+
+.account-tiktok-status {
+  color: var(--good);
+  letter-spacing: 0.06em;
+}
+
+.account-tiktok-disconnect {
+  min-height: 22px;
+  padding: 0 8px;
+  border-color: var(--line);
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.account-tiktok-disconnect:hover {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .account-credential {

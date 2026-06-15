@@ -10,6 +10,9 @@ import {
   createTaskMessage,
   createTask,
   createTikTokAccount,
+  disconnectAccountTikTok,
+  getAccountTokens,
+  saveAccountTikTokTokens,
   deleteDailyNote,
   deleteTask,
   deleteTikTokAccount,
@@ -39,7 +42,7 @@ import { importWorkbook } from "./src/importer.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "./src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "./src/validators.mjs";
 import { getAccountStats, listSocialAccounts } from "./src/flowstage.mjs";
-import { aggregateWindow, buildAuthUrl, buildProbeHtml, exchangeCode, isTikTokConfigured, listVideos } from "./src/tiktok.mjs";
+import { aggregateWindows, buildAuthUrl, buildProbeHtml, exchangeCode, isTikTokConfigured, listVideos, refreshToken } from "./src/tiktok.mjs";
 import { buildAuthCookie, isAuthed, verifyPassword, LOGIN_PATH } from "./src/auth.mjs";
 
 const PORT = Number(process.env.PORT || 4242);
@@ -244,20 +247,25 @@ async function handleApi(request, response, url) {
     return;
   }
 
-  // --- TikTok Display API accuracy probe (one account) -------------------
+  // --- TikTok account connection (OAuth) ---------------------------------
   if (url.pathname === "/api/tiktok/connect" && method === "GET") {
     if (!isTikTokConfigured()) {
       sendJson(response, 503, { error: "TikTok is not configured. Set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET." });
       return;
     }
-    const fsid = url.searchParams.get("fsid") || "";
-    const state = `${Math.random().toString(36).slice(2)}.${fsid}`;
+    const accountId = url.searchParams.get("account") || "";
+    const state = `${Math.random().toString(36).slice(2)}.${accountId}`;
     response.writeHead(302, { Location: buildAuthUrl(state) });
     response.end();
     return;
   }
   if (url.pathname === "/api/tiktok/callback" && method === "GET") {
     await handleTikTokCallback(response, url);
+    return;
+  }
+  const tiktokDisconnect = url.pathname.match(/^\/api\/tiktok\/disconnect\/(\d+)$/);
+  if (tiktokDisconnect && method === "POST") {
+    sendJson(response, 200, { account: disconnectAccountTikTok(Number(tiktokDisconnect[1])) });
     return;
   }
 
@@ -366,43 +374,64 @@ async function handleTikTokCallback(response, url) {
     const code = url.searchParams.get("code");
     if (error) throw new Error(`TikTok denied authorization: ${error} ${url.searchParams.get("error_description") || ""}`);
     if (!code) throw new Error("No authorization code returned.");
-    const fsid = (url.searchParams.get("state") || "").split(".")[1] || "";
+    const accountId = (url.searchParams.get("state") || "").split(".")[1] || "";
+    if (!accountId) throw new Error("Missing account reference in OAuth state.");
 
     const token = await exchangeCode(code);
-    const videos = await listVideos(token.access_token);
-    const tiktok = aggregateWindow(videos, 14);
+    saveAccountTikTokTokens(accountId, token);
+    try { await syncOneAccount(Number(accountId)); } catch { /* numbers will fill on next sync */ }
 
-    let flowstage = null;
-    if (fsid) {
-      try {
-        flowstage = (await getAccountStats(fsid)).metrics;
-      } catch {
-        // best-effort comparison
-      }
-    }
-    sendHtml(response, 200, buildProbeHtml({ tiktok, flowstage, postCount: tiktok.postCount }));
+    response.writeHead(302, { Location: "/?tiktok=connected" });
+    response.end();
   } catch (err) {
     sendHtml(response, 200, buildProbeHtml({ error: err.message }));
   }
 }
 
-// Pull runout + engagement metrics from FlowStage for one account and store them.
+async function tiktokMetricsForAccount(accountId) {
+  const tok = getAccountTokens(accountId);
+  if (!tok.tiktok_access_token) throw new Error("TikTok not connected.");
+  let accessToken = tok.tiktok_access_token;
+  const expiresAt = tok.tiktok_token_expires_at ? Date.parse(tok.tiktok_token_expires_at) : 0;
+  if (!expiresAt || expiresAt <= Date.now() + 60000) {
+    const refreshed = await refreshToken(tok.tiktok_refresh_token);
+    saveAccountTikTokTokens(accountId, refreshed);
+    accessToken = refreshed.access_token;
+  }
+  const videos = await listVideos(accessToken);
+  return aggregateWindows(videos, 14);
+}
+
+// Runout always comes from FlowStage; engagement from TikTok when connected.
 async function syncOneAccount(id) {
   const account = getTikTokAccount(id);
   if (!account) throw notFound("Account not found.");
-  const stats = await getAccountStats(account.flowstage_account_id);
-  return { account: setAccountSync(id, stats) };
+  let scheduledThrough = null;
+  let fsMetrics = null;
+  if (account.flowstage_account_id) {
+    const fs = await getAccountStats(account.flowstage_account_id);
+    scheduledThrough = fs.scheduledThrough;
+    fsMetrics = fs.metrics;
+  }
+  let metrics = null;
+  let metricsSource = null;
+  if (account.tiktok_connected) {
+    metrics = await tiktokMetricsForAccount(id);
+    metricsSource = "tiktok";
+  } else if (fsMetrics) {
+    metrics = fsMetrics;
+    metricsSource = "flowstage";
+  }
+  return { account: setAccountSync(id, { scheduledThrough, metrics, metricsSource }) };
 }
 
-// Best-effort sync of every account; per-account failures don't abort the rest.
 async function syncAllAccounts() {
   const accounts = listTikTokAccounts();
   const results = [];
   for (const account of accounts) {
     try {
-      const stats = await getAccountStats(account.flowstage_account_id);
-      setAccountSync(account.id, stats);
-      results.push({ id: account.id, ok: true, through: stats.scheduledThrough });
+      const r = await syncOneAccount(account.id);
+      results.push({ id: account.id, ok: true, through: r.account.runout_date });
     } catch (error) {
       results.push({ id: account.id, ok: false, reason: error.message });
     }
