@@ -2034,9 +2034,13 @@ function renderAccountExpanded(account) {
       <span class="account-credential-value">${value ? escapeHtml(value) : "<span class='detail-empty'>—</span>"}</span>
     </div>
   `;
+  const verify = account.flowstage_account_id
+    ? `<a class="account-verify-link" href="/api/tiktok/connect?fsid=${encodeURIComponent(account.flowstage_account_id)}">Verify on TikTok →</a>`
+    : "";
   return `
     <div class="account-detail">
       ${renderAccountMetricsPanel(account)}
+      ${verify}
       <div class="account-credentials">
         ${cred("Username", account.username)}
         ${cred("Email", account.email)}

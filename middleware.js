@@ -1,7 +1,10 @@
 import { isAuthed, LOGIN_PATH } from "./src/auth.mjs";
 
 // Public paths that must stay reachable without a session.
-const PUBLIC_PATHS = new Set([LOGIN_PATH, "/api/login", "/healthz", "/api/cron/sync-accounts"]);
+const PUBLIC_PATHS = new Set([
+  LOGIN_PATH, "/api/login", "/healthz", "/api/cron/sync-accounts",
+  "/api/tiktok/connect", "/api/tiktok/callback"
+]);
 
 export default async function middleware(request) {
   const url = new URL(request.url);

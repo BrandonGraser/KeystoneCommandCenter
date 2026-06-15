@@ -34,6 +34,7 @@ import { sendRingNotification, sendTaskDoneNotification } from "../src/notificat
 import { cleanText, validateLinkPayload } from "../src/validators.mjs";
 import { buildAuthCookie, verifyPassword } from "../src/auth.mjs";
 import { getAccountStats, listSocialAccounts } from "../src/flowstage.mjs";
+import { aggregateWindow, buildAuthUrl, buildProbeHtml, exchangeCode, isTikTokConfigured, listVideos } from "../src/tiktok.mjs";
 
 export const config = {
   api: { bodyParser: false }
@@ -215,6 +216,23 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  // --- TikTok Display API accuracy probe (one account) -------------------
+  if (url.pathname === "/api/tiktok/connect" && method === "GET") {
+    if (!isTikTokConfigured()) {
+      sendJson(response, 503, { error: "TikTok is not configured. Set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET." });
+      return;
+    }
+    const fsid = url.searchParams.get("fsid") || "";
+    const state = `${Math.random().toString(36).slice(2)}.${fsid}`;
+    response.writeHead(302, { Location: buildAuthUrl(state) });
+    response.end();
+    return;
+  }
+  if (url.pathname === "/api/tiktok/callback" && method === "GET") {
+    await handleTikTokCallback(response, url, getAccountStats);
+    return;
+  }
+
   // --- TikTok accounts (FlowStage tab) -----------------------------------
   if (url.pathname === "/api/flowstage/social-accounts" && method === "GET") {
     sendJson(response, 200, { accounts: await listSocialAccounts() });
@@ -304,6 +322,37 @@ async function handleApi(request, response, url) {
   }
 
   throw notFound("Route not found.");
+}
+
+function sendHtml(response, status, html) {
+  response.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
+  response.end(html);
+}
+
+async function handleTikTokCallback(response, url, accountStats) {
+  try {
+    const error = url.searchParams.get("error");
+    const code = url.searchParams.get("code");
+    if (error) throw new Error(`TikTok denied authorization: ${error} ${url.searchParams.get("error_description") || ""}`);
+    if (!code) throw new Error("No authorization code returned.");
+    const fsid = (url.searchParams.get("state") || "").split(".")[1] || "";
+
+    const token = await exchangeCode(code);
+    const videos = await listVideos(token.access_token);
+    const tiktok = aggregateWindow(videos, 14);
+
+    let flowstage = null;
+    if (fsid) {
+      try {
+        flowstage = (await accountStats(fsid)).metrics;
+      } catch {
+        // FlowStage comparison is best-effort; still show TikTok's numbers.
+      }
+    }
+    sendHtml(response, 200, buildProbeHtml({ tiktok, flowstage, postCount: tiktok.postCount }));
+  } catch (err) {
+    sendHtml(response, 200, buildProbeHtml({ error: err.message }));
+  }
 }
 
 async function syncOneAccount(id) {

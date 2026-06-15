@@ -39,6 +39,7 @@ import { importWorkbook } from "./src/importer.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "./src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "./src/validators.mjs";
 import { getAccountStats, listSocialAccounts } from "./src/flowstage.mjs";
+import { aggregateWindow, buildAuthUrl, buildProbeHtml, exchangeCode, isTikTokConfigured, listVideos } from "./src/tiktok.mjs";
 import { buildAuthCookie, isAuthed, verifyPassword, LOGIN_PATH } from "./src/auth.mjs";
 
 const PORT = Number(process.env.PORT || 4242);
@@ -243,6 +244,23 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  // --- TikTok Display API accuracy probe (one account) -------------------
+  if (url.pathname === "/api/tiktok/connect" && method === "GET") {
+    if (!isTikTokConfigured()) {
+      sendJson(response, 503, { error: "TikTok is not configured. Set TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET." });
+      return;
+    }
+    const fsid = url.searchParams.get("fsid") || "";
+    const state = `${Math.random().toString(36).slice(2)}.${fsid}`;
+    response.writeHead(302, { Location: buildAuthUrl(state) });
+    response.end();
+    return;
+  }
+  if (url.pathname === "/api/tiktok/callback" && method === "GET") {
+    await handleTikTokCallback(response, url);
+    return;
+  }
+
   // --- TikTok accounts (FlowStage tab) -----------------------------------
   if (url.pathname === "/api/flowstage/social-accounts" && method === "GET") {
     sendJson(response, 200, { accounts: await listSocialAccounts() });
@@ -335,6 +353,37 @@ async function handleApi(request, response, url) {
   }
 
   throw notFound("Route not found.");
+}
+
+function sendHtml(response, status, html) {
+  response.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
+  response.end(html);
+}
+
+async function handleTikTokCallback(response, url) {
+  try {
+    const error = url.searchParams.get("error");
+    const code = url.searchParams.get("code");
+    if (error) throw new Error(`TikTok denied authorization: ${error} ${url.searchParams.get("error_description") || ""}`);
+    if (!code) throw new Error("No authorization code returned.");
+    const fsid = (url.searchParams.get("state") || "").split(".")[1] || "";
+
+    const token = await exchangeCode(code);
+    const videos = await listVideos(token.access_token);
+    const tiktok = aggregateWindow(videos, 14);
+
+    let flowstage = null;
+    if (fsid) {
+      try {
+        flowstage = (await getAccountStats(fsid)).metrics;
+      } catch {
+        // best-effort comparison
+      }
+    }
+    sendHtml(response, 200, buildProbeHtml({ tiktok, flowstage, postCount: tiktok.postCount }));
+  } catch (err) {
+    sendHtml(response, 200, buildProbeHtml({ error: err.message }));
+  }
 }
 
 // Pull runout + engagement metrics from FlowStage for one account and store them.

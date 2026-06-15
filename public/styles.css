@@ -2222,6 +2222,13 @@ dialog::backdrop {
   gap: 6px;
 }
 
+.account-verify-link {
+  display: inline-block;
+  margin-bottom: 10px;
+  color: var(--author-brandon);
+  font-size: 11px;
+}
+
 .account-credential {
   display: grid;
   grid-template-columns: 90px minmax(0, 1fr);
