@@ -179,6 +179,10 @@ export function validateAccountPayload(input, { partial = false } = {}) {
   for (const field of ["ae_project_url", "tutorial_url", "username", "email", "password", "flowstage_account_id", "group_name"]) {
     if (field in input) output[field] = cleanText(input[field]);
   }
+  // Avatar is a data: URL (or "" to clear) — don't run it through cleanText.
+  if ("avatar" in input) {
+    output.avatar = typeof input.avatar === "string" && input.avatar.startsWith("data:image/") ? input.avatar : "";
+  }
   if ("scheduled_through" in input) output.scheduled_through = normalizeDateInput(input.scheduled_through);
 
   if ("steps" in input) {

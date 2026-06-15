@@ -85,6 +85,7 @@ export async function getAccountStats(flowstageAccountId) {
   const now = Date.now();
   const cutCurrent = now - METRICS_WINDOW_DAYS * 86400000;        // last 14 days
   const cutPrevious = now - 2 * METRICS_WINDOW_DAYS * 86400000;   // the 14 days before that
+  const daily = newDailySeries();
 
   const blank = () => ({ views: 0, likes: 0, comments: 0, shares: 0, postCount: 0 });
   const current = blank();
@@ -96,18 +97,43 @@ export async function getAccountStats(flowstageAccountId) {
       const when = post.time_posted || post.time_scheduled;
       const t = when ? new Date(when).getTime() : NaN;
       if (Number.isNaN(t)) continue;
+      const views = Number(post.views) || 0;
+      const likes = Number(post.likes) || 0;
       const bucket = t >= cutCurrent ? current : (t >= cutPrevious ? previous : null);
       if (!bucket) continue;
       bucket.postCount += 1;
-      bucket.views += Number(post.views) || 0;
-      bucket.likes += Number(post.likes) || 0;
+      bucket.views += views;
+      bucket.likes += likes;
       bucket.comments += Number(post.comments) || 0;
       bucket.shares += Number(post.shares) || 0;
+      if (bucket === current) addToDaily(daily, t, views, likes);
     } else {
       const date = post?.time_scheduled ? new Date(post.time_scheduled) : null;
       if (date && !Number.isNaN(date.getTime()) && (!latest || date > latest)) latest = date;
     }
   }
-  const metrics = { ...current, windowDays: METRICS_WINDOW_DAYS, prev: previous };
+  const metrics = { ...current, windowDays: METRICS_WINDOW_DAYS, prev: previous, daily: serializeDaily(daily) };
   return { scheduledThrough: latest ? isoDate(latest) : null, metrics };
+}
+
+// --- Daily series helpers (shared shape used by the charts) ----------------
+// 14 calendar-day buckets ending today, summing views/likes of content posted
+// each day (a video's current total attributed to its post date).
+export function newDailySeries(days = METRICS_WINDOW_DAYS) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (days - 1));
+  return { startMs: start.getTime(), days, views: new Array(days).fill(0), likes: new Array(days).fill(0) };
+}
+
+export function addToDaily(series, timeMs, views, likes) {
+  const idx = Math.floor((timeMs - series.startMs) / 86400000);
+  if (idx >= 0 && idx < series.days) {
+    series.views[idx] += views;
+    series.likes[idx] += likes;
+  }
+}
+
+export function serializeDaily(series) {
+  return { start: isoDate(new Date(series.startMs)), views: series.views, likes: series.likes };
 }

@@ -147,6 +147,8 @@ function migrate(database) {
       flowstage_synced_through TEXT,
       flowstage_synced_at TEXT,
       group_name TEXT,
+      avatar TEXT,
+      metrics_daily TEXT,
       total_views INTEGER,
       total_likes INTEGER,
       total_comments INTEGER,
@@ -222,7 +224,7 @@ function migrate(database) {
   for (const col of ["total_views", "total_likes", "total_comments", "total_shares", "post_count", "prev_views", "prev_likes", "prev_comments", "prev_shares", "prev_post_count"]) {
     if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER;`);
   }
-  for (const col of ["metrics_synced_at", "metrics_source", "tiktok_open_id", "tiktok_access_token", "tiktok_refresh_token", "tiktok_token_expires_at", "tiktok_connected_at"]) {
+  for (const col of ["metrics_synced_at", "metrics_source", "tiktok_open_id", "tiktok_access_token", "tiktok_refresh_token", "tiktok_token_expires_at", "tiktok_connected_at", "avatar", "metrics_daily"]) {
     if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} TEXT;`);
   }
   database.exec("UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted';");
@@ -689,8 +691,8 @@ export function createTikTokAccount(input) {
     .prepare(`
       INSERT INTO tiktok_accounts (
         name, ae_project_url, tutorial_url, username, email, password,
-        scheduled_through, flowstage_account_id, group_name, sort_order
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        scheduled_through, flowstage_account_id, group_name, avatar, sort_order
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     .run(
       payload.name,
@@ -702,6 +704,7 @@ export function createTikTokAccount(input) {
       payload.scheduled_through || null,
       payload.flowstage_account_id || null,
       payload.group_name || null,
+      payload.avatar || null,
       Number(maxOrder) + 1
     );
   const accountId = Number(result.lastInsertRowid);
@@ -719,7 +722,7 @@ export function updateTikTokAccount(id, input) {
   const payload = validateAccountPayload(input, { partial: true });
   const sets = [];
   const params = [];
-  for (const field of ["name", "ae_project_url", "tutorial_url", "username", "email", "password", "scheduled_through", "flowstage_account_id", "group_name"]) {
+  for (const field of ["name", "ae_project_url", "tutorial_url", "username", "email", "password", "scheduled_through", "flowstage_account_id", "group_name", "avatar"]) {
     if (field in payload) {
       sets.push(`${field} = ?`);
       params.push(payload[field] || null);
@@ -752,7 +755,7 @@ export function setAccountSync(id, { scheduledThrough = null, metrics = null, me
         flowstage_synced_through = ?, flowstage_synced_at = datetime('now'),
         total_views = ?, total_likes = ?, total_comments = ?, total_shares = ?, post_count = ?,
         prev_views = ?, prev_likes = ?, prev_comments = ?, prev_shares = ?, prev_post_count = ?,
-        metrics_source = ?, metrics_synced_at = datetime('now'), updated_at = datetime('now')
+        metrics_source = ?, metrics_daily = ?, metrics_synced_at = datetime('now'), updated_at = datetime('now')
       WHERE id = ?
     `)
     .run(
@@ -768,6 +771,7 @@ export function setAccountSync(id, { scheduledThrough = null, metrics = null, me
       metrics ? (Number(p.shares) || 0) : null,
       metrics ? (Number(p.postCount) || 0) : null,
       metrics ? metricsSource : null,
+      metrics && m.daily ? JSON.stringify(m.daily) : null,
       Number(id)
     );
   return getTikTokAccount(id);

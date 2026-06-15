@@ -107,6 +107,9 @@ const els = {
   accountName: document.querySelector("#accountName"),
   accountNameSelect: document.querySelector("#accountNameSelect"),
   accountNameCustomRow: document.querySelector("#accountNameCustomRow"),
+  accountAvatarInput: document.querySelector("#accountAvatarInput"),
+  accountAvatarPreview: document.querySelector("#accountAvatarPreview"),
+  accountAvatarRemove: document.querySelector("#accountAvatarRemove"),
   accountAeUrl: document.querySelector("#accountAeUrl"),
   accountTutorialUrl: document.querySelector("#accountTutorialUrl"),
   accountUsername: document.querySelector("#accountUsername"),
@@ -1653,8 +1656,9 @@ function storeChatAuthor(name) {
   }
 }
 
-// Shrink the image in the browser so uploads stay small (longest edge ~1400px).
-function readImageAsDataUrl(file) {
+// Shrink the image in the browser so uploads stay small (longest edge ~1400px,
+// or a smaller cap for things like avatars).
+function readImageAsDataUrl(file, maxEdge = 1400) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Could not read that image."));
@@ -1662,7 +1666,7 @@ function readImageAsDataUrl(file) {
       const img = new Image();
       img.onerror = () => reject(new Error("That file is not a readable image."));
       img.onload = () => {
-        const max = 1400;
+        const max = maxEdge;
         let { width, height } = img;
         if (width > max || height > max) {
           const scale = Math.min(max / width, max / height);
@@ -1745,6 +1749,7 @@ const accountsState = {
   loaded: false,
   editing: null,
   steps: [], // working copy while the dialog is open
+  avatar: "", // working avatar (data URL) while the dialog is open
   flowstageAccounts: null, // cached list of connected FlowStage accounts
   search: "",
   sort: "runout",
@@ -1802,6 +1807,29 @@ function bindAccountEvents() {
     accountsState.sort = els.accountSort.value;
     renderAccounts();
   });
+  els.accountAvatarInput.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      accountsState.avatar = await readImageAsDataUrl(file, 256);
+      renderAvatarPreview();
+    } catch (error) {
+      showNotice(error.message, "bad");
+    }
+    event.target.value = "";
+  });
+  els.accountAvatarRemove.addEventListener("click", () => {
+    accountsState.avatar = "";
+    renderAvatarPreview();
+  });
+}
+
+function renderAvatarPreview() {
+  const a = accountsState.avatar;
+  els.accountAvatarPreview.innerHTML = a
+    ? `<img src="${escapeHtml(a)}" alt="Profile picture">`
+    : `<span class="account-avatar-empty">No image</span>`;
+  els.accountAvatarRemove.hidden = !a;
 }
 
 // The account name IS the FlowStage account: picking one sets the name + links
@@ -1979,6 +2007,7 @@ function renderAccountRow(account) {
   const expanded = accountsState.expanded.has(account.id);
   return `
     <article class="account-row ${expanded ? "expanded" : ""}" data-account-id="${account.id}">
+      ${renderAccountAvatar(account)}
       <div class="account-main">
         <div class="account-headline">
           <span class="expand-indicator" aria-hidden="true"></span>
@@ -2019,6 +2048,14 @@ function renderDelta(current, previous) {
   const dir = pct > 0.5 ? "up" : (pct < -0.5 ? "down" : "flat");
   const arrow = dir === "up" ? "▲" : (dir === "down" ? "▼" : "▬");
   return `<span class="delta delta-${dir}" title="vs previous 14 days">${arrow} ${Math.abs(pct).toFixed(0)}%</span>`;
+}
+
+function renderAccountAvatar(account) {
+  if (account.avatar) {
+    return `<div class="account-avatar"><img src="${escapeHtml(account.avatar)}" alt="${escapeHtml(account.name)}" loading="lazy"></div>`;
+  }
+  const initial = escapeHtml((account.name || "?").trim().charAt(0).toUpperCase() || "?");
+  return `<div class="account-avatar account-avatar-placeholder">${initial}</div>`;
 }
 
 function renderAccountInlineStats(account) {
@@ -2103,8 +2140,86 @@ function renderAccountMetricsPanel(account) {
       ${stat("Avg views", formatCount(avg), avg, prevAvg)}
       ${stat("Engagement", `${engagement.toFixed(1)}%`, engagement, prevEngagement)}
     </div>
+    ${renderAccountCharts(account, { engagement })}
     ${stamp}
   `;
+}
+
+function renderAccountCharts(account, { engagement }) {
+  let daily = null;
+  try { daily = JSON.parse(account.metrics_daily); } catch { /* no daily series */ }
+  const likes = Number(account.total_likes) || 0;
+  const comments = Number(account.total_comments) || 0;
+  const shares = Number(account.total_shares) || 0;
+  const donutSegments = [
+    { value: likes, color: "var(--author-brandon)", label: "Likes" },
+    { value: comments, color: "var(--warning)", label: "Comments" },
+    { value: shares, color: "var(--good)", label: "Shares" }
+  ];
+  return `
+    <div class="account-charts">
+      ${daily ? `
+        <div class="chart chart-wide">
+          <span class="chart-label">Views by post date · 14d</span>
+          ${barsSvg(daily.views, "var(--due-upcoming)")}
+          ${dayAxis(daily.start, daily.views.length)}
+        </div>
+        <div class="chart chart-wide">
+          <span class="chart-label">Likes by post date · 14d</span>
+          ${barsSvg(daily.likes, "var(--author-tommy)")}
+        </div>` : ""}
+      <div class="chart chart-donut">
+        <span class="chart-label">Engagement mix</span>
+        ${donutSvg(donutSegments, `${engagement.toFixed(1)}%`)}
+        <div class="chart-legend">
+          ${donutSegments.map((s) => `<span><i style="background:${s.color}"></i>${s.label} ${formatCount(s.value)}</span>`).join("")}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Dependency-free SVG bar chart. Bars stretch to the container via viewBox.
+function barsSvg(values, color) {
+  const n = values.length || 1;
+  const max = Math.max(1, ...values.map((v) => Number(v) || 0));
+  const W = 300;
+  const H = 72;
+  const gap = 3;
+  const bw = (W - (n - 1) * gap) / n;
+  const rects = values.map((v, i) => {
+    const val = Number(v) || 0;
+    const h = val > 0 ? Math.max(2, Math.round((val / max) * (H - 4))) : 1;
+    const x = i * (bw + gap);
+    return `<rect x="${x.toFixed(1)}" y="${(H - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h}" rx="1" fill="${color}" opacity="${val > 0 ? 1 : 0.18}"></rect>`;
+  }).join("");
+  return `<svg class="bars-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${rects}</svg>`;
+}
+
+function dayAxis(startIso, count) {
+  const start = new Date(`${startIso}T00:00:00`);
+  const first = `${start.getMonth() + 1}/${start.getDate()}`;
+  const endD = new Date(start.getTime() + (count - 1) * 86400000);
+  const last = `${endD.getMonth() + 1}/${endD.getDate()}`;
+  return `<div class="chart-axis"><span>${first}</span><span>${last}</span></div>`;
+}
+
+function donutSvg(segments, centerLabel) {
+  const total = segments.reduce((s, x) => s + (Number(x.value) || 0), 0) || 1;
+  const R = 30;
+  const C = 2 * Math.PI * R;
+  let offset = 0;
+  const arcs = segments.map((s) => {
+    const len = ((Number(s.value) || 0) / total) * C;
+    const el = `<circle cx="40" cy="40" r="${R}" fill="none" stroke="${s.color}" stroke-width="11" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 40 40)"></circle>`;
+    offset += len;
+    return el;
+  }).join("");
+  return `<svg class="donut-svg" viewBox="0 0 80 80" role="img">
+    <circle cx="40" cy="40" r="${R}" fill="none" stroke="var(--line)" stroke-width="11"></circle>
+    ${arcs}
+    <text x="40" y="42" text-anchor="middle" dominant-baseline="middle" class="donut-center">${escapeHtml(centerLabel)}</text>
+  </svg>`;
 }
 
 async function onAccountBoardClick(event) {
@@ -2161,6 +2276,8 @@ function openAccountDialog(account = null) {
   els.accountFlowstageId.value = account?.flowstage_account_id || "";
   els.accountGroup.value = account?.group_name || "";
   populateGroupOptions();
+  accountsState.avatar = account?.avatar || "";
+  renderAvatarPreview();
   accountsState.steps = account
     ? (account.steps || []).map((step) => ({ label: step.label, assignee: step.assignee || "" }))
     : DEFAULT_ACCOUNT_STEPS_UI.map((label) => ({ label, assignee: "" }));
@@ -2272,6 +2389,7 @@ async function saveAccount(event) {
     scheduled_through: els.accountScheduledThrough.value || "",
     flowstage_account_id: flowstageId,
     group_name: els.accountGroup.value.trim(),
+    avatar: accountsState.avatar || "",
     steps: accountsState.steps
       .map((step) => ({ label: step.label.trim(), assignee: step.assignee }))
       .filter((step) => step.label)

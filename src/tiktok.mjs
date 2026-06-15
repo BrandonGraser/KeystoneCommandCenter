@@ -8,6 +8,8 @@
 //
 // Docs: https://developers.tiktok.com/doc/login-kit-web and /display-api.
 
+import { newDailySeries, addToDaily, serializeDaily } from "./flowstage.mjs";
+
 const CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY || "";
 const CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET || "";
 const REDIRECT_URI = process.env.TIKTOK_REDIRECT_URI || "https://keystone-command-center.vercel.app/api/tiktok/callback";
@@ -153,6 +155,7 @@ export function aggregateWindows(videos, days = 14) {
   const now = Date.now() / 1000;
   const cutCurrent = now - days * 86400;
   const cutPrevious = now - 2 * days * 86400;
+  const daily = newDailySeries(days);
   const blank = () => ({ views: 0, likes: 0, comments: 0, shares: 0, postCount: 0 });
   const current = blank();
   const previous = blank();
@@ -160,11 +163,14 @@ export function aggregateWindows(videos, days = 14) {
     const t = Number(v.create_time) || 0;
     const bucket = t >= cutCurrent ? current : (t >= cutPrevious ? previous : null);
     if (!bucket) continue;
+    const views = Number(v.view_count) || 0;
+    const likes = Number(v.like_count) || 0;
     bucket.postCount += 1;
-    bucket.views += Number(v.view_count) || 0;
-    bucket.likes += Number(v.like_count) || 0;
+    bucket.views += views;
+    bucket.likes += likes;
     bucket.comments += Number(v.comment_count) || 0;
     bucket.shares += Number(v.share_count) || 0;
+    if (bucket === current) addToDaily(daily, t * 1000, views, likes);
   }
-  return { ...current, windowDays: days, prev: previous };
+  return { ...current, windowDays: days, prev: previous, daily: serializeDaily(daily) };
 }
