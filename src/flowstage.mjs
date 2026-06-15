@@ -99,14 +99,15 @@ export async function getAccountStats(flowstageAccountId) {
       if (Number.isNaN(t)) continue;
       const views = Number(post.views) || 0;
       const likes = Number(post.likes) || 0;
+      const comments = Number(post.comments) || 0;
       const bucket = t >= cutCurrent ? current : (t >= cutPrevious ? previous : null);
       if (!bucket) continue;
       bucket.postCount += 1;
       bucket.views += views;
       bucket.likes += likes;
-      bucket.comments += Number(post.comments) || 0;
+      bucket.comments += comments;
       bucket.shares += Number(post.shares) || 0;
-      if (bucket === current) addToDaily(daily, t, views, likes);
+      if (bucket === current) addToDaily(daily, t, views, likes, comments);
     } else {
       const date = post?.time_scheduled ? new Date(post.time_scheduled) : null;
       if (date && !Number.isNaN(date.getTime()) && (!latest || date > latest)) latest = date;
@@ -123,17 +124,32 @@ export function newDailySeries(days = METRICS_WINDOW_DAYS) {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - (days - 1));
-  return { startMs: start.getTime(), days, views: new Array(days).fill(0), likes: new Array(days).fill(0) };
+  return {
+    startMs: start.getTime(),
+    days,
+    views: new Array(days).fill(0),
+    likes: new Array(days).fill(0),
+    comments: new Array(days).fill(0),
+    posts: new Array(days).fill(0)
+  };
 }
 
-export function addToDaily(series, timeMs, views, likes) {
+export function addToDaily(series, timeMs, views, likes, comments) {
   const idx = Math.floor((timeMs - series.startMs) / 86400000);
   if (idx >= 0 && idx < series.days) {
     series.views[idx] += views;
     series.likes[idx] += likes;
+    series.comments[idx] += comments;
+    series.posts[idx] += 1;
   }
 }
 
 export function serializeDaily(series) {
-  return { start: isoDate(new Date(series.startMs)), views: series.views, likes: series.likes };
+  return {
+    start: isoDate(new Date(series.startMs)),
+    views: series.views,
+    likes: series.likes,
+    comments: series.comments,
+    posts: series.posts
+  };
 }

@@ -90,6 +90,7 @@ const els = {
   accountsView: document.querySelector("#accountsView"),
   accountBoard: document.querySelector("#accountBoard"),
   accountMetrics: document.querySelector("#accountMetrics"),
+  accountOverall: document.querySelector("#accountOverall"),
   accountSearch: document.querySelector("#accountSearch"),
   accountSort: document.querySelector("#accountSort"),
   accountGroup: document.querySelector("#accountGroup"),
@@ -112,6 +113,7 @@ const els = {
   accountAvatarRemove: document.querySelector("#accountAvatarRemove"),
   accountAeUrl: document.querySelector("#accountAeUrl"),
   accountTutorialUrl: document.querySelector("#accountTutorialUrl"),
+  accountUploadUrl: document.querySelector("#accountUploadUrl"),
   accountUsername: document.querySelector("#accountUsername"),
   accountEmail: document.querySelector("#accountEmail"),
   accountPassword: document.querySelector("#accountPassword"),
@@ -1753,6 +1755,7 @@ const accountsState = {
   flowstageAccounts: null, // cached list of connected FlowStage accounts
   search: "",
   sort: "runout",
+  overallMetric: "views", // which stat the overall chart shows
   expanded: new Set() // account ids whose credentials panel is open
 };
 
@@ -1822,6 +1825,12 @@ function bindAccountEvents() {
     accountsState.avatar = "";
     renderAvatarPreview();
   });
+  els.accountOverall.addEventListener("click", (event) => {
+    const tab = event.target.closest(".overall-tab");
+    if (!tab) return;
+    accountsState.overallMetric = tab.dataset.metric;
+    renderAccountOverall();
+  });
 }
 
 function renderAvatarPreview() {
@@ -1866,6 +1875,7 @@ async function loadAccounts() {
 }
 
 function renderAccounts() {
+  renderAccountOverall();
   renderAccountMetrics();
   if (!accountsState.accounts.length) {
     els.accountBoard.innerHTML = `<p class="detail-empty account-empty">No accounts yet. Add one to start tracking content runout.</p>`;
@@ -1958,6 +1968,96 @@ function renderAccountMetrics() {
   `;
 }
 
+// Distinct per-account color via the golden angle, stable for a given index.
+function accountColor(index) {
+  return `hsl(${((index * 137.508) % 360).toFixed(0)} 62% 60%)`;
+}
+
+const OVERALL_METRICS = [["views", "Views"], ["likes", "Likes"], ["comments", "Comments"], ["posts", "Posts"]];
+
+// Top-of-page overall chart: a per-day stacked bar where each color is one
+// account's contribution to the selected metric over the last 14 days.
+function renderAccountOverall() {
+  if (!els.accountOverall) return;
+  const metric = accountsState.overallMetric;
+  const days = 14;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const axis0 = today.getTime() - (days - 1) * 86400000;
+  const labels = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(axis0 + i * 86400000);
+    labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
+  }
+
+  // Stable colors keyed by account id (sorted) so they don't shift with UI sort.
+  const colorOf = {};
+  [...accountsState.accounts].sort((a, b) => a.id - b.id).forEach((a, i) => { colorOf[a.id] = accountColor(i); });
+
+  const contributors = [];
+  for (const account of accountsState.accounts) {
+    let daily = null;
+    try { daily = JSON.parse(account.metrics_daily); } catch { /* none */ }
+    if (!daily || !Array.isArray(daily[metric])) continue;
+    const startMs = new Date(`${daily.start}T00:00:00`).getTime();
+    const perDay = new Array(days).fill(0);
+    daily[metric].forEach((v, j) => {
+      const pos = Math.round((startMs + j * 86400000 - axis0) / 86400000);
+      if (pos >= 0 && pos < days) perDay[pos] += Number(v) || 0;
+    });
+    const total = perDay.reduce((s, x) => s + x, 0);
+    if (total > 0) contributors.push({ name: account.name, color: colorOf[account.id], perDay, total });
+  }
+  contributors.sort((a, b) => b.total - a.total);
+
+  const dayTotals = new Array(days).fill(0);
+  for (const c of contributors) c.perDay.forEach((v, p) => { dayTotals[p] += v; });
+  const maxTotal = Math.max(1, ...dayTotals);
+  const grand = contributors.reduce((s, c) => s + c.total, 0);
+
+  const tabs = OVERALL_METRICS.map(([k, label]) =>
+    `<button type="button" class="overall-tab ${k === metric ? "active" : ""}" data-metric="${k}">${label}</button>`
+  ).join("");
+  const chart = grand > 0
+    ? stackedBarsSvg(contributors, maxTotal, days)
+    : `<p class="detail-empty overall-empty">No ${escapeHtml(metric)} recorded in the last 14 days yet. Sync accounts to populate this.</p>`;
+  const legend = contributors.map((c) =>
+    `<span class="overall-legend-item"><i style="background:${c.color}"></i>${escapeHtml(c.name)} <strong>${formatCount(c.total)}</strong></span>`
+  ).join("");
+
+  els.accountOverall.innerHTML = `
+    <div class="overall-head">
+      <div>
+        <span class="control-label">All accounts · last 14 days</span>
+        <p class="overall-total"><strong>${formatCount(grand)}</strong> ${escapeHtml(metric)}</p>
+      </div>
+      <div class="overall-tabs segmented">${tabs}</div>
+    </div>
+    <div class="overall-chart">${chart}</div>
+    ${grand > 0 ? `<div class="overall-axis">${labels.map((l) => `<span>${l}</span>`).join("")}</div>` : ""}
+    ${legend ? `<div class="overall-legend">${legend}</div>` : ""}
+  `;
+}
+
+function stackedBarsSvg(contributors, maxTotal, days) {
+  const W = 700;
+  const H = 150;
+  const gap = 6;
+  const bw = (W - (days - 1) * gap) / days;
+  let rects = "";
+  for (let p = 0; p < days; p++) {
+    let yTop = H;
+    for (const c of contributors) {
+      const v = c.perDay[p];
+      if (!v) continue;
+      const h = (v / maxTotal) * (H - 2);
+      yTop -= h;
+      rects += `<rect x="${(p * (bw + gap)).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${c.color}"><title>${escapeHtml(c.name)}: ${formatCount(v)}</title></rect>`;
+    }
+  }
+  return `<svg class="overall-bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${rects}</svg>`;
+}
+
 // Group collapse state, remembered per group name in localStorage.
 function isAccountGroupCollapsed(name) {
   try {
@@ -2013,6 +2113,7 @@ function renderAccountRow(account) {
           <span class="expand-indicator" aria-hidden="true"></span>
           <span class="account-name">${escapeHtml(account.name)}</span>
           <span class="runout-badge runout-${runout.className}" title="${escapeHtml(runout.title)}">${escapeHtml(runout.label)}</span>
+          ${account.upload_url ? `<a class="account-upload-btn" href="${escapeHtml(account.upload_url)}" target="_blank" rel="noreferrer" title="Open the upload link">Upload</a>` : ""}
         </div>
         <div class="account-steps-row">${stepChips || `<span class="detail-empty">No steps</span>`}</div>
         ${renderAccountInlineStats(account)}
@@ -2269,6 +2370,7 @@ function openAccountDialog(account = null) {
   els.accountName.value = account?.name || "";
   els.accountAeUrl.value = account?.ae_project_url || "";
   els.accountTutorialUrl.value = account?.tutorial_url || "";
+  els.accountUploadUrl.value = account?.upload_url || "";
   els.accountUsername.value = account?.username || "";
   els.accountEmail.value = account?.email || "";
   els.accountPassword.value = account?.password || "";
@@ -2383,6 +2485,7 @@ async function saveAccount(event) {
     name,
     ae_project_url: els.accountAeUrl.value.trim(),
     tutorial_url: els.accountTutorialUrl.value.trim(),
+    upload_url: els.accountUploadUrl.value.trim(),
     username: els.accountUsername.value.trim(),
     email: els.accountEmail.value.trim(),
     password: els.accountPassword.value,

@@ -165,12 +165,13 @@ export function aggregateWindows(videos, days = 14) {
     if (!bucket) continue;
     const views = Number(v.view_count) || 0;
     const likes = Number(v.like_count) || 0;
+    const comments = Number(v.comment_count) || 0;
     bucket.postCount += 1;
     bucket.views += views;
     bucket.likes += likes;
-    bucket.comments += Number(v.comment_count) || 0;
+    bucket.comments += comments;
     bucket.shares += Number(v.share_count) || 0;
-    if (bucket === current) addToDaily(daily, t * 1000, views, likes);
+    if (bucket === current) addToDaily(daily, t * 1000, views, likes, comments);
   }
   return { ...current, windowDays: days, prev: previous, daily: serializeDaily(daily) };
 }

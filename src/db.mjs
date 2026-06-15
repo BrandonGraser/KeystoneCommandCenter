@@ -148,6 +148,7 @@ function migrate(database) {
       flowstage_synced_at TEXT,
       group_name TEXT,
       avatar TEXT,
+      upload_url TEXT,
       metrics_daily TEXT,
       total_views INTEGER,
       total_likes INTEGER,
@@ -224,7 +225,7 @@ function migrate(database) {
   for (const col of ["total_views", "total_likes", "total_comments", "total_shares", "post_count", "prev_views", "prev_likes", "prev_comments", "prev_shares", "prev_post_count"]) {
     if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER;`);
   }
-  for (const col of ["metrics_synced_at", "metrics_source", "tiktok_open_id", "tiktok_access_token", "tiktok_refresh_token", "tiktok_token_expires_at", "tiktok_connected_at", "avatar", "metrics_daily"]) {
+  for (const col of ["metrics_synced_at", "metrics_source", "tiktok_open_id", "tiktok_access_token", "tiktok_refresh_token", "tiktok_token_expires_at", "tiktok_connected_at", "avatar", "metrics_daily", "upload_url"]) {
     if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} TEXT;`);
   }
   database.exec("UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted';");
@@ -691,8 +692,8 @@ export function createTikTokAccount(input) {
     .prepare(`
       INSERT INTO tiktok_accounts (
         name, ae_project_url, tutorial_url, username, email, password,
-        scheduled_through, flowstage_account_id, group_name, avatar, sort_order
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        scheduled_through, flowstage_account_id, group_name, avatar, upload_url, sort_order
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     .run(
       payload.name,
@@ -705,6 +706,7 @@ export function createTikTokAccount(input) {
       payload.flowstage_account_id || null,
       payload.group_name || null,
       payload.avatar || null,
+      payload.upload_url || null,
       Number(maxOrder) + 1
     );
   const accountId = Number(result.lastInsertRowid);
@@ -722,7 +724,7 @@ export function updateTikTokAccount(id, input) {
   const payload = validateAccountPayload(input, { partial: true });
   const sets = [];
   const params = [];
-  for (const field of ["name", "ae_project_url", "tutorial_url", "username", "email", "password", "scheduled_through", "flowstage_account_id", "group_name", "avatar"]) {
+  for (const field of ["name", "ae_project_url", "tutorial_url", "username", "email", "password", "scheduled_through", "flowstage_account_id", "group_name", "avatar", "upload_url"]) {
     if (field in payload) {
       sets.push(`${field} = ?`);
       params.push(payload[field] || null);
