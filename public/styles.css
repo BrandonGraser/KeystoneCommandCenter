@@ -2489,6 +2489,22 @@ dialog::backdrop {
   opacity: 0.6;
 }
 
+.overall-tip {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  font-size: 11px;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.overall-tip[hidden] {
+  display: none;
+}
+
 .overall-bars rect {
   transition: opacity 0.12s ease;
 }

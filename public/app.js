@@ -1837,7 +1837,40 @@ function bindAccountEvents() {
     const target = event.target.closest("[data-acct]");
     focusOverallAccount(target ? target.dataset.acct : null);
   });
-  els.accountOverall.addEventListener("mouseleave", () => focusOverallAccount(null));
+  // Instant, cursor-following value tooltip (native <title> has a ~1s delay).
+  els.accountOverall.addEventListener("mousemove", (event) => {
+    const seg = event.target.closest("[data-tip]");
+    if (seg) showOverallTip(seg.dataset.tip, event.clientX, event.clientY);
+    else hideOverallTip();
+  });
+  els.accountOverall.addEventListener("mouseleave", () => {
+    focusOverallAccount(null);
+    hideOverallTip();
+  });
+}
+
+let overallTipEl = null;
+
+function showOverallTip(text, x, y) {
+  if (!overallTipEl) {
+    overallTipEl = document.createElement("div");
+    overallTipEl.className = "overall-tip";
+    document.body.appendChild(overallTipEl);
+  }
+  overallTipEl.textContent = text;
+  overallTipEl.hidden = false;
+  const pad = 14;
+  const rect = overallTipEl.getBoundingClientRect();
+  let left = x + pad;
+  let top = y + pad;
+  if (left + rect.width > window.innerWidth - 6) left = x - rect.width - pad;
+  if (top + rect.height > window.innerHeight - 6) top = y - rect.height - pad;
+  overallTipEl.style.left = `${Math.max(6, left)}px`;
+  overallTipEl.style.top = `${Math.max(6, top)}px`;
+}
+
+function hideOverallTip() {
+  if (overallTipEl) overallTipEl.hidden = true;
 }
 
 function focusOverallAccount(acct) {
@@ -2087,7 +2120,7 @@ function stackedBarsSvg(contributors, maxTotal, days) {
       if (!v) continue;
       const h = (v / maxTotal) * H;
       yTop -= h;
-      rects += `<rect data-acct="${c.id}" x="${(p * (bw + gap)).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${c.color}"><title>${escapeHtml(c.name)}: ${formatCount(v)}</title></rect>`;
+      rects += `<rect data-acct="${c.id}" data-tip="${escapeHtml(`${c.name}: ${formatCount(v)}`)}" x="${(p * (bw + gap)).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${c.color}"></rect>`;
     }
   }
   return `<svg class="overall-bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${grid}${rects}</svg>`;
