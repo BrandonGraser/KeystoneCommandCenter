@@ -227,9 +227,12 @@ async function migrate(client) {
     {
       sql: `CREATE TABLE IF NOT EXISTS canvas_notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL DEFAULT '',
         body TEXT NOT NULL DEFAULT '',
         x REAL NOT NULL DEFAULT 100,
         y REAL NOT NULL DEFAULT 100,
+        width REAL,
+        height REAL,
         color TEXT NOT NULL DEFAULT 'yellow',
         pinned INTEGER NOT NULL DEFAULT 0,
         z_index INTEGER NOT NULL DEFAULT 0,
@@ -309,6 +312,12 @@ async function migrate(client) {
     { sql: "DELETE FROM assignees WHERE lower(name) = 'ryan'" },
     { sql: "UPDATE tasks SET archived_at = coalesce(archived_at, updated_at, datetime('now')) WHERE archived = 1" }
   ], "write");
+
+  const canvasCols = await client.execute("PRAGMA table_info(canvas_notes)");
+  const canvasColNames = canvasCols.rows.map((r) => r["name"]);
+  if (!canvasColNames.includes("title")) await client.execute("ALTER TABLE canvas_notes ADD COLUMN title TEXT NOT NULL DEFAULT ''");
+  if (!canvasColNames.includes("width")) await client.execute("ALTER TABLE canvas_notes ADD COLUMN width REAL");
+  if (!canvasColNames.includes("height")) await client.execute("ALTER TABLE canvas_notes ADD COLUMN height REAL");
 }
 
 async function seedAssignees(client) {
@@ -740,8 +749,8 @@ export async function createCanvasNote(input) {
   const maxRes = await client.execute("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes");
   const maxZ = toRow(maxRes.columns, maxRes.rows[0]).mz;
   const result = await client.execute({
-    sql: "INSERT INTO canvas_notes (body, x, y, color, pinned, z_index) VALUES (?, ?, ?, ?, 0, ?)",
-    args: [input.body || "", Number(input.x) || 100, Number(input.y) || 100, input.color || "yellow", maxZ + 1]
+    sql: "INSERT INTO canvas_notes (title, body, x, y, color, pinned, z_index) VALUES (?, ?, ?, ?, ?, 0, ?)",
+    args: [input.title || "", input.body || "", Number(input.x) || 100, Number(input.y) || 100, input.color || "yellow", maxZ + 1]
   });
   const row = await client.execute({ sql: "SELECT * FROM canvas_notes WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   return toRow(row.columns, row.rows[0]);
@@ -753,7 +762,7 @@ export async function updateCanvasNote(id, input) {
   if (!existing.rows.length) return null;
   const fields = [];
   const args = [];
-  for (const key of ["body", "x", "y", "color", "pinned", "z_index"]) {
+  for (const key of ["title", "body", "x", "y", "width", "height", "color", "pinned", "z_index"]) {
     if (key in input) {
       fields.push(`${key} = ?`);
       args.push(key === "pinned" ? (input[key] ? 1 : 0) : input[key]);

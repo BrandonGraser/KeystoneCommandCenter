@@ -2706,13 +2706,33 @@ dialog::backdrop {
   opacity: 1;
 }
 
+.canvas-note-title {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: inherit;
+  padding: 0 4px;
+  cursor: text;
+  user-select: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-note-title::placeholder {
+  opacity: 0.4;
+  font-weight: 400;
+}
+
 .canvas-note-color {
   width: 14px;
   height: 14px;
   border-radius: 50%;
   border: 2px solid rgba(0,0,0,0.2);
   background: var(--note-ink);
-  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .canvas-note-delete {
@@ -2730,8 +2750,34 @@ dialog::backdrop {
   line-height: 1.5;
   padding: 8px 10px;
   resize: none;
-  min-height: 100px;
+  min-height: 60px;
   outline: none;
   cursor: text;
   user-select: text;
+}
+
+.canvas-note-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  opacity: 0.3;
+  transition: opacity 0.15s;
+}
+
+.canvas-note-resize::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+}
+
+.canvas-note:hover .canvas-note-resize {
+  opacity: 0.6;
 }

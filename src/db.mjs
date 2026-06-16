@@ -196,9 +196,12 @@ function migrate(database) {
 
     CREATE TABLE IF NOT EXISTS canvas_notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL DEFAULT '',
       body TEXT NOT NULL DEFAULT '',
       x REAL NOT NULL DEFAULT 100,
       y REAL NOT NULL DEFAULT 100,
+      width REAL,
+      height REAL,
       color TEXT NOT NULL DEFAULT 'yellow',
       pinned INTEGER NOT NULL DEFAULT 0,
       z_index INTEGER NOT NULL DEFAULT 0,
@@ -254,6 +257,10 @@ function migrate(database) {
   database.exec("CREATE INDEX IF NOT EXISTS idx_daily_notes_category ON daily_notes (category);");
   database.exec("CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks (archived_at);");
   database.exec("UPDATE tasks SET archived_at = coalesce(archived_at, updated_at, datetime('now')) WHERE archived = 1;");
+  const canvasCols = database.prepare("PRAGMA table_info(canvas_notes)").all().map((c) => c.name);
+  if (!canvasCols.includes("title")) database.exec("ALTER TABLE canvas_notes ADD COLUMN title TEXT NOT NULL DEFAULT ''");
+  if (!canvasCols.includes("width")) database.exec("ALTER TABLE canvas_notes ADD COLUMN width REAL");
+  if (!canvasCols.includes("height")) database.exec("ALTER TABLE canvas_notes ADD COLUMN height REAL");
   purgeExpiredArchivedTasks(database);
 }
 
@@ -641,8 +648,8 @@ export function createCanvasNote(input) {
   const database = getDb();
   const maxZ = database.prepare("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes").get().mz;
   const result = database
-    .prepare("INSERT INTO canvas_notes (body, x, y, color, pinned, z_index) VALUES (?, ?, ?, ?, 0, ?)")
-    .run(input.body || "", Number(input.x) || 100, Number(input.y) || 100, input.color || "yellow", maxZ + 1);
+    .prepare("INSERT INTO canvas_notes (title, body, x, y, color, pinned, z_index) VALUES (?, ?, ?, ?, ?, 0, ?)")
+    .run(input.title || "", input.body || "", Number(input.x) || 100, Number(input.y) || 100, input.color || "yellow", maxZ + 1);
   return database.prepare("SELECT * FROM canvas_notes WHERE id = ?").get(Number(result.lastInsertRowid));
 }
 
@@ -652,7 +659,7 @@ export function updateCanvasNote(id, input) {
   if (!existing) return null;
   const fields = [];
   const params = [];
-  for (const key of ["body", "x", "y", "color", "pinned", "z_index"]) {
+  for (const key of ["title", "body", "x", "y", "width", "height", "color", "pinned", "z_index"]) {
     if (key in input) {
       fields.push(`${key} = ?`);
       params.push(key === "pinned" ? (input[key] ? 1 : 0) : input[key]);

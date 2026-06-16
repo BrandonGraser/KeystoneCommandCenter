@@ -2633,7 +2633,8 @@ const NOTE_COLORS = [
 const notesState = {
   loaded: false,
   notes: [],
-  dragging: null // { id, offsetX, offsetY, el }
+  dragging: null,  // { id, offsetX, offsetY, el }
+  resizing: null   // { id, el, startX, startY, startW, startH }
 };
 
 function bindNotesEvents() {
@@ -2646,6 +2647,27 @@ function bindNotesEvents() {
   });
 
   els.notesCanvas.addEventListener("mousedown", (e) => {
+    // Resize handle
+    const handle = e.target.closest(".canvas-note-resize");
+    if (handle) {
+      const card = handle.closest(".canvas-note");
+      if (!card) return;
+      e.preventDefault();
+      const rect = card.getBoundingClientRect();
+      notesState.resizing = {
+        id: Number(card.dataset.noteId),
+        el: card,
+        startX: e.clientX,
+        startY: e.clientY,
+        startW: rect.width,
+        startH: rect.height
+      };
+      card.classList.add("dragging");
+      bringToFront(Number(card.dataset.noteId), card);
+      return;
+    }
+
+    // Drag via header
     const header = e.target.closest(".canvas-note-header");
     if (!header) return;
     const card = header.closest(".canvas-note");
@@ -2668,6 +2690,14 @@ function bindNotesEvents() {
   });
 
   document.addEventListener("mousemove", (e) => {
+    const r = notesState.resizing;
+    if (r) {
+      const w = Math.max(160, r.startW + (e.clientX - r.startX));
+      const h = Math.max(100, r.startH + (e.clientY - r.startY));
+      r.el.style.width = `${w}px`;
+      r.el.style.height = `${h}px`;
+      return;
+    }
     const d = notesState.dragging;
     if (!d) return;
     const x = e.clientX - d.canvasLeft - d.offsetX + els.notesCanvas.scrollLeft;
@@ -2677,6 +2707,17 @@ function bindNotesEvents() {
   });
 
   document.addEventListener("mouseup", () => {
+    const r = notesState.resizing;
+    if (r) {
+      notesState.resizing = null;
+      r.el.classList.remove("dragging");
+      const width = parseFloat(r.el.style.width) || 220;
+      const height = parseFloat(r.el.style.height) || 140;
+      const note = notesState.notes.find((n) => n.id === r.id);
+      if (note) { note.width = width; note.height = height; }
+      api(`/api/canvas-notes/${r.id}`, { method: "PATCH", body: { width, height } }).catch(() => {});
+      return;
+    }
     const d = notesState.dragging;
     if (!d) return;
     notesState.dragging = null;
@@ -2710,15 +2751,18 @@ function bindNotesEvents() {
   });
 
   els.notesCanvas.addEventListener("input", (e) => {
-    if (!e.target.classList.contains("canvas-note-body")) return;
+    const isBody = e.target.classList.contains("canvas-note-body");
+    const isTitle = e.target.classList.contains("canvas-note-title");
+    if (!isBody && !isTitle) return;
     const card = e.target.closest(".canvas-note");
     if (!card) return;
     const id = Number(card.dataset.noteId);
     const note = notesState.notes.find((n) => n.id === id);
-    if (note) note.body = e.target.value;
+    const field = isTitle ? "title" : "body";
+    if (note) note[field] = e.target.value;
     clearTimeout(e.target._saveTimer);
     e.target._saveTimer = setTimeout(() => {
-      api(`/api/canvas-notes/${id}`, { method: "PATCH", body: { body: e.target.value } }).catch(() => {});
+      api(`/api/canvas-notes/${id}`, { method: "PATCH", body: { [field]: e.target.value } }).catch(() => {});
     }, 400);
   });
 }
@@ -2733,16 +2777,19 @@ async function loadCanvasNotes() {
 function renderCanvasNotes() {
   els.notesCanvas.innerHTML = notesState.notes.map((note) => {
     const color = NOTE_COLORS.find((c) => c.name === note.color) || NOTE_COLORS[0];
+    const sizeStyle = `${note.width ? `width:${note.width}px;` : ""}${note.height ? `height:${note.height}px;` : ""}`;
     return `
       <div class="canvas-note ${note.pinned ? "pinned" : ""}"
            data-note-id="${note.id}"
-           style="left:${note.x}px;top:${note.y}px;z-index:${note.z_index};--note-bg:${color.bg};--note-ink:${color.ink}">
+           style="left:${note.x}px;top:${note.y}px;z-index:${note.z_index};${sizeStyle}--note-bg:${color.bg};--note-ink:${color.ink}">
         <div class="canvas-note-header">
-          <button type="button" class="canvas-note-pin" title="${note.pinned ? "Unpin" : "Pin"}">${note.pinned ? "\u{1F4CC}" : "\u{1F4CC}"}</button>
+          <button type="button" class="canvas-note-pin" title="${note.pinned ? "Unpin" : "Pin"}">\u{1F4CC}</button>
+          <input class="canvas-note-title" placeholder="Title" value="${escapeHtml(note.title || "")}">
           <button type="button" class="canvas-note-color" title="Change color"></button>
           <button type="button" class="canvas-note-delete" title="Delete">&times;</button>
         </div>
         <textarea class="canvas-note-body" placeholder="Write something…">${escapeHtml(note.body)}</textarea>
+        <div class="canvas-note-resize" title="Resize"></div>
       </div>`;
   }).join("");
 }
