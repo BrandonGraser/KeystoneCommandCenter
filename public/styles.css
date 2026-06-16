@@ -2613,9 +2613,8 @@ dialog::backdrop {
    =================================================================== */
 
 .daily-thoughts {
-  margin: 0 24px 12px;
+  margin-bottom: 14px;
   border: 1px solid var(--line);
-  border-radius: 8px;
   overflow: hidden;
 }
 
