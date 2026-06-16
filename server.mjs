@@ -20,9 +20,14 @@ import {
   deleteTaskLink,
   deleteTaskMessage,
   deleteResourceItem,
+  deleteCanvasNote,
   duplicateTask,
   getBootstrap,
   getTask,
+  listCanvasNotes,
+  createCanvasNote,
+  updateCanvasNote,
+  bringCanvasNoteToFront,
   listDailyNotes,
   listResourceItems,
   listTaskImages,
@@ -266,6 +271,34 @@ async function handleApi(request, response, url) {
   const tiktokDisconnect = url.pathname.match(/^\/api\/tiktok\/disconnect\/(\d+)$/);
   if (tiktokDisconnect && method === "POST") {
     sendJson(response, 200, { account: disconnectAccountTikTok(Number(tiktokDisconnect[1])) });
+    return;
+  }
+
+  // --- Canvas notes (Notes tab) -------------------------------------------
+  if (url.pathname === "/api/canvas-notes" && method === "GET") {
+    sendJson(response, 200, { notes: listCanvasNotes() });
+    return;
+  }
+  if (url.pathname === "/api/canvas-notes" && method === "POST") {
+    sendJson(response, 201, { note: createCanvasNote(await readJson(request)) });
+    return;
+  }
+  const canvasNoteMatch = url.pathname.match(/^\/api\/canvas-notes\/(\d+)$/);
+  if (canvasNoteMatch && method === "PATCH") {
+    const note = updateCanvasNote(Number(canvasNoteMatch[1]), await readJson(request));
+    if (!note) throw notFound("Note not found.");
+    sendJson(response, 200, { note });
+    return;
+  }
+  if (canvasNoteMatch && method === "DELETE") {
+    sendJson(response, 200, deleteCanvasNote(Number(canvasNoteMatch[1])));
+    return;
+  }
+  const canvasFrontMatch = url.pathname.match(/^\/api\/canvas-notes\/(\d+)\/front$/);
+  if (canvasFrontMatch && method === "POST") {
+    const note = bringCanvasNoteToFront(Number(canvasFrontMatch[1]));
+    if (!note) throw notFound("Note not found.");
+    sendJson(response, 200, { note });
     return;
   }
 

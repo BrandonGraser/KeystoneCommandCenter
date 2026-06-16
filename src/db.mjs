@@ -193,6 +193,18 @@ function migrate(database) {
     CREATE INDEX IF NOT EXISTS idx_workflow_task ON task_workflow_steps (task_id);
     CREATE INDEX IF NOT EXISTS idx_images_task ON task_images (task_id);
     CREATE INDEX IF NOT EXISTS idx_resource_items_section ON resource_items (section, sort_order);
+
+    CREATE TABLE IF NOT EXISTS canvas_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      body TEXT NOT NULL DEFAULT '',
+      x REAL NOT NULL DEFAULT 100,
+      y REAL NOT NULL DEFAULT 100,
+      color TEXT NOT NULL DEFAULT 'yellow',
+      pinned INTEGER NOT NULL DEFAULT 0,
+      z_index INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   const dailyColumns = database.prepare("PRAGMA table_info(daily_notes)").all();
@@ -615,6 +627,54 @@ export function createResourceItem(input) {
 export function deleteResourceItem(id) {
   getDb().prepare("DELETE FROM resource_items WHERE id = ?").run(Number(id));
   return { ok: true };
+}
+
+// --- Canvas notes (Notes tab) ------------------------------------------------
+
+export function listCanvasNotes() {
+  return getDb()
+    .prepare("SELECT * FROM canvas_notes ORDER BY z_index ASC, id ASC")
+    .all();
+}
+
+export function createCanvasNote(input) {
+  const database = getDb();
+  const maxZ = database.prepare("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes").get().mz;
+  const result = database
+    .prepare("INSERT INTO canvas_notes (body, x, y, color, pinned, z_index) VALUES (?, ?, ?, ?, 0, ?)")
+    .run(input.body || "", Number(input.x) || 100, Number(input.y) || 100, input.color || "yellow", maxZ + 1);
+  return database.prepare("SELECT * FROM canvas_notes WHERE id = ?").get(Number(result.lastInsertRowid));
+}
+
+export function updateCanvasNote(id, input) {
+  const database = getDb();
+  const existing = database.prepare("SELECT * FROM canvas_notes WHERE id = ?").get(Number(id));
+  if (!existing) return null;
+  const fields = [];
+  const params = [];
+  for (const key of ["body", "x", "y", "color", "pinned", "z_index"]) {
+    if (key in input) {
+      fields.push(`${key} = ?`);
+      params.push(key === "pinned" ? (input[key] ? 1 : 0) : input[key]);
+    }
+  }
+  if (!fields.length) return existing;
+  fields.push("updated_at = datetime('now')");
+  params.push(Number(id));
+  database.prepare(`UPDATE canvas_notes SET ${fields.join(", ")} WHERE id = ?`).run(...params);
+  return database.prepare("SELECT * FROM canvas_notes WHERE id = ?").get(Number(id));
+}
+
+export function deleteCanvasNote(id) {
+  getDb().prepare("DELETE FROM canvas_notes WHERE id = ?").run(Number(id));
+  return { ok: true };
+}
+
+export function bringCanvasNoteToFront(id) {
+  const database = getDb();
+  const maxZ = database.prepare("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes").get().mz;
+  database.prepare("UPDATE canvas_notes SET z_index = ?, updated_at = datetime('now') WHERE id = ?").run(maxZ + 1, Number(id));
+  return database.prepare("SELECT * FROM canvas_notes WHERE id = ?").get(Number(id));
 }
 
 // --- TikTok accounts (FlowStage tab) -------------------------------------

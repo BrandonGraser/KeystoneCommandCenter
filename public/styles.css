@@ -2607,3 +2607,131 @@ dialog::backdrop {
   font-size: 12px;
   word-break: break-all;
 }
+
+/* ===================================================================
+   Notes tab — freeform canvas
+   =================================================================== */
+
+.notes-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 10px;
+}
+
+.notes-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notes-canvas {
+  position: relative;
+  min-height: calc(100vh - 120px);
+  margin: 0 24px 24px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  overflow: auto;
+  background:
+    radial-gradient(circle, var(--line) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.canvas-note {
+  position: absolute;
+  width: 220px;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  background: var(--note-bg);
+  color: var(--note-ink);
+  transition: box-shadow 0.15s;
+  user-select: none;
+}
+
+.canvas-note:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+
+.canvas-note.dragging {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  opacity: 0.92;
+  cursor: grabbing;
+}
+
+.canvas-note.pinned {
+  outline: 2px solid rgba(0,0,0,0.25);
+  outline-offset: -2px;
+}
+
+.canvas-note-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  cursor: grab;
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+  min-height: 28px;
+}
+
+.canvas-note.pinned .canvas-note-header {
+  cursor: default;
+}
+
+.canvas-note-pin,
+.canvas-note-color,
+.canvas-note-delete {
+  all: unset;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 12px;
+  opacity: 0.6;
+  transition: opacity 0.1s;
+}
+
+.canvas-note-pin:hover,
+.canvas-note-color:hover,
+.canvas-note-delete:hover {
+  opacity: 1;
+  background: rgba(0,0,0,0.1);
+}
+
+.canvas-note.pinned .canvas-note-pin {
+  opacity: 1;
+}
+
+.canvas-note-color {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.2);
+  background: var(--note-ink);
+  margin-left: auto;
+}
+
+.canvas-note-delete {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.canvas-note-body {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  resize: none;
+  min-height: 100px;
+  outline: none;
+  cursor: text;
+  user-select: text;
+}

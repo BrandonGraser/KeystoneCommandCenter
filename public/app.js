@@ -120,7 +120,10 @@ const els = {
   accountScheduledThrough: document.querySelector("#accountScheduledThrough"),
   accountFlowstageId: document.querySelector("#accountFlowstageId"),
   accountSteps: document.querySelector("#accountSteps"),
-  addAccountStep: document.querySelector("#addAccountStep")
+  addAccountStep: document.querySelector("#addAccountStep"),
+  notesView: document.querySelector("#notesView"),
+  notesCanvas: document.querySelector("#notesCanvas"),
+  addCanvasNote: document.querySelector("#addCanvasNote")
 };
 
 const SYNC_INTERVAL_MS = 5000;
@@ -1910,14 +1913,15 @@ function onAccountNameSelectChange() {
 }
 
 function switchTab(tab) {
-  const isAccounts = tab === "accounts";
-  els.tasksView.hidden = isAccounts;
-  els.accountsView.hidden = !isAccounts;
+  els.tasksView.hidden = tab !== "tasks";
+  els.accountsView.hidden = tab !== "accounts";
+  els.notesView.hidden = tab !== "notes";
   els.mainTabs.querySelectorAll(".main-tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tab);
   });
   setStoredTab(tab);
-  if (isAccounts && !accountsState.loaded) loadAccounts();
+  if (tab === "accounts" && !accountsState.loaded) loadAccounts();
+  if (tab === "notes" && !notesState.loaded) loadCanvasNotes();
 }
 
 async function loadAccounts() {
@@ -2612,3 +2616,187 @@ async function syncAllAccountsNow() {
     showNotice(error.message, "bad");
   }
 }
+
+// ===================================================================
+// Notes tab — freeform draggable / pinnable canvas notes.
+// ===================================================================
+
+const NOTE_COLORS = [
+  { name: "yellow", bg: "#e0c94e", ink: "#2a2200" },
+  { name: "blue",   bg: "#5b9bd5", ink: "#0a1a2e" },
+  { name: "green",  bg: "#6fbf8f", ink: "#0e2a18" },
+  { name: "pink",   bg: "#d57bb5", ink: "#2e0a20" },
+  { name: "orange", bg: "#d89b4a", ink: "#2a1a00" },
+  { name: "purple", bg: "#b48ee0", ink: "#1a0a2e" }
+];
+
+const notesState = {
+  loaded: false,
+  notes: [],
+  dragging: null // { id, offsetX, offsetY, el }
+};
+
+function bindNotesEvents() {
+  els.addCanvasNote.addEventListener("click", () => createNoteAtCenter());
+
+  els.notesCanvas.addEventListener("dblclick", (e) => {
+    if (e.target.closest(".canvas-note")) return;
+    const rect = els.notesCanvas.getBoundingClientRect();
+    createNoteAt(e.clientX - rect.left + els.notesCanvas.scrollLeft, e.clientY - rect.top + els.notesCanvas.scrollTop);
+  });
+
+  els.notesCanvas.addEventListener("mousedown", (e) => {
+    const header = e.target.closest(".canvas-note-header");
+    if (!header) return;
+    const card = header.closest(".canvas-note");
+    if (!card) return;
+    const note = notesState.notes.find((n) => n.id === Number(card.dataset.noteId));
+    if (!note || note.pinned) return;
+    e.preventDefault();
+    const rect = card.getBoundingClientRect();
+    const canvasRect = els.notesCanvas.getBoundingClientRect();
+    notesState.dragging = {
+      id: note.id,
+      el: card,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      canvasLeft: canvasRect.left,
+      canvasTop: canvasRect.top
+    };
+    card.classList.add("dragging");
+    bringToFront(note.id, card);
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    const d = notesState.dragging;
+    if (!d) return;
+    const x = e.clientX - d.canvasLeft - d.offsetX + els.notesCanvas.scrollLeft;
+    const y = e.clientY - d.canvasTop - d.offsetY + els.notesCanvas.scrollTop;
+    d.el.style.left = `${Math.max(0, x)}px`;
+    d.el.style.top = `${Math.max(0, y)}px`;
+  });
+
+  document.addEventListener("mouseup", () => {
+    const d = notesState.dragging;
+    if (!d) return;
+    notesState.dragging = null;
+    d.el.classList.remove("dragging");
+    const x = parseFloat(d.el.style.left) || 0;
+    const y = parseFloat(d.el.style.top) || 0;
+    const note = notesState.notes.find((n) => n.id === d.id);
+    if (note) { note.x = x; note.y = y; }
+    api(`/api/canvas-notes/${d.id}`, { method: "PATCH", body: { x, y } }).catch(() => {});
+  });
+
+  els.notesCanvas.addEventListener("click", (e) => {
+    const pin = e.target.closest(".canvas-note-pin");
+    if (pin) {
+      const card = pin.closest(".canvas-note");
+      togglePin(Number(card.dataset.noteId));
+      return;
+    }
+    const del = e.target.closest(".canvas-note-delete");
+    if (del) {
+      const card = del.closest(".canvas-note");
+      deleteNote(Number(card.dataset.noteId));
+      return;
+    }
+    const colorBtn = e.target.closest(".canvas-note-color");
+    if (colorBtn) {
+      const card = colorBtn.closest(".canvas-note");
+      cycleColor(Number(card.dataset.noteId));
+      return;
+    }
+  });
+
+  els.notesCanvas.addEventListener("input", (e) => {
+    if (!e.target.classList.contains("canvas-note-body")) return;
+    const card = e.target.closest(".canvas-note");
+    if (!card) return;
+    const id = Number(card.dataset.noteId);
+    const note = notesState.notes.find((n) => n.id === id);
+    if (note) note.body = e.target.value;
+    clearTimeout(e.target._saveTimer);
+    e.target._saveTimer = setTimeout(() => {
+      api(`/api/canvas-notes/${id}`, { method: "PATCH", body: { body: e.target.value } }).catch(() => {});
+    }, 400);
+  });
+}
+
+async function loadCanvasNotes() {
+  const data = await api("/api/canvas-notes");
+  notesState.notes = data.notes || [];
+  notesState.loaded = true;
+  renderCanvasNotes();
+}
+
+function renderCanvasNotes() {
+  els.notesCanvas.innerHTML = notesState.notes.map((note) => {
+    const color = NOTE_COLORS.find((c) => c.name === note.color) || NOTE_COLORS[0];
+    return `
+      <div class="canvas-note ${note.pinned ? "pinned" : ""}"
+           data-note-id="${note.id}"
+           style="left:${note.x}px;top:${note.y}px;z-index:${note.z_index};--note-bg:${color.bg};--note-ink:${color.ink}">
+        <div class="canvas-note-header">
+          <button type="button" class="canvas-note-pin" title="${note.pinned ? "Unpin" : "Pin"}">${note.pinned ? "\u{1F4CC}" : "\u{1F4CC}"}</button>
+          <button type="button" class="canvas-note-color" title="Change color"></button>
+          <button type="button" class="canvas-note-delete" title="Delete">&times;</button>
+        </div>
+        <textarea class="canvas-note-body" placeholder="Write something…">${escapeHtml(note.body)}</textarea>
+      </div>`;
+  }).join("");
+}
+
+async function createNoteAtCenter() {
+  const rect = els.notesCanvas.getBoundingClientRect();
+  const jitterX = (Math.random() - 0.5) * 200;
+  const jitterY = (Math.random() - 0.5) * 200;
+  const x = Math.max(10, els.notesCanvas.scrollLeft + rect.width / 2 - 110 + jitterX);
+  const y = Math.max(10, els.notesCanvas.scrollTop + rect.height / 2 - 70 + jitterY);
+  await createNoteAt(x, y);
+}
+
+async function createNoteAt(x, y) {
+  const colorIndex = notesState.notes.length % NOTE_COLORS.length;
+  const { note } = await api("/api/canvas-notes", {
+    method: "POST",
+    body: { x, y, color: NOTE_COLORS[colorIndex].name }
+  });
+  notesState.notes.push(note);
+  renderCanvasNotes();
+  const card = els.notesCanvas.querySelector(`[data-note-id="${note.id}"] .canvas-note-body`);
+  if (card) card.focus();
+}
+
+async function togglePin(id) {
+  const note = notesState.notes.find((n) => n.id === id);
+  if (!note) return;
+  note.pinned = note.pinned ? 0 : 1;
+  await api(`/api/canvas-notes/${id}`, { method: "PATCH", body: { pinned: !!note.pinned } });
+  renderCanvasNotes();
+}
+
+async function deleteNote(id) {
+  await api(`/api/canvas-notes/${id}`, { method: "DELETE" });
+  notesState.notes = notesState.notes.filter((n) => n.id !== id);
+  renderCanvasNotes();
+}
+
+async function cycleColor(id) {
+  const note = notesState.notes.find((n) => n.id === id);
+  if (!note) return;
+  const idx = NOTE_COLORS.findIndex((c) => c.name === note.color);
+  const next = NOTE_COLORS[(idx + 1) % NOTE_COLORS.length];
+  note.color = next.name;
+  await api(`/api/canvas-notes/${id}`, { method: "PATCH", body: { color: next.name } });
+  renderCanvasNotes();
+}
+
+async function bringToFront(id, el) {
+  const { note } = await api(`/api/canvas-notes/${id}/front`, { method: "POST" });
+  const existing = notesState.notes.find((n) => n.id === id);
+  if (existing) existing.z_index = note.z_index;
+  el.style.zIndex = note.z_index;
+}
+
+bindNotesEvents();
