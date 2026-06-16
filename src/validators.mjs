@@ -1,4 +1,5 @@
 export const STATUSES = [
+  "Pending Approval",
   "Needs Tommy Review",
   "Needs Brandon Review",
   "Working",
@@ -52,6 +53,7 @@ export function normalizeStatus(value) {
   const lower = text.toLowerCase();
   if (!lower) return "BRB";
   if (/^(done|complete|completed|finished|x|yes)$/i.test(text)) return "Done";
+  if (/^(pending approval|awaiting approval|needs approval)$/i.test(text)) return "Pending Approval";
   if (/^(working|in progress|started|active)$/i.test(text)) return "Working";
   if (/brandon/.test(lower) && /(review|check|approval)/.test(lower)) {
     return "Needs Brandon Review";

@@ -27,6 +27,7 @@ html[data-theme="dark"] {
   --due-later: #7da3c4;
   --due-none: #5c5c5c;
   --due-pending: #8d8d8d;
+  --st-pending-approval: #e0a83a;
   --st-tommy-review: #b48ee0;
   --st-brandon-review: #7da3c4;
   --st-working: #d8b54a;
@@ -63,6 +64,7 @@ html[data-theme="light"] {
   --due-later: #34618a;
   --due-none: #9a9a9a;
   --due-pending: #6e6e6e;
+  --st-pending-approval: #9a7020;
   --st-tommy-review: #7a4fb0;
   --st-brandon-review: #34618a;
   --st-working: #8a6d1a;
@@ -713,6 +715,7 @@ a.login-resource-button:hover {
   background: var(--due-none);
 }
 
+.task-row.status-row-pending-approval::before { background: var(--st-pending-approval); }
 .task-row.status-row-tommy-review::before { background: var(--st-tommy-review); }
 .task-row.status-row-brandon-review::before { background: var(--st-brandon-review); }
 .task-row.status-row-working::before { background: var(--st-working); }
@@ -871,6 +874,7 @@ select.status-badge.inline-status-select:hover {
   color: var(--ink);
 }
 
+.status-badge.status-pending-approval { color: var(--st-pending-approval); border-color: var(--st-pending-approval); }
 .status-badge.status-tommy-review { color: var(--st-tommy-review); border-color: var(--st-tommy-review); }
 .status-badge.status-brandon-review { color: var(--st-brandon-review); border-color: var(--st-brandon-review); }
 .status-badge.status-working { color: var(--st-working); border-color: var(--st-working); }

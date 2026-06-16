@@ -1728,6 +1728,7 @@ function renderCategoryPillPicker(selectedCategory = "Misc.") {
 function taskStatusMeta(status, done = false) {
   if (done) return { className: "done-status", label: "Done" };
   const map = {
+    "Pending Approval": { className: "pending-approval", label: "Pending Approval" },
     "Not Started": { className: "not-started", label: "Not Started" },
     "Working": { className: "working", label: "Working" },
     "Pending": { className: "pending", label: "Pending" },
