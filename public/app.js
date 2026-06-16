@@ -121,6 +121,11 @@ const els = {
   accountFlowstageId: document.querySelector("#accountFlowstageId"),
   accountSteps: document.querySelector("#accountSteps"),
   addAccountStep: document.querySelector("#addAccountStep"),
+  dailyThoughts: document.querySelector("#dailyThoughts"),
+  dailyThoughtsDate: document.querySelector("#dailyThoughtsDate"),
+  dailyThoughtsLog: document.querySelector("#dailyThoughtsLog"),
+  dailyThoughtsForm: document.querySelector("#dailyThoughtsForm"),
+  dailyThoughtsInput: document.querySelector("#dailyThoughtsInput"),
   notesView: document.querySelector("#notesView"),
   notesCanvas: document.querySelector("#notesCanvas"),
   addCanvasNote: document.querySelector("#addCanvasNote")
@@ -300,6 +305,13 @@ function bindEvents() {
   els.taskWorkflow.addEventListener("click", removeWorkflowStep);
   els.taskForm.addEventListener("submit", saveTask);
   els.archiveTask.addEventListener("click", archiveCurrentTask);
+  els.dailyThoughts.querySelector(".daily-thoughts-heading").addEventListener("click", () => {
+    const section = els.dailyThoughts;
+    const collapsed = section.classList.toggle("collapsed");
+    section.querySelector("[aria-expanded]").setAttribute("aria-expanded", !collapsed);
+    if (!collapsed && !els.dailyThoughtsLog.children.length) loadDailyThoughts();
+  });
+  els.dailyThoughtsForm.addEventListener("submit", postDailyThought);
   bindAccountEvents();
   els.taskImages.addEventListener("click", (event) => {
     if (event.target.closest(".task-image-browse")) {
@@ -2618,16 +2630,81 @@ async function syncAllAccountsNow() {
 }
 
 // ===================================================================
+// Daily Thoughts — chat-style journal on the tasks tab.
+// ===================================================================
+
+function todayDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function loadDailyThoughts() {
+  const today = todayDateString();
+  els.dailyThoughtsDate.textContent = new Date(today + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  const data = await api(`/api/daily-notes?date=${today}`);
+  const notes = data.notes || [];
+  renderDailyThoughts(notes);
+}
+
+function renderDailyThoughts(notes) {
+  if (!notes.length) {
+    els.dailyThoughtsLog.innerHTML = `<p class="daily-thoughts-empty">No thoughts yet today. What's on your mind?</p>`;
+    return;
+  }
+  els.dailyThoughtsLog.innerHTML = notes.map((note) => {
+    const time = note.created_at ? new Date(note.created_at + "Z").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+    return `<div class="daily-thought" data-thought-id="${note.id}">
+      <div class="daily-thought-meta">
+        <span class="daily-thought-time">${time}</span>
+        <button type="button" class="daily-thought-delete" title="Delete">&times;</button>
+      </div>
+      <div class="daily-thought-body">${escapeHtml(note.body)}</div>
+    </div>`;
+  }).join("");
+  els.dailyThoughtsLog.scrollTop = els.dailyThoughtsLog.scrollHeight;
+}
+
+async function postDailyThought(e) {
+  e.preventDefault();
+  const body = els.dailyThoughtsInput.value.trim();
+  if (!body) return;
+  els.dailyThoughtsInput.value = "";
+  await api("/api/daily-notes", {
+    method: "POST",
+    body: { note_date: todayDateString(), assignee: state.activeAssignee || "Brandon", body }
+  });
+  await loadDailyThoughts();
+}
+
+els.dailyThoughtsLog?.addEventListener("click", async (e) => {
+  const del = e.target.closest(".daily-thought-delete");
+  if (!del) return;
+  const thought = del.closest(".daily-thought");
+  if (!thought) return;
+  await api(`/api/daily-notes/${thought.dataset.thoughtId}`, { method: "DELETE" });
+  await loadDailyThoughts();
+});
+
+// ===================================================================
 // Notes tab — freeform draggable / pinnable canvas notes.
 // ===================================================================
 
 const NOTE_COLORS = [
-  { name: "yellow", bg: "#e0c94e", ink: "#2a2200" },
-  { name: "blue",   bg: "#5b9bd5", ink: "#0a1a2e" },
-  { name: "green",  bg: "#6fbf8f", ink: "#0e2a18" },
-  { name: "pink",   bg: "#d57bb5", ink: "#2e0a20" },
-  { name: "orange", bg: "#d89b4a", ink: "#2a1a00" },
-  { name: "purple", bg: "#b48ee0", ink: "#1a0a2e" }
+  { name: "yellow",      bg: "#e0c94e", ink: "#2a2200" },
+  { name: "gold",        bg: "#c9a83a", ink: "#2a1f00" },
+  { name: "orange",      bg: "#d89b4a", ink: "#2a1a00" },
+  { name: "peach",       bg: "#e8a87c", ink: "#2e1608" },
+  { name: "red",         bg: "#d06060", ink: "#2e0a0a" },
+  { name: "pink",        bg: "#d57bb5", ink: "#2e0a20" },
+  { name: "magenta",     bg: "#c06aca", ink: "#250a28" },
+  { name: "purple",      bg: "#b48ee0", ink: "#1a0a2e" },
+  { name: "indigo",      bg: "#7b80d4", ink: "#0e0e2e" },
+  { name: "blue",        bg: "#5b9bd5", ink: "#0a1a2e" },
+  { name: "cyan",        bg: "#5bbcd5", ink: "#0a2228" },
+  { name: "teal",        bg: "#4db6a0", ink: "#0a2420" },
+  { name: "green",       bg: "#6fbf8f", ink: "#0e2a18" },
+  { name: "lime",        bg: "#8cc058", ink: "#1a2a08" },
+  { name: "slate",       bg: "#8899aa", ink: "#101820" },
+  { name: "charcoal",    bg: "#606870", ink: "#e8e8e8" }
 ];
 
 const notesState = {
@@ -2667,7 +2744,8 @@ function bindNotesEvents() {
       return;
     }
 
-    // Drag via header
+    // Drag via header — skip if clicking interactive elements inside header
+    if (e.target.closest("input, button, textarea")) return;
     const header = e.target.closest(".canvas-note-header");
     if (!header) return;
     const card = header.closest(".canvas-note");
@@ -2745,7 +2823,12 @@ function bindNotesEvents() {
     const colorBtn = e.target.closest(".canvas-note-color");
     if (colorBtn) {
       const card = colorBtn.closest(".canvas-note");
-      cycleColor(Number(card.dataset.noteId));
+      openColorPicker(Number(card.dataset.noteId), colorBtn);
+      return;
+    }
+    const swatch = e.target.closest(".color-picker-swatch");
+    if (swatch) {
+      applyColor(Number(swatch.dataset.noteId), swatch.dataset.color);
       return;
     }
   });
@@ -2829,13 +2912,31 @@ async function deleteNote(id) {
   renderCanvasNotes();
 }
 
-async function cycleColor(id) {
+function openColorPicker(id, anchor) {
+  closeColorPicker();
   const note = notesState.notes.find((n) => n.id === id);
   if (!note) return;
-  const idx = NOTE_COLORS.findIndex((c) => c.name === note.color);
-  const next = NOTE_COLORS[(idx + 1) % NOTE_COLORS.length];
-  note.color = next.name;
-  await api(`/api/canvas-notes/${id}`, { method: "PATCH", body: { color: next.name } });
+  const picker = document.createElement("div");
+  picker.className = "color-picker-popup";
+  picker.innerHTML = NOTE_COLORS.map((c) =>
+    `<button type="button" class="color-picker-swatch ${c.name === note.color ? "active" : ""}"
+            data-note-id="${id}" data-color="${c.name}"
+            style="background:${c.bg}" title="${c.name}"></button>`
+  ).join("");
+  const card = anchor.closest(".canvas-note");
+  card.appendChild(picker);
+}
+
+function closeColorPicker() {
+  document.querySelectorAll(".color-picker-popup").forEach((el) => el.remove());
+}
+
+async function applyColor(id, colorName) {
+  closeColorPicker();
+  const note = notesState.notes.find((n) => n.id === id);
+  if (!note) return;
+  note.color = colorName;
+  await api(`/api/canvas-notes/${id}`, { method: "PATCH", body: { color: colorName } });
   renderCanvasNotes();
 }
 
@@ -2846,4 +2947,7 @@ async function bringToFront(id, el) {
   el.style.zIndex = note.z_index;
 }
 
+document.addEventListener("mousedown", (e) => {
+  if (!e.target.closest(".canvas-note-color, .color-picker-popup")) closeColorPicker();
+});
 bindNotesEvents();

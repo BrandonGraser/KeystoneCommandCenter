@@ -17,6 +17,21 @@
       <div id="tasksView">
       <section class="metrics" id="metrics"></section>
 
+      <section class="daily-thoughts collapsed" id="dailyThoughts">
+        <button type="button" class="daily-thoughts-heading" aria-expanded="false">
+          <span class="collapse-indicator" aria-hidden="true"></span>
+          <h3>DAILY THOUGHTS</h3>
+          <span class="daily-thoughts-date" id="dailyThoughtsDate"></span>
+        </button>
+        <div class="daily-thoughts-body">
+          <div class="daily-thoughts-log" id="dailyThoughtsLog"></div>
+          <form class="daily-thoughts-form" id="dailyThoughtsForm">
+            <textarea id="dailyThoughtsInput" rows="2" placeholder="What's on your mind?"></textarea>
+            <button type="submit" class="primary">Post</button>
+          </form>
+        </div>
+      </section>
+
       <section class="resources-row">
         <div class="resource-block collapsed" data-resource-block="logins">
           <button type="button" class="resource-heading" aria-expanded="false">

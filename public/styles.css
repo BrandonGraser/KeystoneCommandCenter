@@ -2609,6 +2609,154 @@ dialog::backdrop {
 }
 
 /* ===================================================================
+   Daily Thoughts — chat-style journal
+   =================================================================== */
+
+.daily-thoughts {
+  margin: 0 24px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.daily-thoughts-heading {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  box-sizing: border-box;
+}
+
+.daily-thoughts-heading h3 {
+  margin: 0;
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+
+.daily-thoughts-date {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: none;
+}
+
+.daily-thoughts.collapsed .daily-thoughts-body {
+  display: none;
+}
+
+.daily-thoughts-body {
+  border-top: 1px solid var(--line);
+  padding: 10px 14px;
+}
+
+.daily-thoughts-log {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.daily-thoughts-empty {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px 0;
+  margin: 0;
+}
+
+.daily-thought {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.daily-thought-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.daily-thought-time {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+.daily-thought-delete {
+  all: unset;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--muted);
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.daily-thought:hover .daily-thought-delete {
+  opacity: 0.6;
+}
+
+.daily-thought-delete:hover {
+  opacity: 1 !important;
+  color: var(--danger);
+}
+
+.daily-thought-body {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.daily-thoughts-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.daily-thoughts-form textarea {
+  flex: 1;
+  min-height: 36px;
+  max-height: 120px;
+  resize: vertical;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  outline: none;
+}
+
+.daily-thoughts-form textarea:focus {
+  border-color: var(--line-strong);
+}
+
+.daily-thoughts-form button {
+  flex-shrink: 0;
+  height: 36px;
+}
+
+/* ===================================================================
    Notes tab — freeform canvas
    =================================================================== */
 
@@ -2780,4 +2928,38 @@ dialog::backdrop {
 
 .canvas-note:hover .canvas-note-resize {
   opacity: 0.6;
+}
+
+.color-picker-popup {
+  position: absolute;
+  top: 32px;
+  right: 6px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 6px;
+  background: var(--panel-2, #222);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  z-index: 9999;
+}
+
+.color-picker-swatch {
+  all: unset;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform 0.1s, border-color 0.1s;
+}
+
+.color-picker-swatch:hover {
+  transform: scale(1.2);
+  border-color: var(--ink, #fff);
+}
+
+.color-picker-swatch.active {
+  border-color: var(--ink, #fff);
 }
