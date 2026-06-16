@@ -290,15 +290,28 @@ label span,
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(190px, 1fr);
+  grid-template-columns: auto repeat(3, minmax(0, 1fr)) minmax(190px, 1fr);
   border: 1px solid var(--line);
   background: var(--panel);
   margin-bottom: 14px;
 }
 
 .metric {
-  padding: 18px 16px 14px;
+  padding: 22px 16px 18px;
   border-right: 1px solid var(--line);
+}
+
+.metric-mascot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+}
+
+.mascot-img {
+  height: 72px;
+  width: auto;
+  image-rendering: pixelated;
 }
 
 .metric:last-child {

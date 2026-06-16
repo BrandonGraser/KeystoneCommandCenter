@@ -420,10 +420,10 @@ async function attachChatImage(expanded, file) {
 
 function renderChrome(bootstrap) {
   els.metrics.innerHTML = [
+    `<div class="metric metric-mascot"><img src="/cat.gif" alt="mascot" class="mascot-img"></div>`,
     metric("Open tasks", bootstrap.counts.open, "open"),
     metric("Total active", bootstrap.counts.tasks, "tasks"),
     metric("Overdue", bootstrap.counts.overdue, "overdue"),
-    metric("Archived 30 days", bootstrap.counts.archived || 0, "archived"),
     `<div class="metric metric-action">
       <button id="newTaskButton" class="primary">New Task</button>
       <div class="action-subrow">
