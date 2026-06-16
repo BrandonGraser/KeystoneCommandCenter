@@ -223,6 +223,19 @@ async function migrate(client) {
         position INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (account_id) REFERENCES tiktok_accounts(id) ON DELETE CASCADE
       )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS canvas_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        body TEXT NOT NULL DEFAULT '',
+        x REAL NOT NULL DEFAULT 100,
+        y REAL NOT NULL DEFAULT 100,
+        color TEXT NOT NULL DEFAULT 'yellow',
+        pinned INTEGER NOT NULL DEFAULT 0,
+        z_index INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
     }
   ], "write");
 
@@ -712,6 +725,61 @@ export async function deleteResourceItem(id) {
   const client = await getDb();
   await client.execute({ sql: "DELETE FROM resource_items WHERE id = ?", args: [Number(id)] });
   return { ok: true };
+}
+
+// --- Canvas notes (Notes tab) ------------------------------------------------
+
+export async function listCanvasNotes() {
+  const client = await getDb();
+  const result = await client.execute("SELECT * FROM canvas_notes ORDER BY z_index ASC, id ASC");
+  return result.rows.map((row) => toRow(result.columns, row));
+}
+
+export async function createCanvasNote(input) {
+  const client = await getDb();
+  const maxRes = await client.execute("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes");
+  const maxZ = toRow(maxRes.columns, maxRes.rows[0]).mz;
+  const result = await client.execute({
+    sql: "INSERT INTO canvas_notes (body, x, y, color, pinned, z_index) VALUES (?, ?, ?, ?, 0, ?)",
+    args: [input.body || "", Number(input.x) || 100, Number(input.y) || 100, input.color || "yellow", maxZ + 1]
+  });
+  const row = await client.execute({ sql: "SELECT * FROM canvas_notes WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return toRow(row.columns, row.rows[0]);
+}
+
+export async function updateCanvasNote(id, input) {
+  const client = await getDb();
+  const existing = await client.execute({ sql: "SELECT * FROM canvas_notes WHERE id = ?", args: [Number(id)] });
+  if (!existing.rows.length) return null;
+  const fields = [];
+  const args = [];
+  for (const key of ["body", "x", "y", "color", "pinned", "z_index"]) {
+    if (key in input) {
+      fields.push(`${key} = ?`);
+      args.push(key === "pinned" ? (input[key] ? 1 : 0) : input[key]);
+    }
+  }
+  if (!fields.length) return toRow(existing.columns, existing.rows[0]);
+  fields.push("updated_at = datetime('now')");
+  args.push(Number(id));
+  await client.execute({ sql: `UPDATE canvas_notes SET ${fields.join(", ")} WHERE id = ?`, args });
+  const row = await client.execute({ sql: "SELECT * FROM canvas_notes WHERE id = ?", args: [Number(id)] });
+  return toRow(row.columns, row.rows[0]);
+}
+
+export async function deleteCanvasNote(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM canvas_notes WHERE id = ?", args: [Number(id)] });
+  return { ok: true };
+}
+
+export async function bringCanvasNoteToFront(id) {
+  const client = await getDb();
+  const maxRes = await client.execute("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes");
+  const maxZ = toRow(maxRes.columns, maxRes.rows[0]).mz;
+  await client.execute({ sql: "UPDATE canvas_notes SET z_index = ?, updated_at = datetime('now') WHERE id = ?", args: [maxZ + 1, Number(id)] });
+  const row = await client.execute({ sql: "SELECT * FROM canvas_notes WHERE id = ?", args: [Number(id)] });
+  return row.rows.length ? toRow(row.columns, row.rows[0]) : null;
 }
 
 // --- TikTok accounts (FlowStage tab) -------------------------------------
