@@ -17,21 +17,6 @@
       <div id="tasksView">
       <section class="metrics" id="metrics"></section>
 
-      <section class="daily-thoughts collapsed" id="dailyThoughts">
-        <button type="button" class="daily-thoughts-heading" aria-expanded="false">
-          <span class="collapse-indicator" aria-hidden="true"></span>
-          <h3>DAILY THOUGHTS</h3>
-          <span class="daily-thoughts-date" id="dailyThoughtsDate"></span>
-        </button>
-        <div class="daily-thoughts-body">
-          <div class="daily-thoughts-log" id="dailyThoughtsLog"></div>
-          <form class="daily-thoughts-form" id="dailyThoughtsForm">
-            <textarea id="dailyThoughtsInput" rows="2" placeholder="What's on your mind?"></textarea>
-            <button type="submit" class="primary">Post</button>
-          </form>
-        </div>
-      </section>
-
       <section class="resources-row">
         <div class="resource-block collapsed" data-resource-block="logins">
           <button type="button" class="resource-heading" aria-expanded="false">
@@ -125,6 +110,24 @@
           </div>
         </section>
         <div class="notes-canvas" id="notesCanvas"></div>
+      </div>
+      <div class="global-chat collapsed" id="globalChat">
+        <button type="button" class="global-chat-toggle" id="globalChatToggle">
+          <span class="global-chat-icon">💬</span>
+          <span class="global-chat-label">Chat</span>
+        </button>
+        <div class="global-chat-panel">
+          <div class="global-chat-head">
+            <span class="global-chat-title">TEAM CHAT</span>
+            <span class="global-chat-date" id="globalChatDate"></span>
+          </div>
+          <div class="global-chat-messages" id="globalChatMessages"></div>
+          <form class="global-chat-composer" id="globalChatForm">
+            <select class="global-chat-author" id="globalChatAuthor" aria-label="Your name"></select>
+            <textarea id="globalChatInput" rows="2" placeholder="Message — Enter to send"></textarea>
+            <button type="submit" class="primary">Send</button>
+          </form>
+        </div>
       </div>
     </main>
 

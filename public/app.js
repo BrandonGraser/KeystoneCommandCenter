@@ -121,11 +121,13 @@ const els = {
   accountFlowstageId: document.querySelector("#accountFlowstageId"),
   accountSteps: document.querySelector("#accountSteps"),
   addAccountStep: document.querySelector("#addAccountStep"),
-  dailyThoughts: document.querySelector("#dailyThoughts"),
-  dailyThoughtsDate: document.querySelector("#dailyThoughtsDate"),
-  dailyThoughtsLog: document.querySelector("#dailyThoughtsLog"),
-  dailyThoughtsForm: document.querySelector("#dailyThoughtsForm"),
-  dailyThoughtsInput: document.querySelector("#dailyThoughtsInput"),
+  globalChat: document.querySelector("#globalChat"),
+  globalChatToggle: document.querySelector("#globalChatToggle"),
+  globalChatDate: document.querySelector("#globalChatDate"),
+  globalChatMessages: document.querySelector("#globalChatMessages"),
+  globalChatForm: document.querySelector("#globalChatForm"),
+  globalChatInput: document.querySelector("#globalChatInput"),
+  globalChatAuthor: document.querySelector("#globalChatAuthor"),
   notesView: document.querySelector("#notesView"),
   notesCanvas: document.querySelector("#notesCanvas"),
   addCanvasNote: document.querySelector("#addCanvasNote")
@@ -305,13 +307,21 @@ function bindEvents() {
   els.taskWorkflow.addEventListener("click", removeWorkflowStep);
   els.taskForm.addEventListener("submit", saveTask);
   els.archiveTask.addEventListener("click", archiveCurrentTask);
-  els.dailyThoughts.querySelector(".daily-thoughts-heading").addEventListener("click", () => {
-    const section = els.dailyThoughts;
-    const collapsed = section.classList.toggle("collapsed");
-    section.querySelector("[aria-expanded]").setAttribute("aria-expanded", !collapsed);
-    if (!collapsed && !els.dailyThoughtsLog.children.length) loadDailyThoughts();
+  els.globalChatToggle.addEventListener("click", () => {
+    const chat = els.globalChat;
+    const wasCollapsed = chat.classList.toggle("collapsed");
+    if (!wasCollapsed) {
+      populateGlobalChatAuthor();
+      loadGlobalChat();
+    }
   });
-  els.dailyThoughtsForm.addEventListener("submit", postDailyThought);
+  els.globalChatForm.addEventListener("submit", postGlobalChat);
+  els.globalChatInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      els.globalChatForm.requestSubmit();
+    }
+  });
   bindAccountEvents();
   els.taskImages.addEventListener("click", (event) => {
     if (event.target.closest(".task-image-browse")) {
@@ -2632,58 +2642,66 @@ async function syncAllAccountsNow() {
 }
 
 // ===================================================================
-// Daily Thoughts — chat-style journal on the tasks tab.
+// Global Chat — floating chat widget in the bottom-right corner.
 // ===================================================================
 
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function loadDailyThoughts() {
-  const today = todayDateString();
-  els.dailyThoughtsDate.textContent = new Date(today + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
-  const data = await api(`/api/daily-notes?date=${today}`);
-  const notes = data.notes || [];
-  renderDailyThoughts(notes);
+function populateGlobalChatAuthor() {
+  const current = composerAuthor();
+  els.globalChatAuthor.innerHTML = state.assignees
+    .map((name) => `<option value="${escapeHtml(name)}"${name === current ? " selected" : ""}>${escapeHtml(name)}</option>`)
+    .join("");
 }
 
-function renderDailyThoughts(notes) {
+async function loadGlobalChat() {
+  const today = todayDateString();
+  els.globalChatDate.textContent = new Date(today + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const data = await api(`/api/daily-notes?date=${today}`);
+  renderGlobalChat(data.notes || []);
+}
+
+function renderGlobalChat(notes) {
   if (!notes.length) {
-    els.dailyThoughtsLog.innerHTML = `<p class="daily-thoughts-empty">No thoughts yet today. What's on your mind?</p>`;
+    els.globalChatMessages.innerHTML = `<p class="global-chat-empty">No messages today.</p>`;
     return;
   }
-  els.dailyThoughtsLog.innerHTML = notes.map((note) => {
+  els.globalChatMessages.innerHTML = notes.map((note) => {
     const time = note.created_at ? new Date(note.created_at + "Z").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
-    return `<div class="daily-thought" data-thought-id="${note.id}">
-      <div class="daily-thought-meta">
-        <span class="daily-thought-time">${time}</span>
-        <button type="button" class="daily-thought-delete" title="Delete">&times;</button>
+    return `<div class="global-chat-msg" data-msg-id="${note.id}">
+      <div class="global-chat-msg-head">
+        <strong class="author-name author-${authorSlug(note.assignee)}">${escapeHtml(note.assignee || "")}</strong>
+        <span><time>${time}</time><button type="button" class="global-chat-msg-delete" title="Delete">&times;</button></span>
       </div>
-      <div class="daily-thought-body">${escapeHtml(note.body)}</div>
+      <p>${escapeHtml(note.body)}</p>
     </div>`;
   }).join("");
-  els.dailyThoughtsLog.scrollTop = els.dailyThoughtsLog.scrollHeight;
+  els.globalChatMessages.scrollTop = els.globalChatMessages.scrollHeight;
 }
 
-async function postDailyThought(e) {
+async function postGlobalChat(e) {
   e.preventDefault();
-  const body = els.dailyThoughtsInput.value.trim();
+  const body = els.globalChatInput.value.trim();
   if (!body) return;
-  els.dailyThoughtsInput.value = "";
+  const author = els.globalChatAuthor.value || state.assignees[0] || "Me";
+  storeChatAuthor(author);
+  els.globalChatInput.value = "";
   await api("/api/daily-notes", {
     method: "POST",
-    body: { note_date: todayDateString(), assignee: state.activeAssignee || "Brandon", body }
+    body: { note_date: todayDateString(), assignee: author, body }
   });
-  await loadDailyThoughts();
+  await loadGlobalChat();
 }
 
-els.dailyThoughtsLog?.addEventListener("click", async (e) => {
-  const del = e.target.closest(".daily-thought-delete");
+els.globalChatMessages?.addEventListener("click", async (e) => {
+  const del = e.target.closest(".global-chat-msg-delete");
   if (!del) return;
-  const thought = del.closest(".daily-thought");
-  if (!thought) return;
-  await api(`/api/daily-notes/${thought.dataset.thoughtId}`, { method: "DELETE" });
-  await loadDailyThoughts();
+  const msg = del.closest(".global-chat-msg");
+  if (!msg) return;
+  await api(`/api/daily-notes/${msg.dataset.msgId}`, { method: "DELETE" });
+  await loadGlobalChat();
 });
 
 // ===================================================================
