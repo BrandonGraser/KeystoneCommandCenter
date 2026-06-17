@@ -90,6 +90,7 @@ export async function getAccountStats(flowstageAccountId) {
   const blank = () => ({ views: 0, likes: 0, comments: 0, shares: 0, postCount: 0 });
   const current = blank();
   const previous = blank();
+  const allTime = { views: 0, likes: 0, comments: 0, shares: 0 };
   let latest = null;
 
   for (const post of posts) {
@@ -100,20 +101,25 @@ export async function getAccountStats(flowstageAccountId) {
       const views = Number(post.views) || 0;
       const likes = Number(post.likes) || 0;
       const comments = Number(post.comments) || 0;
+      const shares = Number(post.shares) || 0;
+      allTime.views += views;
+      allTime.likes += likes;
+      allTime.comments += comments;
+      allTime.shares += shares;
       const bucket = t >= cutCurrent ? current : (t >= cutPrevious ? previous : null);
       if (!bucket) continue;
       bucket.postCount += 1;
       bucket.views += views;
       bucket.likes += likes;
       bucket.comments += comments;
-      bucket.shares += Number(post.shares) || 0;
+      bucket.shares += shares;
       if (bucket === current) addToDaily(daily, t, views, likes, comments);
     } else {
       const date = post?.time_scheduled ? new Date(post.time_scheduled) : null;
       if (date && !Number.isNaN(date.getTime()) && (!latest || date > latest)) latest = date;
     }
   }
-  const metrics = { ...current, windowDays: METRICS_WINDOW_DAYS, prev: previous, daily: serializeDaily(daily) };
+  const metrics = { ...current, windowDays: METRICS_WINDOW_DAYS, prev: previous, daily: serializeDaily(daily), allTime };
   return { scheduledThrough: latest ? isoDate(latest) : null, metrics };
 }
 

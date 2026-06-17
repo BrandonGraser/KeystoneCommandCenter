@@ -37,6 +37,8 @@ import {
   createResourceItem,
   restoreTask,
   saveDailyNote,
+  saveAccountSnapshot,
+  getAccountSnapshots,
   setAccountSync,
   updateTask,
   updateTaskLink,
@@ -46,7 +48,7 @@ import {
 import { importWorkbook } from "./src/importer.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "./src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "./src/validators.mjs";
-import { getAccountStats, listSocialAccounts } from "./src/flowstage.mjs";
+import { getAccountStats, listSocialAccounts, newDailySeries, serializeDaily, METRICS_WINDOW_DAYS } from "./src/flowstage.mjs";
 import { aggregateWindows, buildAuthUrl, buildProbeHtml, exchangeCode, isTikTokConfigured, listVideos, refreshToken } from "./src/tiktok.mjs";
 import { buildAuthCookie, isAuthed, verifyPassword, LOGIN_PATH } from "./src/auth.mjs";
 
@@ -454,6 +456,32 @@ async function syncOneAccount(id) {
   } else if (fsMetrics) {
     metrics = fsMetrics;
     metricsSource = "flowstage";
+  }
+  if (metrics && metrics.allTime) {
+    const today = new Date().toISOString().slice(0, 10);
+    saveAccountSnapshot(id, today, metrics.allTime);
+    const lookback = new Date();
+    lookback.setDate(lookback.getDate() - METRICS_WINDOW_DAYS);
+    const startDate = lookback.toISOString().slice(0, 10);
+    const snapshots = getAccountSnapshots(id, startDate);
+    if (snapshots.length >= 2) {
+      const daily = newDailySeries();
+      const snapMap = Object.fromEntries(snapshots.map((s) => [s.snapshot_date, s]));
+      for (let i = 0; i < daily.days; i++) {
+        const date = new Date(daily.startMs + i * 86400000).toISOString().slice(0, 10);
+        const prevDate = new Date(daily.startMs + (i - 1) * 86400000).toISOString().slice(0, 10);
+        const snap = snapMap[date];
+        const prevSnap = snapMap[prevDate];
+        if (snap && prevSnap) {
+          daily.views[i] = Math.max(0, snap.total_views - prevSnap.total_views);
+          daily.likes[i] = Math.max(0, snap.total_likes - prevSnap.total_likes);
+          daily.comments[i] = Math.max(0, snap.total_comments - prevSnap.total_comments);
+        }
+      }
+      const originalPosts = metrics.daily?.posts;
+      if (originalPosts) daily.posts = originalPosts.slice();
+      metrics.daily = serializeDaily(daily);
+    }
   }
   return { account: setAccountSync(id, { scheduledThrough, metrics, metricsSource }) };
 }

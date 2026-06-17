@@ -182,6 +182,19 @@ function migrate(database) {
       FOREIGN KEY (account_id) REFERENCES tiktok_accounts(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS tiktok_daily_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      snapshot_date TEXT NOT NULL,
+      total_views INTEGER NOT NULL DEFAULT 0,
+      total_likes INTEGER NOT NULL DEFAULT 0,
+      total_comments INTEGER NOT NULL DEFAULT 0,
+      total_shares INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(account_id, snapshot_date),
+      FOREIGN KEY (account_id) REFERENCES tiktok_accounts(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_daily_snapshots_account_date ON tiktok_daily_snapshots (account_id, snapshot_date);
     CREATE INDEX IF NOT EXISTS idx_tiktok_account_steps_account ON tiktok_account_steps (account_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks (assignee);
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status);
@@ -845,6 +858,31 @@ export function setAccountSync(id, { scheduledThrough = null, metrics = null, me
       Number(id)
     );
   return getTikTokAccount(id);
+}
+
+export function saveAccountSnapshot(accountId, dateStr, totals) {
+  getDb()
+    .prepare(`
+      INSERT INTO tiktok_daily_snapshots (account_id, snapshot_date, total_views, total_likes, total_comments, total_shares)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(account_id, snapshot_date) DO UPDATE SET
+        total_views = excluded.total_views,
+        total_likes = excluded.total_likes,
+        total_comments = excluded.total_comments,
+        total_shares = excluded.total_shares
+    `)
+    .run(Number(accountId), dateStr, totals.views || 0, totals.likes || 0, totals.comments || 0, totals.shares || 0);
+}
+
+export function getAccountSnapshots(accountId, startDate) {
+  return getDb()
+    .prepare(`
+      SELECT snapshot_date, total_views, total_likes, total_comments, total_shares
+      FROM tiktok_daily_snapshots
+      WHERE account_id = ? AND snapshot_date >= ?
+      ORDER BY snapshot_date ASC
+    `)
+    .all(Number(accountId), startDate);
 }
 
 export function deleteTikTokAccount(id) {

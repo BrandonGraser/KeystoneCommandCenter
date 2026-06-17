@@ -159,19 +159,25 @@ export function aggregateWindows(videos, days = 14) {
   const blank = () => ({ views: 0, likes: 0, comments: 0, shares: 0, postCount: 0 });
   const current = blank();
   const previous = blank();
+  const allTime = { views: 0, likes: 0, comments: 0, shares: 0 };
   for (const v of videos) {
-    const t = Number(v.create_time) || 0;
-    const bucket = t >= cutCurrent ? current : (t >= cutPrevious ? previous : null);
-    if (!bucket) continue;
     const views = Number(v.view_count) || 0;
     const likes = Number(v.like_count) || 0;
     const comments = Number(v.comment_count) || 0;
+    const shares = Number(v.share_count) || 0;
+    allTime.views += views;
+    allTime.likes += likes;
+    allTime.comments += comments;
+    allTime.shares += shares;
+    const t = Number(v.create_time) || 0;
+    const bucket = t >= cutCurrent ? current : (t >= cutPrevious ? previous : null);
+    if (!bucket) continue;
     bucket.postCount += 1;
     bucket.views += views;
     bucket.likes += likes;
     bucket.comments += comments;
-    bucket.shares += Number(v.share_count) || 0;
+    bucket.shares += shares;
     if (bucket === current) addToDaily(daily, t * 1000, views, likes, comments);
   }
-  return { ...current, windowDays: days, prev: previous, daily: serializeDaily(daily) };
+  return { ...current, windowDays: days, prev: previous, daily: serializeDaily(daily), allTime };
 }
