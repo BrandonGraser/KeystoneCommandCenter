@@ -420,7 +420,7 @@ async function attachChatImage(expanded, file) {
 
 function renderChrome(bootstrap) {
   els.metrics.innerHTML = [
-    `<div class="metric metric-mascot"><img src="/cat.gif" alt="mascot" class="mascot-img"></div>`,
+    `<div class="metric metric-mascot"><img src="${state.theme === "dark" ? "/cat_white.gif" : "/cat.gif"}" alt="mascot" class="mascot-img"></div>`,
     metric("Open tasks", bootstrap.counts.open, "open"),
     metric("Total active", bootstrap.counts.tasks, "tasks"),
     metric("Overdue", bootstrap.counts.overdue, "overdue"),
@@ -1588,6 +1588,8 @@ function toggleTheme() {
   storeTheme(state.theme);
   applyTheme();
   renderThemeToggle();
+  const mascot = document.querySelector(".mascot-img");
+  if (mascot) mascot.src = state.theme === "dark" ? "/cat_white.gif" : "/cat.gif";
 }
 
 function getStoredTheme() {
