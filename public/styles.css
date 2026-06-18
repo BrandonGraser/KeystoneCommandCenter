@@ -2793,6 +2793,20 @@ body.chat-resizing .shell {
   font-weight: 600;
 }
 
+.chat-channel-btn {
+  position: relative;
+}
+
+.chat-channel-unread {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .chat-channel-icon {
   font-size: 14px;
 }

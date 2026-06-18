@@ -22,7 +22,9 @@ const state = {
   chatChannel: "general",
   chatMessages: [],
   chatLastSeenCount: 0,
-  chatKnownCount: 0
+  chatKnownCount: 0,
+  chatSeenCounts: {},
+  chatChannelCounts: {}
 };
 
 const CATEGORY_TONES = {
@@ -157,7 +159,7 @@ async function init() {
   renderLinkInputs();
   applyStoredResourceCollapse();
   renderChatChannels();
-  await Promise.all([loadTasks(), loadResources()]);
+  await Promise.all([loadTasks(), loadResources(), initChatCounts()]);
   // Returning from a TikTok connect lands on /?tiktok=connected — show the
   // Accounts tab with fresh numbers and a confirmation.
   if (new URLSearchParams(location.search).get("tiktok") === "connected") {
@@ -213,27 +215,46 @@ function startLiveSync() {
   });
 }
 
+function getAllChannels() {
+  const user = state.currentUser;
+  if (!user) return ["general"];
+  const allUsers = ["Tommy", "Brandon", "Mac"];
+  return ["general", ...allUsers.filter((u) => u !== user).map((u) => dmChannel(user, u))];
+}
+
 async function pollChat() {
   if (document.hidden) return;
   const isCollapsed = els.chatSidebar.classList.contains("collapsed");
+  let anyNew = false;
   try {
-    const data = await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`);
-    const incoming = data.messages || [];
-    state.chatKnownCount = incoming.length;
-    const hasNew = incoming.length > state.chatLastSeenCount;
-    if (isCollapsed) {
-      if (hasNew) {
-        els.chatBadge.classList.add("visible");
-        playPing();
+    const channels = getAllChannels();
+    const results = await Promise.all(
+      channels.map((ch) => api(`/api/chat/${encodeURIComponent(ch)}/messages`).then((d) => ({ ch, msgs: d.messages || [] })))
+    );
+    for (const { ch, msgs } of results) {
+      state.chatChannelCounts[ch] = msgs.length;
+      if (msgs.length > (state.chatSeenCounts[ch] ?? msgs.length)) {
+        anyNew = true;
       }
-    } else {
-      if (hasNew) playPing();
-      state.chatLastSeenCount = incoming.length;
-      els.chatBadge.classList.remove("visible");
-      if (JSON.stringify(incoming) !== JSON.stringify(state.chatMessages)) {
-        state.chatMessages = incoming;
-        renderChatMessages();
+      if (ch === state.chatChannel) {
+        state.chatKnownCount = msgs.length;
+        const hasNew = msgs.length > state.chatLastSeenCount;
+        if (isCollapsed) {
+          if (hasNew) els.chatBadge.classList.add("visible");
+        } else {
+          state.chatLastSeenCount = msgs.length;
+          state.chatSeenCounts[ch] = msgs.length;
+          if (JSON.stringify(msgs) !== JSON.stringify(state.chatMessages)) {
+            state.chatMessages = msgs;
+            renderChatMessages();
+          }
+        }
       }
+    }
+    if (anyNew) {
+      playPing();
+      if (isCollapsed) els.chatBadge.classList.add("visible");
+      renderChatChannels();
     }
   } catch {}
 }
@@ -2712,6 +2733,19 @@ function dmChannel(user1, user2) {
   return `dm:${[user1, user2].sort().join(":")}`;
 }
 
+async function initChatCounts() {
+  try {
+    const channels = getAllChannels();
+    const results = await Promise.all(
+      channels.map((ch) => api(`/api/chat/${encodeURIComponent(ch)}/messages`).then((d) => ({ ch, count: (d.messages || []).length })))
+    );
+    for (const { ch, count } of results) {
+      state.chatSeenCounts[ch] = count;
+      state.chatChannelCounts[ch] = count;
+    }
+  } catch {}
+}
+
 function renderChatChannels() {
   const user = state.currentUser;
   const allUsers = ["Tommy", "Brandon", "Mac"];
@@ -2723,9 +2757,12 @@ function renderChatChannels() {
       if (other !== user) channels.push({ id: dmChannel(user, other), label: other });
     }
   }
-  els.chatChannels.innerHTML = channels.map((ch) =>
-    `<button type="button" class="chat-channel-btn${ch.id === state.chatChannel ? " active" : ""}" data-channel="${escapeHtml(ch.id)}">${escapeHtml(ch.label)}</button>`
-  ).join("");
+  els.chatChannels.innerHTML = channels.map((ch) => {
+    const count = state.chatChannelCounts[ch.id] || 0;
+    const seen = state.chatSeenCounts[ch.id] ?? 0;
+    const unread = count > seen;
+    return `<button type="button" class="chat-channel-btn${ch.id === state.chatChannel ? " active" : ""}" data-channel="${escapeHtml(ch.id)}">${escapeHtml(ch.label)}${unread ? '<span class="chat-channel-unread"></span>' : ""}</button>`;
+  }).join("");
 }
 
 async function loadChatMessages() {
@@ -2734,8 +2771,11 @@ async function loadChatMessages() {
   state.chatMessages = data.messages || [];
   state.chatLastSeenCount = state.chatMessages.length;
   state.chatKnownCount = state.chatMessages.length;
+  state.chatSeenCounts[state.chatChannel] = state.chatMessages.length;
+  state.chatChannelCounts[state.chatChannel] = state.chatMessages.length;
   els.chatBadge.classList.remove("visible");
   renderChatMessages();
+  renderChatChannels();
 }
 
 function renderChatMessages() {
