@@ -133,6 +133,7 @@ const els = {
   chatSidebarForm: document.querySelector("#chatSidebarForm"),
   chatSidebarInput: document.querySelector("#chatSidebarInput"),
   chatSidebarClose: document.querySelector("#chatSidebarClose"),
+  chatSidebarResize: document.querySelector("#chatSidebarResize"),
   chatBadge: document.querySelector("#chatBadge"),
   notesView: document.querySelector("#notesView"),
   notesCanvas: document.querySelector("#notesCanvas"),
@@ -219,11 +220,14 @@ async function pollChat() {
     const data = await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`);
     const incoming = data.messages || [];
     state.chatKnownCount = incoming.length;
+    const hasNew = incoming.length > state.chatLastSeenCount;
     if (isCollapsed) {
-      if (incoming.length > state.chatLastSeenCount) {
+      if (hasNew) {
         els.chatBadge.classList.add("visible");
+        playPing();
       }
     } else {
+      if (hasNew) playPing();
       state.chatLastSeenCount = incoming.length;
       els.chatBadge.classList.remove("visible");
       if (JSON.stringify(incoming) !== JSON.stringify(state.chatMessages)) {
@@ -350,6 +354,25 @@ function bindEvents() {
   els.chatSidebarClose.addEventListener("click", () => {
     els.chatSidebar.classList.add("collapsed");
     document.body.classList.remove("chat-open");
+  });
+  els.chatSidebarResize.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    els.chatSidebar.classList.add("resizing");
+    document.body.classList.add("chat-resizing");
+    els.chatSidebarResize.classList.add("active");
+    const onMove = (ev) => {
+      const w = Math.min(600, Math.max(260, ev.clientX));
+      document.documentElement.style.setProperty("--chat-w", w + "px");
+    };
+    const onUp = () => {
+      els.chatSidebar.classList.remove("resizing");
+      document.body.classList.remove("chat-resizing");
+      els.chatSidebarResize.classList.remove("active");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
   });
   els.chatSidebarForm.addEventListener("submit", postChatMessage);
   els.chatSidebarInput.addEventListener("keydown", (e) => {
@@ -2665,6 +2688,25 @@ async function syncAllAccountsNow() {
 // ===================================================================
 // Sidebar Chat — left-side collapsible panel with channels + DMs.
 // ===================================================================
+
+let _audioCtx = null;
+function playPing() {
+  try {
+    if (!_audioCtx) _audioCtx = new AudioContext();
+    const ctx = _audioCtx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch {}
+}
 
 function dmChannel(user1, user2) {
   return `dm:${[user1, user2].sort().join(":")}`;
