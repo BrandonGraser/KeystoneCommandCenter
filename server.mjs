@@ -37,20 +37,26 @@ import {
   createResourceItem,
   restoreTask,
   saveDailyNote,
-  saveAccountSnapshot,
-  getAccountSnapshots,
+  getAccountAlltime,
+  setAccountAlltime,
+  addDailyGains,
+  getDailyGains,
   setAccountSync,
   updateTask,
   updateTaskLink,
   updateTikTokAccount,
-  getTikTokAccount
+  getTikTokAccount,
+  listChatMessages,
+  createChatMessage,
+  deleteChatMessage,
+  dmChannel
 } from "./src/db.mjs";
 import { importWorkbook } from "./src/importer.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "./src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "./src/validators.mjs";
 import { getAccountStats, listSocialAccounts, newDailySeries, serializeDaily, METRICS_WINDOW_DAYS } from "./src/flowstage.mjs";
 import { aggregateWindows, buildAuthUrl, buildProbeHtml, exchangeCode, isTikTokConfigured, listVideos, refreshToken } from "./src/tiktok.mjs";
-import { buildAuthCookie, isAuthed, verifyPassword, LOGIN_PATH } from "./src/auth.mjs";
+import { buildAuthCookie, getAuthedUser, verifyCredentials, LOGIN_PATH } from "./src/auth.mjs";
 
 const PORT = Number(process.env.PORT || 4242);
 const PUBLIC_DIR = join(process.cwd(), "public");
@@ -71,7 +77,8 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    if (!PUBLIC_PATHS.has(url.pathname) && !(await isAuthed(request.headers.cookie || ""))) {
+    const currentUser = await getAuthedUser(request.headers.cookie || "");
+    if (!PUBLIC_PATHS.has(url.pathname) && !currentUser) {
       if (url.pathname.startsWith("/api/")) {
         sendJson(response, 401, { error: "Not authorized." });
       } else {
@@ -82,7 +89,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (url.pathname.startsWith("/api/")) {
-      await handleApi(request, response, url);
+      await handleApi(request, response, url, currentUser);
       return;
     }
 
@@ -98,11 +105,11 @@ server.listen(PORT, () => {
   console.log(`Keystone Task Command Center running at http://localhost:${PORT}`);
 });
 
-async function handleApi(request, response, url) {
+async function handleApi(request, response, url, currentUser) {
   const method = request.method || "GET";
 
   if (method === "GET" && url.pathname === "/api/bootstrap") {
-    sendJson(response, 200, getBootstrap());
+    sendJson(response, 200, { ...getBootstrap(), user: currentUser });
     return;
   }
 
@@ -395,6 +402,26 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  // --- Chat (sidebar messaging) -------------------------------------------
+  const chatMatch = url.pathname.match(/^\/api\/chat\/([^/]+)\/messages$/);
+  if (chatMatch && method === "GET") {
+    const channel = decodeURIComponent(chatMatch[1]);
+    sendJson(response, 200, { messages: listChatMessages(channel) });
+    return;
+  }
+  if (chatMatch && method === "POST") {
+    const channel = decodeURIComponent(chatMatch[1]);
+    const body = await readJson(request);
+    const message = createChatMessage({ channel, author: currentUser, body: cleanText(body.body) });
+    sendJson(response, 201, { message, messages: listChatMessages(channel) });
+    return;
+  }
+  const chatDeleteMatch = url.pathname.match(/^\/api\/chat\/messages\/(\d+)$/);
+  if (chatDeleteMatch && method === "DELETE") {
+    sendJson(response, 200, deleteChatMessage(Number(chatDeleteMatch[1])));
+    return;
+  }
+
   throw notFound("Route not found.");
 }
 
@@ -459,23 +486,33 @@ async function syncOneAccount(id) {
   }
   if (metrics && metrics.allTime) {
     const today = new Date().toISOString().slice(0, 10);
-    saveAccountSnapshot(id, today, metrics.allTime);
+    const prev = getAccountAlltime(id);
+    if (prev && (prev.views || prev.likes || prev.comments || prev.shares)) {
+      const gains = {
+        views: Math.max(0, (metrics.allTime.views || 0) - prev.views),
+        likes: Math.max(0, (metrics.allTime.likes || 0) - prev.likes),
+        comments: Math.max(0, (metrics.allTime.comments || 0) - prev.comments),
+        shares: Math.max(0, (metrics.allTime.shares || 0) - prev.shares)
+      };
+      if (gains.views || gains.likes || gains.comments || gains.shares) {
+        addDailyGains(id, today, gains);
+      }
+    }
+    setAccountAlltime(id, metrics.allTime);
     const lookback = new Date();
-    lookback.setDate(lookback.getDate() - METRICS_WINDOW_DAYS);
+    lookback.setDate(lookback.getDate() - (METRICS_WINDOW_DAYS - 1));
     const startDate = lookback.toISOString().slice(0, 10);
-    const snapshots = getAccountSnapshots(id, startDate);
-    if (snapshots.length >= 2) {
+    const rows = getDailyGains(id, startDate);
+    if (rows.length) {
       const daily = newDailySeries();
-      const snapMap = Object.fromEntries(snapshots.map((s) => [s.snapshot_date, s]));
+      const gainMap = Object.fromEntries(rows.map((r) => [r.snapshot_date, r]));
       for (let i = 0; i < daily.days; i++) {
         const date = new Date(daily.startMs + i * 86400000).toISOString().slice(0, 10);
-        const prevDate = new Date(daily.startMs + (i - 1) * 86400000).toISOString().slice(0, 10);
-        const snap = snapMap[date];
-        const prevSnap = snapMap[prevDate];
-        if (snap && prevSnap) {
-          daily.views[i] = Math.max(0, snap.total_views - prevSnap.total_views);
-          daily.likes[i] = Math.max(0, snap.total_likes - prevSnap.total_likes);
-          daily.comments[i] = Math.max(0, snap.total_comments - prevSnap.total_comments);
+        const g = gainMap[date];
+        if (g) {
+          daily.views[i] = g.total_views;
+          daily.likes[i] = g.total_likes;
+          daily.comments[i] = g.total_comments;
         }
       }
       const originalPosts = metrics.daily?.posts;
@@ -589,14 +626,15 @@ function sendText(response, status, text) {
 
 async function handleLogin(request, response) {
   const body = await readJson(request);
-  if (!verifyPassword(body?.password)) {
+  const username = verifyCredentials(body?.username, body?.password);
+  if (!username) {
     sendJson(response, 401, { error: "Incorrect password." });
     return;
   }
   const secure = (request.headers["x-forwarded-proto"] || "").includes("https");
   response.writeHead(200, {
     "Content-Type": "application/json; charset=utf-8",
-    "Set-Cookie": await buildAuthCookie({ secure })
+    "Set-Cookie": await buildAuthCookie({ username, secure })
   });
   response.end(JSON.stringify({ ok: true }));
 }

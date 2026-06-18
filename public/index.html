@@ -111,24 +111,19 @@
         </section>
         <div class="notes-canvas" id="notesCanvas"></div>
       </div>
-      <div class="global-chat collapsed" id="globalChat">
-        <button type="button" class="global-chat-toggle" id="globalChatToggle">
-          <span class="global-chat-icon">💬</span>
-          <span class="global-chat-label">Chat</span>
+      <aside class="chat-sidebar collapsed" id="chatSidebar">
+        <button type="button" class="chat-sidebar-toggle" id="chatSidebarToggle" title="Toggle chat">
+          <span class="chat-sidebar-toggle-icon">💬</span>
         </button>
-        <div class="global-chat-panel">
-          <div class="global-chat-head">
-            <span class="global-chat-title">TEAM CHAT</span>
-            <span class="global-chat-date" id="globalChatDate"></span>
-          </div>
-          <div class="global-chat-messages" id="globalChatMessages"></div>
-          <form class="global-chat-composer" id="globalChatForm">
-            <select class="global-chat-author" id="globalChatAuthor" aria-label="Your name"></select>
-            <textarea id="globalChatInput" rows="2" placeholder="Message — Enter to send"></textarea>
+        <div class="chat-sidebar-inner">
+          <div class="chat-sidebar-channels" id="chatChannels"></div>
+          <div class="chat-sidebar-messages" id="chatSidebarMessages"></div>
+          <form class="chat-sidebar-composer" id="chatSidebarForm">
+            <textarea id="chatSidebarInput" rows="2" placeholder="Message — Enter to send"></textarea>
             <button type="submit" class="primary">Send</button>
           </form>
         </div>
-      </div>
+      </aside>
     </main>
 
     <dialog id="taskDialog">

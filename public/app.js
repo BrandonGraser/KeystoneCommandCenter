@@ -17,7 +17,10 @@ const state = {
   removedImageIds: [],
   focusedMessageId: null,
   editingTask: null,
-  theme: getStoredTheme()
+  theme: getStoredTheme(),
+  currentUser: null,
+  chatChannel: "general",
+  chatMessages: []
 };
 
 const CATEGORY_TONES = {
@@ -121,13 +124,12 @@ const els = {
   accountFlowstageId: document.querySelector("#accountFlowstageId"),
   accountSteps: document.querySelector("#accountSteps"),
   addAccountStep: document.querySelector("#addAccountStep"),
-  globalChat: document.querySelector("#globalChat"),
-  globalChatToggle: document.querySelector("#globalChatToggle"),
-  globalChatDate: document.querySelector("#globalChatDate"),
-  globalChatMessages: document.querySelector("#globalChatMessages"),
-  globalChatForm: document.querySelector("#globalChatForm"),
-  globalChatInput: document.querySelector("#globalChatInput"),
-  globalChatAuthor: document.querySelector("#globalChatAuthor"),
+  chatSidebar: document.querySelector("#chatSidebar"),
+  chatSidebarToggle: document.querySelector("#chatSidebarToggle"),
+  chatChannels: document.querySelector("#chatChannels"),
+  chatSidebarMessages: document.querySelector("#chatSidebarMessages"),
+  chatSidebarForm: document.querySelector("#chatSidebarForm"),
+  chatSidebarInput: document.querySelector("#chatSidebarInput"),
   notesView: document.querySelector("#notesView"),
   notesCanvas: document.querySelector("#notesCanvas"),
   addCanvasNote: document.querySelector("#addCanvasNote")
@@ -145,9 +147,11 @@ async function init() {
   state.activeAssignee = state.assignees[0] || "";
   state.statuses = bootstrap.statuses;
   state.dailyCategories = bootstrap.dailyCategories || [];
+  state.currentUser = bootstrap.user || null;
   renderChrome(bootstrap);
   renderLinkInputs();
   applyStoredResourceCollapse();
+  renderChatChannels();
   await Promise.all([loadTasks(), loadResources()]);
   // Returning from a TikTok connect lands on /?tiktok=connected — show the
   // Accounts tab with fresh numbers and a confirmation.
@@ -198,9 +202,23 @@ window.addEventListener("unhandledrejection", (event) => {
 
 function startLiveSync() {
   window.setInterval(() => { syncNow(); }, SYNC_INTERVAL_MS);
+  window.setInterval(() => { pollChat(); }, SYNC_INTERVAL_MS);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) syncNow();
+    if (!document.hidden) { syncNow(); pollChat(); }
   });
+}
+
+async function pollChat() {
+  if (document.hidden) return;
+  if (els.chatSidebar.classList.contains("collapsed")) return;
+  try {
+    const data = await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`);
+    const incoming = data.messages || [];
+    if (JSON.stringify(incoming) !== JSON.stringify(state.chatMessages)) {
+      state.chatMessages = incoming;
+      renderChatMessages();
+    }
+  } catch {}
 }
 
 let syncInFlight = false;
@@ -307,20 +325,31 @@ function bindEvents() {
   els.taskWorkflow.addEventListener("click", removeWorkflowStep);
   els.taskForm.addEventListener("submit", saveTask);
   els.archiveTask.addEventListener("click", archiveCurrentTask);
-  els.globalChatToggle.addEventListener("click", () => {
-    const chat = els.globalChat;
-    const wasCollapsed = chat.classList.toggle("collapsed");
-    if (!wasCollapsed) {
-      populateGlobalChatAuthor();
-      loadGlobalChat();
-    }
+  els.chatSidebarToggle.addEventListener("click", () => {
+    const wasCollapsed = els.chatSidebar.classList.toggle("collapsed");
+    if (!wasCollapsed) loadChatMessages();
   });
-  els.globalChatForm.addEventListener("submit", postGlobalChat);
-  els.globalChatInput.addEventListener("keydown", (e) => {
+  els.chatSidebarForm.addEventListener("submit", postChatMessage);
+  els.chatSidebarInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      els.globalChatForm.requestSubmit();
+      els.chatSidebarForm.requestSubmit();
     }
+  });
+  els.chatChannels.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-channel]");
+    if (!btn) return;
+    state.chatChannel = btn.dataset.channel;
+    renderChatChannels();
+    loadChatMessages();
+  });
+  els.chatSidebarMessages.addEventListener("click", async (e) => {
+    const del = e.target.closest(".chat-sidebar-msg-delete");
+    if (!del) return;
+    const msg = del.closest("[data-msg-id]");
+    if (!msg) return;
+    await api(`/api/chat/messages/${msg.dataset.msgId}`, { method: "DELETE" });
+    await loadChatMessages();
   });
   bindAccountEvents();
   els.taskImages.addEventListener("click", (event) => {
@@ -363,12 +392,6 @@ function bindEvents() {
   });
   els.taskAssignee.addEventListener("change", () => ensureNoteLinkPerson(els.taskAssignee.value));
   els.taskBoard.addEventListener("change", async (event) => {
-    const authorSelect = event.target.closest(".chat-author");
-    if (authorSelect) {
-      storeChatAuthor(authorSelect.value);
-      authorSelect.className = `chat-author author-name author-${authorSlug(authorSelect.value)}`;
-      return;
-    }
     const photoInput = event.target.closest(".chat-photo-input");
     if (photoInput) {
       await handleChatPhoto(photoInput);
@@ -628,9 +651,7 @@ function renderTaskExpanded(task) {
           ${messages.length ? messages.map(renderMessage).join("") : `<p class="detail-empty">No discussion yet. Start one below.</p>`}
         </div>
         <div class="chat-composer">
-          <select class="chat-author author-name author-${authorSlug(composerAuthor())}" aria-label="Your name">
-            ${state.assignees.map((name) => `<option value="${escapeHtml(name)}"${name === composerAuthor() ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
-          </select>
+          <span class="chat-author-label author-name author-${authorSlug(state.currentUser)}">${escapeHtml(state.currentUser || "Me")}</span>
           <textarea class="chat-body" rows="2" placeholder="Message — Enter to send, Shift+Enter for a new line, Ctrl+V to paste a screenshot"></textarea>
           <div class="chat-actions">
             <label class="chat-photo-button" title="Attach a photo">Photo
@@ -1050,8 +1071,7 @@ async function sendTaskMessage(container) {
   const rawBody = container.querySelector(".chat-body").value;
   const image = pendingImages[taskId] || null;
   if (!rawBody.trim() && !image) return;
-  const author = container.querySelector(".chat-author").value || state.assignees[0] || "Me";
-  storeChatAuthor(author);
+  const author = state.currentUser || state.assignees[0] || "Me";
   const data = await api(`/api/tasks/${taskId}/messages`, {
     method: "POST",
     body: { author, body: rawBody, image }
@@ -1663,27 +1683,6 @@ function authorSlug(name) {
   return String(name || "").toLowerCase().replace(/[^a-z]/g, "") || "unknown";
 }
 
-function composerAuthor() {
-  const stored = getStoredChatAuthor();
-  if (stored && state.assignees.includes(stored)) return stored;
-  return state.assignees[0] || "";
-}
-
-function getStoredChatAuthor() {
-  try {
-    return localStorage.getItem("keystone-chat-author") || "";
-  } catch {
-    return "";
-  }
-}
-
-function storeChatAuthor(name) {
-  try {
-    localStorage.setItem("keystone-chat-author", name);
-  } catch {
-    // Author just won't be remembered across reloads if storage is unavailable.
-  }
-}
 
 // Shrink the image in the browser so uploads stay small (longest edge ~1400px,
 // or a smaller cap for things like avatars).
@@ -2642,67 +2641,66 @@ async function syncAllAccountsNow() {
 }
 
 // ===================================================================
-// Global Chat — floating chat widget in the bottom-right corner.
+// Sidebar Chat — left-side collapsible panel with channels + DMs.
 // ===================================================================
 
-function todayDateString() {
-  return new Date().toISOString().slice(0, 10);
+function dmChannel(user1, user2) {
+  return `dm:${[user1, user2].sort().join(":")}`;
 }
 
-function populateGlobalChatAuthor() {
-  const current = composerAuthor();
-  els.globalChatAuthor.innerHTML = state.assignees
-    .map((name) => `<option value="${escapeHtml(name)}"${name === current ? " selected" : ""}>${escapeHtml(name)}</option>`)
-    .join("");
+function renderChatChannels() {
+  const user = state.currentUser;
+  const allUsers = ["Tommy", "Brandon", "Mac"];
+  const channels = [
+    { id: "general", label: "General" }
+  ];
+  if (user) {
+    for (const other of allUsers) {
+      if (other !== user) channels.push({ id: dmChannel(user, other), label: other });
+    }
+  }
+  els.chatChannels.innerHTML = channels.map((ch) =>
+    `<button type="button" class="chat-channel-btn${ch.id === state.chatChannel ? " active" : ""}" data-channel="${escapeHtml(ch.id)}">${escapeHtml(ch.label)}</button>`
+  ).join("");
 }
 
-async function loadGlobalChat() {
-  const today = todayDateString();
-  els.globalChatDate.textContent = new Date(today + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  const data = await api(`/api/daily-notes?date=${today}`);
-  renderGlobalChat(data.notes || []);
+async function loadChatMessages() {
+  if (els.chatSidebar.classList.contains("collapsed")) return;
+  const data = await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`);
+  state.chatMessages = data.messages || [];
+  renderChatMessages();
 }
 
-function renderGlobalChat(notes) {
-  if (!notes.length) {
-    els.globalChatMessages.innerHTML = `<p class="global-chat-empty">No messages today.</p>`;
+function renderChatMessages() {
+  const msgs = state.chatMessages;
+  if (!msgs.length) {
+    els.chatSidebarMessages.innerHTML = `<p class="chat-sidebar-empty">No messages yet.</p>`;
     return;
   }
-  els.globalChatMessages.innerHTML = notes.map((note) => {
-    const time = note.created_at ? new Date(note.created_at + "Z").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
-    return `<div class="global-chat-msg" data-msg-id="${note.id}">
-      <div class="global-chat-msg-head">
-        <strong class="author-name author-${authorSlug(note.assignee)}">${escapeHtml(note.assignee || "")}</strong>
-        <span><time>${time}</time><button type="button" class="global-chat-msg-delete" title="Delete">&times;</button></span>
+  els.chatSidebarMessages.innerHTML = msgs.map((msg) => {
+    const time = msg.created_at ? new Date(msg.created_at + "Z").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+    return `<div class="chat-sidebar-msg" data-msg-id="${msg.id}">
+      <div class="chat-sidebar-msg-head">
+        <strong class="author-name author-${authorSlug(msg.author)}">${escapeHtml(msg.author || "")}</strong>
+        <span><time>${time}</time><button type="button" class="chat-sidebar-msg-delete" title="Delete">&times;</button></span>
       </div>
-      <p>${escapeHtml(note.body)}</p>
+      <p>${escapeHtml(msg.body)}</p>
     </div>`;
   }).join("");
-  els.globalChatMessages.scrollTop = els.globalChatMessages.scrollHeight;
+  els.chatSidebarMessages.scrollTop = els.chatSidebarMessages.scrollHeight;
 }
 
-async function postGlobalChat(e) {
+async function postChatMessage(e) {
   e.preventDefault();
-  const body = els.globalChatInput.value.trim();
+  const body = els.chatSidebarInput.value.trim();
   if (!body) return;
-  const author = els.globalChatAuthor.value || state.assignees[0] || "Me";
-  storeChatAuthor(author);
-  els.globalChatInput.value = "";
-  await api("/api/daily-notes", {
+  els.chatSidebarInput.value = "";
+  await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`, {
     method: "POST",
-    body: { note_date: todayDateString(), assignee: author, body }
+    body: { body }
   });
-  await loadGlobalChat();
+  await loadChatMessages();
 }
-
-els.globalChatMessages?.addEventListener("click", async (e) => {
-  const del = e.target.closest(".global-chat-msg-delete");
-  if (!del) return;
-  const msg = del.closest(".global-chat-msg");
-  if (!msg) return;
-  await api(`/api/daily-notes/${msg.dataset.msgId}`, { method: "DELETE" });
-  await loadGlobalChat();
-});
 
 // ===================================================================
 // Notes tab — freeform draggable / pinnable canvas notes.

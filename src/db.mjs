@@ -221,6 +221,16 @@ function migrate(database) {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      channel TEXT NOT NULL,
+      author TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_channel ON chat_messages (channel, created_at);
   `);
 
   const dailyColumns = database.prepare("PRAGMA table_info(daily_notes)").all();
@@ -255,6 +265,9 @@ function migrate(database) {
   }
   for (const col of ["metrics_synced_at", "metrics_source", "tiktok_open_id", "tiktok_access_token", "tiktok_refresh_token", "tiktok_token_expires_at", "tiktok_connected_at", "avatar", "metrics_daily", "upload_url"]) {
     if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} TEXT;`);
+  }
+  for (const col of ["alltime_views", "alltime_likes", "alltime_comments", "alltime_shares"]) {
+    if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 0;`);
   }
   database.exec("UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted';");
   database.exec("UPDATE tasks SET status = 'Not Started' WHERE status = 'Misc.';");
@@ -615,6 +628,29 @@ export function deleteDailyNote(id) {
   return { ok: true };
 }
 
+export function dmChannel(user1, user2) {
+  return `dm:${[user1, user2].sort().join(":")}`;
+}
+
+export function listChatMessages(channel, limit = 200) {
+  return getDb()
+    .prepare("SELECT * FROM chat_messages WHERE channel = ? ORDER BY created_at ASC LIMIT ?")
+    .all(channel, limit);
+}
+
+export function createChatMessage({ channel, author, body }) {
+  if (!body || !body.trim()) throw Object.assign(new Error("Message body is required."), { status: 400 });
+  const result = getDb()
+    .prepare("INSERT INTO chat_messages (channel, author, body) VALUES (?, ?, ?)")
+    .run(channel, author, body.trim());
+  return getDb().prepare("SELECT * FROM chat_messages WHERE id = ?").get(Number(result.lastInsertRowid));
+}
+
+export function deleteChatMessage(id) {
+  getDb().prepare("DELETE FROM chat_messages WHERE id = ?").run(Number(id));
+  return { ok: true };
+}
+
 export function listResourceItems() {
   return getDb()
     .prepare("SELECT * FROM resource_items ORDER BY section ASC, sort_order ASC, title ASC, id ASC")
@@ -860,21 +896,35 @@ export function setAccountSync(id, { scheduledThrough = null, metrics = null, me
   return getTikTokAccount(id);
 }
 
-export function saveAccountSnapshot(accountId, dateStr, totals) {
+export function getAccountAlltime(accountId) {
+  const row = getDb()
+    .prepare("SELECT alltime_views, alltime_likes, alltime_comments, alltime_shares FROM tiktok_accounts WHERE id = ?")
+    .get(Number(accountId));
+  if (!row) return null;
+  return { views: row.alltime_views || 0, likes: row.alltime_likes || 0, comments: row.alltime_comments || 0, shares: row.alltime_shares || 0 };
+}
+
+export function setAccountAlltime(accountId, totals) {
+  getDb()
+    .prepare("UPDATE tiktok_accounts SET alltime_views = ?, alltime_likes = ?, alltime_comments = ?, alltime_shares = ? WHERE id = ?")
+    .run(totals.views || 0, totals.likes || 0, totals.comments || 0, totals.shares || 0, Number(accountId));
+}
+
+export function addDailyGains(accountId, dateStr, gains) {
   getDb()
     .prepare(`
       INSERT INTO tiktok_daily_snapshots (account_id, snapshot_date, total_views, total_likes, total_comments, total_shares)
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(account_id, snapshot_date) DO UPDATE SET
-        total_views = excluded.total_views,
-        total_likes = excluded.total_likes,
-        total_comments = excluded.total_comments,
-        total_shares = excluded.total_shares
+        total_views = total_views + excluded.total_views,
+        total_likes = total_likes + excluded.total_likes,
+        total_comments = total_comments + excluded.total_comments,
+        total_shares = total_shares + excluded.total_shares
     `)
-    .run(Number(accountId), dateStr, totals.views || 0, totals.likes || 0, totals.comments || 0, totals.shares || 0);
+    .run(Number(accountId), dateStr, gains.views || 0, gains.likes || 0, gains.comments || 0, gains.shares || 0);
 }
 
-export function getAccountSnapshots(accountId, startDate) {
+export function getDailyGains(accountId, startDate) {
   return getDb()
     .prepare(`
       SELECT snapshot_date, total_views, total_likes, total_comments, total_shares

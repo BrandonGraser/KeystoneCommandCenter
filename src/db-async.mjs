@@ -239,6 +239,15 @@ async function migrate(client) {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel TEXT NOT NULL,
+        author TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
     }
   ], "write");
 
@@ -256,7 +265,8 @@ async function migrate(client) {
     { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks (category)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_daily_notes_category ON daily_notes (category)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks (archived_at)" },
-    { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_account_steps_account ON tiktok_account_steps (account_id)" }
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_account_steps_account ON tiktok_account_steps (account_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_chat_messages_channel ON chat_messages (channel, created_at)" }
   ], "write");
 
   const dailyCols = await client.execute("PRAGMA table_info(daily_notes)");
@@ -964,6 +974,38 @@ export async function deleteTikTokAccount(id) {
   const client = await getDb();
   await client.execute({ sql: "DELETE FROM tiktok_accounts WHERE id = ?", args: [Number(id)] });
   return { deleted: true };
+}
+
+// --- Chat messages (sidebar messaging) ----------------------------------------
+
+export function dmChannel(user1, user2) {
+  return `dm:${[user1, user2].sort().join(":")}`;
+}
+
+export async function listChatMessages(channel, limit = 200) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT * FROM chat_messages WHERE channel = ? ORDER BY created_at ASC LIMIT ?",
+    args: [channel, limit]
+  });
+  return r.rows.map((row) => toRow(r.columns, row));
+}
+
+export async function createChatMessage({ channel, author, body }) {
+  if (!body || !body.trim()) { const e = new Error("Message body is required."); e.status = 400; throw e; }
+  const client = await getDb();
+  const result = await client.execute({
+    sql: "INSERT INTO chat_messages (channel, author, body) VALUES (?, ?, ?)",
+    args: [channel, author, body.trim()]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM chat_messages WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return toRow(r.columns, r.rows[0]);
+}
+
+export async function deleteChatMessage(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM chat_messages WHERE id = ?", args: [Number(id)] });
+  return { ok: true };
 }
 
 export async function getBootstrap() {

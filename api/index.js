@@ -36,11 +36,15 @@ import {
   updateTask,
   updateTaskLink,
   updateTikTokAccount,
-  getTikTokAccount
+  getTikTokAccount,
+  listChatMessages,
+  createChatMessage,
+  deleteChatMessage,
+  dmChannel
 } from "../src/db-async.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "../src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "../src/validators.mjs";
-import { buildAuthCookie, verifyPassword } from "../src/auth.mjs";
+import { buildAuthCookie, verifyCredentials, getAuthedUser } from "../src/auth.mjs";
 import { getAccountStats, listSocialAccounts } from "../src/flowstage.mjs";
 import { aggregateWindows, buildAuthUrl, buildProbeHtml, exchangeCode, isTikTokConfigured, listVideos, refreshToken } from "../src/tiktok.mjs";
 
@@ -63,21 +67,24 @@ async function handleApi(request, response, url) {
 
   if (url.pathname === "/api/login" && method === "POST") {
     const body = await readJson(request);
-    if (!verifyPassword(body?.password)) {
+    const username = verifyCredentials(body?.username, body?.password);
+    if (!username) {
       sendJson(response, 401, { error: "Incorrect password." });
       return;
     }
     const secure = (request.headers["x-forwarded-proto"] || "").includes("https");
     response.writeHead(200, {
       "Content-Type": "application/json; charset=utf-8",
-      "Set-Cookie": await buildAuthCookie({ secure })
+      "Set-Cookie": await buildAuthCookie({ username, secure })
     });
     response.end(JSON.stringify({ ok: true }));
     return;
   }
 
+  const currentUser = await getAuthedUser(request.headers.cookie || request.headers["cookie"] || "");
+
   if (method === "GET" && url.pathname === "/api/bootstrap") {
-    sendJson(response, 200, await getBootstrap());
+    sendJson(response, 200, { ...await getBootstrap(), user: currentUser });
     return;
   }
 
@@ -359,6 +366,26 @@ async function handleApi(request, response, url) {
 
   if (url.pathname === "/api/import/xlsx" && method === "POST") {
     sendJson(response, 501, { error: "XLSX import is not available on this deployment." });
+    return;
+  }
+
+  // --- Chat (sidebar messaging) -------------------------------------------
+  const chatMatch = url.pathname.match(/^\/api\/chat\/([^/]+)\/messages$/);
+  if (chatMatch && method === "GET") {
+    const channel = decodeURIComponent(chatMatch[1]);
+    sendJson(response, 200, { messages: await listChatMessages(channel) });
+    return;
+  }
+  if (chatMatch && method === "POST") {
+    const channel = decodeURIComponent(chatMatch[1]);
+    const body = await readJson(request);
+    const message = await createChatMessage({ channel, author: currentUser, body: cleanText(body.body) });
+    sendJson(response, 201, { message, messages: await listChatMessages(channel) });
+    return;
+  }
+  const chatDeleteMatch = url.pathname.match(/^\/api\/chat\/messages\/(\d+)$/);
+  if (chatDeleteMatch && method === "DELETE") {
+    sendJson(response, 200, await deleteChatMessage(Number(chatDeleteMatch[1])));
     return;
   }
 

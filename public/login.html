@@ -52,6 +52,31 @@
         color: var(--muted);
         margin-bottom: 6px;
       }
+      .user-picker {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+      .user-btn {
+        flex: 1;
+        padding: 10px 0;
+        background: #000;
+        border: 1px solid var(--line-strong);
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: border-color 0.12s, color 0.12s;
+      }
+      .user-btn:hover { border-color: var(--ink); color: var(--ink); }
+      .user-btn.active {
+        border-color: var(--ink);
+        background: var(--ink);
+        color: #0a0a0a;
+      }
       input {
         width: 100%;
         background: #000;
@@ -61,7 +86,7 @@
         padding: 10px 12px;
       }
       input:focus { outline: none; border-color: var(--ink); }
-      button {
+      button[type="submit"] {
         width: 100%;
         margin-top: 16px;
         background: var(--ink);
@@ -74,7 +99,7 @@
         padding: 11px;
         cursor: pointer;
       }
-      button:disabled { opacity: 0.6; cursor: default; }
+      button[type="submit"]:disabled { opacity: 0.6; cursor: default; }
       .error {
         margin-top: 14px;
         color: var(--danger);
@@ -86,31 +111,45 @@
   <body>
     <form class="card" id="loginForm">
       <h1>Keystone</h1>
-      <p class="sub">Enter the password to continue.</p>
+      <p class="sub">Who are you?</p>
+      <label>User</label>
+      <div class="user-picker" id="userPicker">
+        <button type="button" class="user-btn" data-user="Tommy">Tommy</button>
+        <button type="button" class="user-btn" data-user="Brandon">Brandon</button>
+        <button type="button" class="user-btn" data-user="Mac">Mac</button>
+      </div>
       <label for="password">Password</label>
-      <input type="password" id="password" name="password" autocomplete="current-password" autofocus required>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
       <button type="submit" id="submit">Sign in</button>
       <div class="error" id="error" role="alert"></div>
     </form>
     <script>
-      const form = document.getElementById("loginForm");
+      let selectedUser = "";
+      const picker = document.getElementById("userPicker");
       const errorEl = document.getElementById("error");
       const submitEl = document.getElementById("submit");
-      form.addEventListener("submit", async (event) => {
+      const passwordEl = document.getElementById("password");
+
+      picker.addEventListener("click", (e) => {
+        const btn = e.target.closest(".user-btn");
+        if (!btn) return;
+        selectedUser = btn.dataset.user;
+        picker.querySelectorAll(".user-btn").forEach((b) => b.classList.toggle("active", b === btn));
+        passwordEl.focus();
+      });
+
+      document.getElementById("loginForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         errorEl.textContent = "";
+        if (!selectedUser) { errorEl.textContent = "Pick a user first."; return; }
         submitEl.disabled = true;
         try {
-          const password = document.getElementById("password").value;
           const res = await fetch("/api/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password })
+            body: JSON.stringify({ username: selectedUser, password: passwordEl.value })
           });
-          if (res.ok) {
-            window.location.replace("/");
-            return;
-          }
+          if (res.ok) { window.location.replace("/"); return; }
           const data = await res.json().catch(() => ({}));
           errorEl.textContent = data.error || "Incorrect password.";
         } catch {
