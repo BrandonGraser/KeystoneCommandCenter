@@ -114,8 +114,13 @@
       <aside class="chat-sidebar collapsed" id="chatSidebar">
         <button type="button" class="chat-sidebar-toggle" id="chatSidebarToggle" title="Toggle chat">
           <span class="chat-sidebar-toggle-icon">💬</span>
+          <span class="chat-badge" id="chatBadge"></span>
         </button>
         <div class="chat-sidebar-inner">
+          <div class="chat-sidebar-header">
+            <h3>Chat</h3>
+            <button type="button" class="chat-sidebar-close" id="chatSidebarClose" title="Close chat">&times;</button>
+          </div>
           <div class="chat-sidebar-channels" id="chatChannels"></div>
           <div class="chat-sidebar-messages" id="chatSidebarMessages"></div>
           <form class="chat-sidebar-composer" id="chatSidebarForm">

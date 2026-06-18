@@ -2645,6 +2645,15 @@ dialog::backdrop {
   transform: translateX(-340px);
 }
 
+body.chat-open .shell {
+  margin-left: 356px;
+  transition: margin-left 0.2s ease;
+}
+
+.shell {
+  transition: margin-left 0.2s ease;
+}
+
 .chat-sidebar-toggle {
   all: unset;
   position: absolute;
@@ -2666,6 +2675,49 @@ dialog::backdrop {
 
 .chat-sidebar-toggle:hover {
   background: var(--panel-2);
+}
+
+.chat-sidebar-toggle .chat-badge {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.chat-sidebar-toggle .chat-badge.visible {
+  display: block;
+}
+
+.chat-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.chat-sidebar-header h3 {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.chat-sidebar-close {
+  all: unset;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--muted);
+  padding: 2px 6px;
+  line-height: 1;
+}
+
+.chat-sidebar-close:hover {
+  color: var(--ink);
 }
 
 .chat-sidebar-inner {

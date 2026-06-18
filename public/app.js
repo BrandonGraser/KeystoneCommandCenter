@@ -20,7 +20,9 @@ const state = {
   theme: getStoredTheme(),
   currentUser: null,
   chatChannel: "general",
-  chatMessages: []
+  chatMessages: [],
+  chatLastSeenCount: 0,
+  chatKnownCount: 0
 };
 
 const CATEGORY_TONES = {
@@ -130,6 +132,8 @@ const els = {
   chatSidebarMessages: document.querySelector("#chatSidebarMessages"),
   chatSidebarForm: document.querySelector("#chatSidebarForm"),
   chatSidebarInput: document.querySelector("#chatSidebarInput"),
+  chatSidebarClose: document.querySelector("#chatSidebarClose"),
+  chatBadge: document.querySelector("#chatBadge"),
   notesView: document.querySelector("#notesView"),
   notesCanvas: document.querySelector("#notesCanvas"),
   addCanvasNote: document.querySelector("#addCanvasNote")
@@ -210,13 +214,22 @@ function startLiveSync() {
 
 async function pollChat() {
   if (document.hidden) return;
-  if (els.chatSidebar.classList.contains("collapsed")) return;
+  const isCollapsed = els.chatSidebar.classList.contains("collapsed");
   try {
     const data = await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`);
     const incoming = data.messages || [];
-    if (JSON.stringify(incoming) !== JSON.stringify(state.chatMessages)) {
-      state.chatMessages = incoming;
-      renderChatMessages();
+    state.chatKnownCount = incoming.length;
+    if (isCollapsed) {
+      if (incoming.length > state.chatLastSeenCount) {
+        els.chatBadge.classList.add("visible");
+      }
+    } else {
+      state.chatLastSeenCount = incoming.length;
+      els.chatBadge.classList.remove("visible");
+      if (JSON.stringify(incoming) !== JSON.stringify(state.chatMessages)) {
+        state.chatMessages = incoming;
+        renderChatMessages();
+      }
     }
   } catch {}
 }
@@ -326,8 +339,17 @@ function bindEvents() {
   els.taskForm.addEventListener("submit", saveTask);
   els.archiveTask.addEventListener("click", archiveCurrentTask);
   els.chatSidebarToggle.addEventListener("click", () => {
-    const wasCollapsed = els.chatSidebar.classList.toggle("collapsed");
-    if (!wasCollapsed) loadChatMessages();
+    const nowCollapsed = els.chatSidebar.classList.toggle("collapsed");
+    document.body.classList.toggle("chat-open", !nowCollapsed);
+    if (!nowCollapsed) {
+      els.chatBadge.classList.remove("visible");
+      state.chatLastSeenCount = state.chatKnownCount;
+      loadChatMessages();
+    }
+  });
+  els.chatSidebarClose.addEventListener("click", () => {
+    els.chatSidebar.classList.add("collapsed");
+    document.body.classList.remove("chat-open");
   });
   els.chatSidebarForm.addEventListener("submit", postChatMessage);
   els.chatSidebarInput.addEventListener("keydown", (e) => {
@@ -2668,6 +2690,9 @@ async function loadChatMessages() {
   if (els.chatSidebar.classList.contains("collapsed")) return;
   const data = await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`);
   state.chatMessages = data.messages || [];
+  state.chatLastSeenCount = state.chatMessages.length;
+  state.chatKnownCount = state.chatMessages.length;
+  els.chatBadge.classList.remove("visible");
   renderChatMessages();
 }
 
