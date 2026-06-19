@@ -2784,23 +2784,28 @@ function renderChatMessages() {
     els.chatSidebarMessages.innerHTML = `<p class="chat-sidebar-empty">No messages yet.</p>`;
     return;
   }
-  els.chatSidebarMessages.innerHTML = msgs.map((msg, i) => {
+  let html = "";
+  for (let i = 0; i < msgs.length; i++) {
+    const msg = msgs[i];
     const time = msg.created_at ? new Date(msg.created_at + "Z").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
     const prev = msgs[i - 1];
-    const sameAuthor = prev && prev.author === msg.author;
-    if (sameAuthor) {
-      return `<div class="chat-sidebar-msg chat-sidebar-msg-cont" data-msg-id="${msg.id}">
-      <p>${escapeHtml(msg.body)}<span class="chat-sidebar-msg-time"><time>${time}</time><button type="button" class="chat-sidebar-msg-delete" title="Delete">&times;</button></span></p>
-    </div>`;
+    const next = msgs[i + 1];
+    const sameAsPrev = prev && prev.author === msg.author;
+    const sameAsNext = next && next.author === msg.author;
+    if (!sameAsPrev) {
+      html += `<div class="chat-msg-group">
+        <div class="chat-sidebar-msg-head">
+          <strong class="author-name author-${authorSlug(msg.author)}">${escapeHtml(msg.author || "")}</strong>
+          <span><time>${time}</time></span>
+        </div>`;
     }
-    return `<div class="chat-sidebar-msg" data-msg-id="${msg.id}">
-      <div class="chat-sidebar-msg-head">
-        <strong class="author-name author-${authorSlug(msg.author)}">${escapeHtml(msg.author || "")}</strong>
-        <span><time>${time}</time><button type="button" class="chat-sidebar-msg-delete" title="Delete">&times;</button></span>
-      </div>
+    html += `<div class="chat-sidebar-msg-line" data-msg-id="${msg.id}">
       <p>${escapeHtml(msg.body)}</p>
+      <span class="chat-sidebar-msg-actions">${sameAsPrev ? `<time>${time}</time>` : ""}<button type="button" class="chat-sidebar-msg-delete" title="Delete">&times;</button></span>
     </div>`;
-  }).join("");
+    if (!sameAsNext) html += `</div>`;
+  }
+  els.chatSidebarMessages.innerHTML = html;
   els.chatSidebarMessages.scrollTop = els.chatSidebarMessages.scrollHeight;
 }
 

@@ -2821,10 +2821,7 @@ body.chat-resizing .shell {
   scroll-behavior: smooth;
 }
 
-.chat-sidebar-msg {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.chat-msg-group {
   padding: 8px 10px;
   border: 1px solid var(--line);
   background: var(--panel);
@@ -2834,6 +2831,7 @@ body.chat-resizing .shell {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 4px;
 }
 
 .chat-sidebar-msg-head strong {
@@ -2849,53 +2847,44 @@ body.chat-resizing .shell {
   letter-spacing: 0.05em;
 }
 
-.chat-sidebar-msg-delete {
-  all: unset;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--muted);
-  opacity: 0;
-  transition: opacity 0.1s;
-  margin-left: 6px;
+.chat-sidebar-msg-line {
+  position: relative;
 }
 
-.chat-sidebar-msg:hover .chat-sidebar-msg-delete {
-  opacity: 0.6;
-}
-
-.chat-sidebar-msg-delete:hover {
-  opacity: 1 !important;
-  color: var(--danger);
-}
-
-.chat-sidebar-msg p {
-  margin: 4px 0 0;
+.chat-sidebar-msg-line p {
+  margin: 2px 0;
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.5;
 }
 
-.chat-sidebar-msg-cont {
-  padding-top: 0;
-  border-top: none;
-  margin-top: -1px;
-}
-
-.chat-sidebar-msg-cont p {
-  margin-top: 1px;
-}
-
-.chat-sidebar-msg-time {
+.chat-sidebar-msg-actions {
+  position: absolute;
+  right: 0;
+  top: 0;
   opacity: 0;
-  margin-left: 8px;
+  transition: opacity 0.1s;
   font-size: 10px;
   color: var(--muted);
-  transition: opacity 0.1s;
+  background: var(--panel);
+  padding: 0 2px;
 }
 
-.chat-sidebar-msg-cont:hover .chat-sidebar-msg-time {
+.chat-sidebar-msg-line:hover .chat-sidebar-msg-actions {
   opacity: 1;
+}
+
+.chat-sidebar-msg-delete {
+  all: unset;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.chat-sidebar-msg-delete:hover {
+  color: var(--danger);
 }
 
 .chat-sidebar-empty {
