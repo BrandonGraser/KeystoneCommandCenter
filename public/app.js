@@ -2784,8 +2784,15 @@ function renderChatMessages() {
     els.chatSidebarMessages.innerHTML = `<p class="chat-sidebar-empty">No messages yet.</p>`;
     return;
   }
-  els.chatSidebarMessages.innerHTML = msgs.map((msg) => {
+  els.chatSidebarMessages.innerHTML = msgs.map((msg, i) => {
     const time = msg.created_at ? new Date(msg.created_at + "Z").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+    const prev = msgs[i - 1];
+    const sameAuthor = prev && prev.author === msg.author;
+    if (sameAuthor) {
+      return `<div class="chat-sidebar-msg chat-sidebar-msg-cont" data-msg-id="${msg.id}">
+      <p>${escapeHtml(msg.body)}<span class="chat-sidebar-msg-time"><time>${time}</time><button type="button" class="chat-sidebar-msg-delete" title="Delete">&times;</button></span></p>
+    </div>`;
+    }
     return `<div class="chat-sidebar-msg" data-msg-id="${msg.id}">
       <div class="chat-sidebar-msg-head">
         <strong class="author-name author-${authorSlug(msg.author)}">${escapeHtml(msg.author || "")}</strong>

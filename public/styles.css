@@ -2876,6 +2876,28 @@ body.chat-resizing .shell {
   line-height: 1.5;
 }
 
+.chat-sidebar-msg-cont {
+  padding-top: 0;
+  border-top: none;
+  margin-top: -1px;
+}
+
+.chat-sidebar-msg-cont p {
+  margin-top: 1px;
+}
+
+.chat-sidebar-msg-time {
+  opacity: 0;
+  margin-left: 8px;
+  font-size: 10px;
+  color: var(--muted);
+  transition: opacity 0.1s;
+}
+
+.chat-sidebar-msg-cont:hover .chat-sidebar-msg-time {
+  opacity: 1;
+}
+
 .chat-sidebar-empty {
   color: var(--muted);
   font-size: 13px;
