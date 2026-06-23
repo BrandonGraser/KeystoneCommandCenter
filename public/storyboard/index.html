@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Keystone — Storyboard</title>
+    <script type="module" crossorigin src="./assets/index-BUikG4B_.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-B5ov17of.css">
+    <style>
+      /* --- Keystone theme overrides --- */
+      :root {
+        --red: #e6e6e6;
+        --red-dim: #262626;
+        --blue: #6aa0ff;
+        --panel: #0e0e0e;
+        --panel-soft: #131313;
+        --line: #262626;
+        --muted: #8d8d8d;
+        font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, "Liberation Mono", Menlo, monospace;
+      }
+
+      body, #root { background: #0a0a0a; }
+
+      .app-shell {
+        background: #0a0a0a;
+      }
+
+      /* Left rail — neutral dark */
+      .left-rail {
+        background:
+          linear-gradient(90deg, rgba(10,10,10,0.96) 0%, rgba(10,10,10,0.7) 42%, rgba(10,10,10,0.28) 72%, transparent 100%),
+          radial-gradient(ellipse at 0% 50%, rgba(10,10,10,0.76), transparent 76%);
+        border-right: 1px solid #262626;
+      }
+
+      /* Hide the Drezzdon branding */
+      .brand-mark { display: none; }
+
+      /* Tool buttons — monochrome */
+      .tool-stack button {
+        background:
+          radial-gradient(circle at 50% 50%, rgba(14,14,14,0.92) 0 48%, rgba(14,14,14,0.36) 76%, transparent 100%),
+          transparent;
+        color: #8d8d8d;
+      }
+      .tool-stack button:hover {
+        background:
+          radial-gradient(circle at 50% 50%, rgba(20,20,20,0.96) 0 50%, rgba(230,230,230,0.08) 74%, transparent 100%),
+          transparent;
+        color: #e6e6e6;
+        transform: translateY(-1px);
+      }
+
+      /* Top strip */
+      .top-strip {
+        background:
+          linear-gradient(180deg, rgba(10,10,10,0.92) 0%, rgba(10,10,10,0.52) 58%, transparent 100%),
+          radial-gradient(ellipse at 50% 18%, rgba(10,10,10,0.82), transparent 62%);
+      }
+
+      /* Map tabs — monochrome with subtle accent */
+      .map-tab {
+        border: 1px solid #262626;
+        background: #0e0e0e;
+        color: #8d8d8d;
+      }
+      .map-tab.is-active {
+        border-color: #e6e6e6;
+        color: #e6e6e6;
+        box-shadow: inset 0 -2px 0 #e6e6e6;
+      }
+      .map-tab.is-drag-over {
+        border-color: #6aa0ff;
+      }
+
+      .map-panel input {
+        color: #8d8d8d;
+        font-family: inherit;
+      }
+      .map-panel input:focus {
+        color: #e6e6e6;
+      }
+
+      .map-panel__delete {
+        border: 1px solid #3f3f3f;
+        background: #0e0e0e;
+      }
+      .map-panel__delete:hover:not(:disabled) {
+        border-color: #e05c5c;
+        color: #e05c5c;
+      }
+
+      /* ReactFlow canvas */
+      .react-flow {
+        background:
+          linear-gradient(rgba(230,230,230,0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(230,230,230,0.03) 1px, transparent 1px),
+          #0a0a0a !important;
+        background-size: 64px 64px;
+      }
+
+      .react-flow__background {
+        opacity: 0.3;
+      }
+
+      /* Edge text */
+      .react-flow__edge-text {
+        fill: #e6e6e6;
+      }
+      .react-flow__edge-textbg {
+        fill: #0a0a0a;
+        stroke: #3f3f3f;
+      }
+
+      /* Minimap */
+      .react-flow__minimap {
+        border: 1px solid #262626 !important;
+        background: rgba(14,14,14,0.6) !important;
+      }
+
+      /* Story cards — keep accent colors but darken the chrome */
+      .story-card {
+        background:
+          linear-gradient(90deg, rgba(255,255,255,0.03), transparent 42%),
+          #0e0e0e;
+        font-family: inherit;
+      }
+
+      .story-card__signal {
+        background:
+          linear-gradient(transparent 0 45%, rgba(255,255,255,0.04) 46% 49%, transparent 50%),
+          radial-gradient(circle at 92% 10%, color-mix(in srgb, var(--accent), transparent 72%), transparent 28%);
+      }
+
+      .story-card__kind {
+        font-family: inherit;
+      }
+
+      .story-card h2 {
+        font-family: inherit;
+        font-weight: 800;
+      }
+
+      /* Context menu & edge editor — neutral */
+      .context-node-menu,
+      .node-mini-menu,
+      .edge-editor {
+        border: 1px solid #3f3f3f;
+        background: rgba(14,14,14,0.96);
+      }
+
+      .context-node-menu button {
+        border: 1px solid #262626;
+        background: #0e0e0e;
+      }
+      .context-node-menu button:hover,
+      .node-mini-menu button:hover {
+        background: rgba(230,230,230,0.08);
+        color: #e6e6e6;
+      }
+
+      .node-mini-menu button {
+        border: 1px solid #3f3f3f;
+        background: #0e0e0e;
+      }
+
+      .edge-editor label {
+        color: #8d8d8d;
+      }
+      .edge-editor input,
+      .edge-editor select {
+        border: 1px solid #262626;
+        background: #0a0a0a;
+        color: #e6e6e6;
+      }
+
+      /* Focus panel (node editor overlay) */
+      .focus-backdrop {
+        background: rgba(10,10,10,0.7);
+      }
+      .focus-panel {
+        border: 1px solid #3f3f3f;
+        background:
+          linear-gradient(90deg, rgba(14,14,14,0.98), rgba(14,14,14,0.92)),
+          radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--accent), transparent 82%), transparent 30%);
+      }
+      .focus-panel__header {
+        font-family: inherit;
+      }
+      .focus-panel__header button {
+        border: 1px solid #262626;
+        background: #0e0e0e;
+      }
+      .focus-panel label {
+        color: #8d8d8d;
+      }
+      .focus-panel input,
+      .focus-panel select,
+      .focus-panel textarea,
+      .attribute-note-box textarea {
+        border: 1px solid #262626;
+        background: #0a0a0a;
+        color: #e6e6e6;
+        font-family: inherit;
+      }
+
+      /* Danger button */
+      .danger-button {
+        border: 1px solid #e05c5c;
+        background: #1a0808;
+        font-family: inherit;
+      }
+      .danger-button:hover {
+        background: #e05c5c;
+        color: #0a0a0a;
+      }
+
+      /* Map delete confirm dialog */
+      .map-delete-confirm {
+        background: rgba(10,10,10,0.8);
+      }
+      .map-delete-confirm__panel {
+        border: 1px solid #3f3f3f;
+        background: #0e0e0e;
+      }
+      .map-delete-confirm__panel strong {
+        color: #e05c5c;
+      }
+      .map-delete-confirm__panel input {
+        border: 1px solid #262626;
+        background: #0a0a0a;
+        color: #e6e6e6;
+      }
+      .map-delete-confirm__actions button {
+        border: 1px solid #262626;
+        background: #131313;
+      }
+      .map-delete-confirm__yes:not(:disabled) {
+        border-color: #e05c5c;
+        background: #1a0808;
+      }
+
+      /* Group selection frame */
+      .group-selection-frame__handle {
+        background: #e6e6e6;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
