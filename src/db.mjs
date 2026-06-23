@@ -207,6 +207,15 @@ function migrate(database) {
     CREATE INDEX IF NOT EXISTS idx_images_task ON task_images (task_id);
     CREATE INDEX IF NOT EXISTS idx_resource_items_section ON resource_items (section, sort_order);
 
+    CREATE TABLE IF NOT EXISTS storyboard_workspace (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      data TEXT NOT NULL DEFAULT '{}',
+      version INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    INSERT OR IGNORE INTO storyboard_workspace (id, data, version) VALUES (1, '{}', 0);
+
     CREATE TABLE IF NOT EXISTS canvas_notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL DEFAULT '',
@@ -731,6 +740,24 @@ export function bringCanvasNoteToFront(id) {
   const maxZ = database.prepare("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes").get().mz;
   database.prepare("UPDATE canvas_notes SET z_index = ?, updated_at = datetime('now') WHERE id = ?").run(maxZ + 1, Number(id));
   return database.prepare("SELECT * FROM canvas_notes WHERE id = ?").get(Number(id));
+}
+
+// --- Storyboard workspace (Notes tab) ------------------------------------
+
+export function getStoryboardWorkspace() {
+  const row = getDb().prepare("SELECT data, version, updated_at FROM storyboard_workspace WHERE id = 1").get();
+  return row || { data: "{}", version: 0, updated_at: null };
+}
+
+export function saveStoryboardWorkspace(data, clientVersion) {
+  const db = getDb();
+  const current = db.prepare("SELECT version FROM storyboard_workspace WHERE id = 1").get();
+  if (current && typeof clientVersion === "number" && clientVersion < current.version) {
+    return { conflict: true, serverVersion: current.version };
+  }
+  const nextVersion = (current?.version || 0) + 1;
+  db.prepare("UPDATE storyboard_workspace SET data = ?, version = ?, updated_at = datetime('now') WHERE id = 1").run(data, nextVersion);
+  return { version: nextVersion, conflict: false };
 }
 
 // --- TikTok accounts (FlowStage tab) -------------------------------------

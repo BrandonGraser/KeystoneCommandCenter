@@ -49,7 +49,9 @@ import {
   listChatMessages,
   createChatMessage,
   deleteChatMessage,
-  dmChannel
+  dmChannel,
+  getStoryboardWorkspace,
+  saveStoryboardWorkspace
 } from "./src/db.mjs";
 import { importWorkbook } from "./src/importer.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "./src/notifications.mjs";
@@ -308,6 +310,31 @@ async function handleApi(request, response, url, currentUser) {
     const note = bringCanvasNoteToFront(Number(canvasFrontMatch[1]));
     if (!note) throw notFound("Note not found.");
     sendJson(response, 200, { note });
+    return;
+  }
+
+  // --- Storyboard workspace (Notes tab) -----------------------------------
+  if (url.pathname === "/api/storyboard" && method === "GET") {
+    const row = getStoryboardWorkspace();
+    sendJson(response, 200, { data: row.data, version: row.version });
+    return;
+  }
+  if (url.pathname === "/api/storyboard" && method === "PUT") {
+    const body = await readJson(request);
+    const result = saveStoryboardWorkspace(
+      typeof body.data === "string" ? body.data : JSON.stringify(body.data),
+      typeof body.version === "number" ? body.version : undefined
+    );
+    if (result.conflict) {
+      sendJson(response, 409, { conflict: true, serverVersion: result.serverVersion });
+    } else {
+      sendJson(response, 200, { version: result.version });
+    }
+    return;
+  }
+  if (url.pathname === "/api/storyboard/version" && method === "GET") {
+    const row = getStoryboardWorkspace();
+    sendJson(response, 200, { version: row.version });
     return;
   }
 

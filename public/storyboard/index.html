@@ -4,7 +4,99 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Keystone — Storyboard</title>
-    <script type="module" crossorigin src="./assets/index-BUikG4B_.js"></script>
+    <script>
+      // Server-sync shim: loads workspace from the API before React mounts,
+      // intercepts localStorage writes to push to the server, and polls for
+      // remote changes so multiple users stay in sync.
+      (function() {
+        var WS_KEY = "drezzdon-arg-storyboard-clean-workspace-v1";
+        var POLL_MS = 3000;
+        var serverVersion = 0;
+        var saving = false;
+        var pendingSave = null;
+
+        var origSetItem = localStorage.setItem.bind(localStorage);
+        var origGetItem = localStorage.getItem.bind(localStorage);
+
+        localStorage.setItem = function(key, value) {
+          origSetItem(key, value);
+          if (key === WS_KEY) pushToServer(value);
+        };
+
+        function pushToServer(data) {
+          if (saving) { pendingSave = data; return; }
+          saving = true;
+          fetch("/api/storyboard", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ data: data, version: serverVersion })
+          })
+          .then(function(r) { return r.json(); })
+          .then(function(result) {
+            if (result.version) serverVersion = result.version;
+            if (result.conflict) pullFromServer();
+            saving = false;
+            if (pendingSave) { var d = pendingSave; pendingSave = null; pushToServer(d); }
+          })
+          .catch(function() { saving = false; });
+        }
+
+        function pullFromServer() {
+          return fetch("/api/storyboard")
+            .then(function(r) { return r.json(); })
+            .then(function(result) {
+              if (result.version > serverVersion) {
+                serverVersion = result.version;
+                var serverData = typeof result.data === "string" ? result.data : JSON.stringify(result.data);
+                var localData = origGetItem(WS_KEY);
+                if (serverData && serverData !== "{}" && serverData !== localData) {
+                  origSetItem(WS_KEY, serverData);
+                  window.location.reload();
+                }
+              }
+            })
+            .catch(function() {});
+        }
+
+        function pollVersion() {
+          if (document.hidden) return;
+          fetch("/api/storyboard/version")
+            .then(function(r) { return r.json(); })
+            .then(function(result) {
+              if (result.version > serverVersion) pullFromServer();
+            })
+            .catch(function() {});
+        }
+
+        // Initial load: fetch workspace from server, populate localStorage,
+        // then dynamically load the React app so it reads the server state.
+        fetch("/api/storyboard")
+          .then(function(r) { return r.json(); })
+          .then(function(result) {
+            serverVersion = result.version || 0;
+            var serverData = typeof result.data === "string" ? result.data : JSON.stringify(result.data);
+            if (serverData && serverData !== "{}") {
+              origSetItem(WS_KEY, serverData);
+            } else {
+              var local = origGetItem(WS_KEY);
+              if (local) pushToServer(local);
+            }
+          })
+          .catch(function() {})
+          .finally(function() {
+            var s = document.createElement("script");
+            s.type = "module";
+            s.crossOrigin = "anonymous";
+            s.src = "./assets/index-BUikG4B_.js";
+            document.head.appendChild(s);
+          });
+
+        setInterval(pollVersion, POLL_MS);
+        document.addEventListener("visibilitychange", function() {
+          if (!document.hidden) pollVersion();
+        });
+      })();
+    </script>
     <link rel="stylesheet" crossorigin href="./assets/index-B5ov17of.css">
     <style>
       /* --- Keystone theme overrides --- */
