@@ -37,6 +37,8 @@ import {
   updateTaskLink,
   updateTikTokAccount,
   getTikTokAccount,
+  getStoryboardWorkspace,
+  saveStoryboardWorkspace,
   listChatMessages,
   createChatMessage,
   deleteChatMessage,
@@ -366,6 +368,31 @@ async function handleApi(request, response, url) {
 
   if (url.pathname === "/api/import/xlsx" && method === "POST") {
     sendJson(response, 501, { error: "XLSX import is not available on this deployment." });
+    return;
+  }
+
+  // --- Storyboard workspace (Notes tab) ------------------------------------
+  if (url.pathname === "/api/storyboard" && method === "GET") {
+    const row = await getStoryboardWorkspace();
+    sendJson(response, 200, { data: row.data, version: row.version });
+    return;
+  }
+  if (url.pathname === "/api/storyboard" && method === "PUT") {
+    const body = await readJson(request);
+    const result = await saveStoryboardWorkspace(
+      typeof body.data === "string" ? body.data : JSON.stringify(body.data),
+      typeof body.version === "number" ? body.version : undefined
+    );
+    if (result.conflict) {
+      sendJson(response, 409, { conflict: true, serverVersion: result.serverVersion });
+    } else {
+      sendJson(response, 200, { version: result.version });
+    }
+    return;
+  }
+  if (url.pathname === "/api/storyboard/version" && method === "GET") {
+    const row = await getStoryboardWorkspace();
+    sendJson(response, 200, { version: row.version });
     return;
   }
 

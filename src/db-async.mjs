@@ -248,6 +248,14 @@ async function migrate(client) {
         body TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS storyboard_workspace (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        data TEXT NOT NULL DEFAULT '{}',
+        version INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
     }
   ], "write");
 
@@ -322,6 +330,8 @@ async function migrate(client) {
     { sql: "DELETE FROM assignees WHERE lower(name) = 'ryan'" },
     { sql: "UPDATE tasks SET archived_at = coalesce(archived_at, updated_at, datetime('now')) WHERE archived = 1" }
   ], "write");
+
+  await client.execute("INSERT OR IGNORE INTO storyboard_workspace (id, data, version) VALUES (1, '{}', 0)");
 
   const canvasCols = await client.execute("PRAGMA table_info(canvas_notes)");
   const canvasColNames = canvasCols.rows.map((r) => r["name"]);
@@ -974,6 +984,30 @@ export async function deleteTikTokAccount(id) {
   const client = await getDb();
   await client.execute({ sql: "DELETE FROM tiktok_accounts WHERE id = ?", args: [Number(id)] });
   return { deleted: true };
+}
+
+// --- Storyboard workspace (Notes tab) ----------------------------------------
+
+export async function getStoryboardWorkspace() {
+  const client = await getDb();
+  const r = await client.execute("SELECT data, version, updated_at FROM storyboard_workspace WHERE id = 1");
+  const row = r.rows[0] ? toRow(r.columns, r.rows[0]) : null;
+  return row || { data: "{}", version: 0, updated_at: null };
+}
+
+export async function saveStoryboardWorkspace(data, clientVersion) {
+  const client = await getDb();
+  const cur = await client.execute("SELECT version FROM storyboard_workspace WHERE id = 1");
+  const currentVersion = cur.rows[0] ? Number(cur.rows[0]["version"]) : 0;
+  if (typeof clientVersion === "number" && clientVersion < currentVersion) {
+    return { conflict: true, serverVersion: currentVersion };
+  }
+  const nextVersion = currentVersion + 1;
+  await client.execute({
+    sql: "UPDATE storyboard_workspace SET data = ?, version = ?, updated_at = datetime('now') WHERE id = 1",
+    args: [data, nextVersion]
+  });
+  return { version: nextVersion, conflict: false };
 }
 
 // --- Chat messages (sidebar messaging) ----------------------------------------
