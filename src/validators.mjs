@@ -178,7 +178,7 @@ export function validateAccountPayload(input, { partial = false } = {}) {
     if (!output.name) errors.push("Account name is required.");
   }
 
-  for (const field of ["ae_project_url", "tutorial_url", "username", "email", "password", "flowstage_account_id", "group_name", "upload_url"]) {
+  for (const field of ["ae_project_url", "tutorial_url", "username", "email", "password", "group_name", "upload_url"]) {
     if (field in input) output[field] = cleanText(input[field]);
   }
   // Avatar is a data: URL (or "" to clear) — don't run it through cleanText.

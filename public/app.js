@@ -103,7 +103,6 @@ const els = {
   accountGroup: document.querySelector("#accountGroup"),
   accountGroupList: document.querySelector("#accountGroupList"),
   addAccount: document.querySelector("#addAccount"),
-  syncAllAccounts: document.querySelector("#syncAllAccounts"),
   accountDialog: document.querySelector("#accountDialog"),
   accountForm: document.querySelector("#accountForm"),
   accountDialogTitle: document.querySelector("#accountDialogTitle"),
@@ -113,8 +112,6 @@ const els = {
   deleteAccount: document.querySelector("#deleteAccount"),
   accountId: document.querySelector("#accountId"),
   accountName: document.querySelector("#accountName"),
-  accountNameSelect: document.querySelector("#accountNameSelect"),
-  accountNameCustomRow: document.querySelector("#accountNameCustomRow"),
   accountAvatarInput: document.querySelector("#accountAvatarInput"),
   accountAvatarPreview: document.querySelector("#accountAvatarPreview"),
   accountAvatarRemove: document.querySelector("#accountAvatarRemove"),
@@ -125,7 +122,6 @@ const els = {
   accountEmail: document.querySelector("#accountEmail"),
   accountPassword: document.querySelector("#accountPassword"),
   accountScheduledThrough: document.querySelector("#accountScheduledThrough"),
-  accountFlowstageId: document.querySelector("#accountFlowstageId"),
   accountSteps: document.querySelector("#accountSteps"),
   addAccountStep: document.querySelector("#addAccountStep"),
   chatSidebar: document.querySelector("#chatSidebar"),
@@ -1831,7 +1827,7 @@ function taskStatusMeta(status, done = false) {
 }
 
 // ===================================================================
-// TikTok Accounts tab (FlowStage content tracking).
+// TikTok Accounts tab.
 // Fully independent of the task board: own state, render, dialog, API.
 // ===================================================================
 
@@ -1843,7 +1839,6 @@ const accountsState = {
   editing: null,
   steps: [], // working copy while the dialog is open
   avatar: "", // working avatar (data URL) while the dialog is open
-  flowstageAccounts: null, // cached list of connected FlowStage accounts
   search: "",
   sort: "runout",
   overallMetric: "views", // which stat the overall chart shows
@@ -1874,7 +1869,6 @@ function bindAccountEvents() {
     if (button) switchTab(button.dataset.tab);
   });
   els.addAccount.addEventListener("click", () => openAccountDialog());
-  els.syncAllAccounts.addEventListener("click", syncAllAccountsNow);
   els.closeAccountDialog.addEventListener("click", () => els.accountDialog.close());
   els.cancelAccount.addEventListener("click", () => els.accountDialog.close());
   els.addAccountStep.addEventListener("click", () => {
@@ -1892,7 +1886,6 @@ function bindAccountEvents() {
   els.accountForm.addEventListener("submit", saveAccount);
   els.deleteAccount.addEventListener("click", deleteCurrentAccount);
   els.accountBoard.addEventListener("click", onAccountBoardClick);
-  els.accountNameSelect.addEventListener("change", onAccountNameSelectChange);
   els.accountSearch.addEventListener("input", debounce(() => {
     accountsState.search = els.accountSearch.value.trim();
     renderAccounts();
@@ -1984,20 +1977,6 @@ function renderAvatarPreview() {
   els.accountAvatarRemove.hidden = !a;
 }
 
-// The account name IS the FlowStage account: picking one sets the name + links
-// the id. "Custom name" reveals a text field for accounts not on FlowStage.
-function onAccountNameSelectChange() {
-  const value = els.accountNameSelect.value;
-  if (value === "__custom__") {
-    els.accountNameCustomRow.hidden = false;
-    els.accountFlowstageId.value = "";
-    els.accountName.value = "";
-    els.accountName.focus();
-  } else {
-    els.accountNameCustomRow.hidden = true;
-    els.accountFlowstageId.value = value;
-  }
-}
 
 function switchTab(tab) {
   els.tasksView.hidden = tab !== "tasks";
@@ -2283,7 +2262,7 @@ function renderAccountRow(account) {
         ${links.length ? `<div class="account-links">${links.join("")}</div>` : ""}
       </div>
       <div class="account-actions">
-        <button type="button" data-action="sync-account" title="Pull runout + engagement metrics from FlowStage">Sync</button>
+        <button type="button" data-action="sync-account" title="Sync engagement metrics from TikTok">Sync</button>
         <button type="button" data-action="edit-account">Edit</button>
       </div>
       ${expanded ? renderAccountExpanded(account) : ""}
@@ -2365,7 +2344,7 @@ function renderAccountExpanded(account) {
 
 function renderAccountMetricsPanel(account) {
   if (account.post_count == null) {
-    return `<p class="detail-empty account-metrics-empty">No engagement data yet — hit Sync to pull it from FlowStage.</p>`;
+    return `<p class="detail-empty account-metrics-empty">No engagement data yet — connect TikTok and hit Sync.</p>`;
   }
   const posts = Number(account.post_count) || 0;
   const stamp = account.metrics_synced_at
@@ -2392,7 +2371,7 @@ function renderAccountMetricsPanel(account) {
       ${renderDelta(cur, prev)}
     </div>
   `;
-  const source = account.metrics_source === "tiktok" ? "via TikTok" : (account.metrics_source === "flowstage" ? "via FlowStage" : "");
+  const source = account.metrics_source === "tiktok" ? "via TikTok" : "";
   return `
     <p class="account-metrics-heading">${METRICS_WINDOW_LABEL} <span class="account-metrics-sub">vs previous 14${source ? ` · ${source}` : ""}</span></p>
     <div class="account-metrics-grid">
@@ -2513,7 +2492,7 @@ async function onAccountBoardClick(event) {
     return;
   }
   if (event.target.closest("[data-action='disconnect-tiktok']")) {
-    if (!window.confirm("Disconnect TikTok for this account? Metrics will fall back to FlowStage.")) return;
+    if (!window.confirm("Disconnect TikTok for this account? Engagement metrics will stop updating.")) return;
     await api(`/api/tiktok/disconnect/${id}`, { method: "POST" });
     await loadAccounts();
     showNotice("TikTok disconnected.");
@@ -2538,7 +2517,6 @@ function openAccountDialog(account = null) {
   els.accountEmail.value = account?.email || "";
   els.accountPassword.value = account?.password || "";
   els.accountScheduledThrough.value = account?.scheduled_through || "";
-  els.accountFlowstageId.value = account?.flowstage_account_id || "";
   els.accountGroup.value = account?.group_name || "";
   populateGroupOptions();
   accountsState.avatar = account?.avatar || "";
@@ -2547,7 +2525,6 @@ function openAccountDialog(account = null) {
     ? (account.steps || []).map((step) => ({ label: step.label, assignee: step.assignee || "" }))
     : DEFAULT_ACCOUNT_STEPS_UI.map((label) => ({ label, assignee: "" }));
   renderAccountSteps();
-  populateAccountNameOptions(account);
   els.deleteAccount.hidden = !account;
   els.accountDialog.showModal();
 }
@@ -2558,53 +2535,6 @@ function populateGroupOptions() {
     accountsState.accounts.map((account) => account.group_name).filter(Boolean)
   )].sort((a, b) => a.localeCompare(b));
   els.accountGroupList.innerHTML = names.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
-}
-
-// Build the Account Name dropdown from the team's connected FlowStage accounts.
-// Selecting one sets the name (handle) and links its id. A "Custom name" option
-// (and the fallback when the list can't load) reveals a free-text name field.
-async function populateAccountNameOptions(account) {
-  const select = els.accountNameSelect;
-  const currentId = account?.flowstage_account_id || "";
-  const currentName = account?.name || "";
-  select.innerHTML = `<option value="">Select a FlowStage account…</option>`;
-
-  let listed = [];
-  try {
-    if (!accountsState.flowstageAccounts) {
-      const data = await api("/api/flowstage/social-accounts");
-      accountsState.flowstageAccounts = data.accounts || [];
-    }
-    listed = accountsState.flowstageAccounts;
-  } catch {
-    accountsState.flowstageAccounts = null;
-  }
-
-  for (const item of listed) {
-    const option = document.createElement("option");
-    option.value = item.id;
-    option.dataset.handle = item.handle || item.id;
-    option.textContent = `${item.handle || item.id}${item.platform ? ` (${item.platform})` : ""}`;
-    select.appendChild(option);
-  }
-  const customOption = document.createElement("option");
-  customOption.value = "__custom__";
-  customOption.textContent = "Custom name (not on FlowStage)";
-  select.appendChild(customOption);
-
-  // Decide the initial selection / whether to show the custom text field.
-  if (currentId && listed.some((item) => item.id === currentId)) {
-    select.value = currentId;
-    els.accountNameCustomRow.hidden = true;
-  } else if (currentName) {
-    // Editing a custom/unlinked account, or the list couldn't load.
-    select.value = "__custom__";
-    els.accountName.value = currentName;
-    els.accountNameCustomRow.hidden = false;
-  } else {
-    select.value = "";
-    els.accountNameCustomRow.hidden = true;
-  }
 }
 
 function renderAccountSteps() {
@@ -2633,16 +2563,7 @@ async function saveAccount(event) {
   event.preventDefault();
   const id = els.accountId.value;
 
-  // Resolve the name + FlowStage link from the merged Account Name dropdown.
-  const selected = els.accountNameSelect.value;
-  let name = "";
-  let flowstageId = "";
-  if (selected === "__custom__") {
-    name = els.accountName.value.trim();
-  } else if (selected) {
-    name = els.accountNameSelect.selectedOptions[0]?.dataset.handle || els.accountNameSelect.selectedOptions[0]?.textContent || "";
-    flowstageId = selected;
-  }
+  const name = els.accountName.value.trim();
 
   const payload = {
     name,
@@ -2653,7 +2574,6 @@ async function saveAccount(event) {
     email: els.accountEmail.value.trim(),
     password: els.accountPassword.value,
     scheduled_through: els.accountScheduledThrough.value || "",
-    flowstage_account_id: flowstageId,
     group_name: els.accountGroup.value.trim(),
     avatar: accountsState.avatar || "",
     steps: accountsState.steps
@@ -2661,7 +2581,7 @@ async function saveAccount(event) {
       .filter((step) => step.label)
   };
   if (!payload.name) {
-    showNotice("Choose a FlowStage account or enter a custom name.", "bad");
+    showNotice("Enter an account name.", "bad");
     return;
   }
   if (id) await api(`/api/tiktok-accounts/${id}`, { method: "PATCH", body: payload });
@@ -2681,27 +2601,10 @@ async function deleteCurrentAccount() {
 
 async function syncAccount(id) {
   try {
-    showNotice("Syncing with FlowStage…");
+    showNotice("Syncing metrics…");
     await api(`/api/tiktok-accounts/${id}/sync`, { method: "POST" });
     await loadAccounts();
-    showNotice("FlowStage sync complete.", "good");
-  } catch (error) {
-    showNotice(error.message, "bad");
-  }
-}
-
-async function syncAllAccountsNow() {
-  try {
-    showNotice("Syncing all accounts with FlowStage…");
-    const data = await api("/api/tiktok-accounts/sync", { method: "POST" });
-    await loadAccounts();
-    const results = data.results || [];
-    const failures = results.filter((result) => !result.ok);
-    if (results.length && failures.length === results.length) {
-      showNotice(failures[0].reason, "bad");
-    } else {
-      showNotice("FlowStage sync complete.", "good");
-    }
+    showNotice("Sync complete.", "good");
   } catch (error) {
     showNotice(error.message, "bad");
   }

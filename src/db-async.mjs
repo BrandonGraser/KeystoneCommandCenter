@@ -825,7 +825,7 @@ async function hydrateAccount(row, columns, client) {
   return {
     ...safe,
     archived: Boolean(account.archived),
-    runout_date: account.flowstage_synced_through || account.scheduled_through || null,
+    runout_date: account.scheduled_through || null,
     tiktok_connected: Boolean(tiktok_access_token),
     steps: steps.rows.map((r) => toRow(steps.columns, r))
   };
@@ -870,8 +870,8 @@ export async function listTikTokAccounts() {
     SELECT * FROM tiktok_accounts
     WHERE archived = 0
     ORDER BY
-      coalesce(flowstage_synced_through, scheduled_through) IS NULL ASC,
-      coalesce(flowstage_synced_through, scheduled_through) ASC,
+      scheduled_through IS NULL ASC,
+      scheduled_through ASC,
       sort_order ASC, id ASC
   `);
   return Promise.all(result.rows.map((row) => hydrateAccount(row, result.columns, client)));
@@ -892,8 +892,8 @@ export async function createTikTokAccount(input) {
   const result = await client.execute({
     sql: `INSERT INTO tiktok_accounts (
       name, ae_project_url, tutorial_url, username, email, password,
-      scheduled_through, flowstage_account_id, group_name, avatar, upload_url, sort_order
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      scheduled_through, group_name, avatar, upload_url, sort_order
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       payload.name,
       payload.ae_project_url || null,
@@ -902,7 +902,6 @@ export async function createTikTokAccount(input) {
       payload.email || null,
       payload.password || null,
       payload.scheduled_through || null,
-      payload.flowstage_account_id || null,
       payload.group_name || null,
       payload.avatar || null,
       payload.upload_url || null,
@@ -923,7 +922,7 @@ export async function updateTikTokAccount(id, input) {
   const payload = validateAccountPayload(input, { partial: true });
   const sets = [];
   const params = [];
-  for (const field of ["name", "ae_project_url", "tutorial_url", "username", "email", "password", "scheduled_through", "flowstage_account_id", "group_name", "avatar", "upload_url"]) {
+  for (const field of ["name", "ae_project_url", "tutorial_url", "username", "email", "password", "scheduled_through", "group_name", "avatar", "upload_url"]) {
     if (field in payload) {
       sets.push(`${field} = ?`);
       params.push(payload[field] || null);
@@ -949,19 +948,17 @@ async function _replaceAccountSteps(accountId, steps, client) {
   }
 }
 
-export async function setAccountSync(id, { scheduledThrough = null, metrics = null, metricsSource = null } = {}) {
+export async function setAccountSync(id, { metrics = null, metricsSource = null } = {}) {
   const m = metrics || {};
   const p = m.prev || {};
   const client = await getDb();
   await client.execute({
     sql: `UPDATE tiktok_accounts SET
-      flowstage_synced_through = ?, flowstage_synced_at = datetime('now'),
       total_views = ?, total_likes = ?, total_comments = ?, total_shares = ?, post_count = ?,
       prev_views = ?, prev_likes = ?, prev_comments = ?, prev_shares = ?, prev_post_count = ?,
       metrics_source = ?, metrics_daily = ?, metrics_synced_at = datetime('now'), updated_at = datetime('now')
     WHERE id = ?`,
     args: [
-      scheduledThrough || null,
       metrics ? (Number(m.views) || 0) : null,
       metrics ? (Number(m.likes) || 0) : null,
       metrics ? (Number(m.comments) || 0) : null,

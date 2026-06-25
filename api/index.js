@@ -47,7 +47,6 @@ import {
 import { sendRingNotification, sendTaskDoneNotification } from "../src/notifications.mjs";
 import { cleanText, validateLinkPayload } from "../src/validators.mjs";
 import { buildAuthCookie, verifyCredentials, getAuthedUser } from "../src/auth.mjs";
-import { getAccountStats, listSocialAccounts } from "../src/flowstage.mjs";
 import { aggregateWindows, buildAuthUrl, buildProbeHtml, exchangeCode, isTikTokConfigured, listVideos, refreshToken } from "../src/tiktok.mjs";
 
 export const config = {
@@ -283,11 +282,7 @@ async function handleApi(request, response, url) {
     return;
   }
 
-  // --- TikTok accounts (FlowStage tab) -----------------------------------
-  if (url.pathname === "/api/flowstage/social-accounts" && method === "GET") {
-    sendJson(response, 200, { accounts: await listSocialAccounts() });
-    return;
-  }
+  // --- TikTok accounts ---------------------------------------------------
   if (url.pathname === "/api/tiktok-accounts" && method === "GET") {
     sendJson(response, 200, { accounts: await listTikTokAccounts() });
     return;
@@ -460,28 +455,16 @@ async function tiktokMetricsForAccount(accountId) {
   return aggregateWindows(videos, 14);
 }
 
-// Runout always comes from FlowStage (it owns scheduling). Engagement metrics
-// come from TikTok when the account is connected, otherwise from FlowStage.
 async function syncOneAccount(id) {
   const account = await getTikTokAccount(id);
   if (!account) throw notFound("Account not found.");
-  let scheduledThrough = null;
-  let fsMetrics = null;
-  if (account.flowstage_account_id) {
-    const fs = await getAccountStats(account.flowstage_account_id);
-    scheduledThrough = fs.scheduledThrough;
-    fsMetrics = fs.metrics;
-  }
   let metrics = null;
   let metricsSource = null;
   if (account.tiktok_connected) {
     metrics = await tiktokMetricsForAccount(id);
     metricsSource = "tiktok";
-  } else if (fsMetrics) {
-    metrics = fsMetrics;
-    metricsSource = "flowstage";
   }
-  return { account: await setAccountSync(id, { scheduledThrough, metrics, metricsSource }) };
+  return { account: await setAccountSync(id, { metrics, metricsSource }) };
 }
 
 async function syncAllAccounts() {
