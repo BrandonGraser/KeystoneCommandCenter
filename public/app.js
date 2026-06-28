@@ -100,6 +100,7 @@ const els = {
   accountOverall: document.querySelector("#accountOverall"),
   accountSearch: document.querySelector("#accountSearch"),
   accountSort: document.querySelector("#accountSort"),
+  syncAllAccounts: document.querySelector("#syncAllAccounts"),
   accountGroup: document.querySelector("#accountGroup"),
   accountGroupList: document.querySelector("#accountGroupList"),
   addAccount: document.querySelector("#addAccount"),
@@ -1869,6 +1870,7 @@ function bindAccountEvents() {
     if (button) switchTab(button.dataset.tab);
   });
   els.addAccount.addEventListener("click", () => openAccountDialog());
+  els.syncAllAccounts.addEventListener("click", syncAllAccountsAction);
   els.closeAccountDialog.addEventListener("click", () => els.accountDialog.close());
   els.cancelAccount.addEventListener("click", () => els.accountDialog.close());
   els.addAccountStep.addEventListener("click", () => {
@@ -2607,6 +2609,23 @@ async function syncAccount(id) {
     showNotice("Sync complete.", "good");
   } catch (error) {
     showNotice(error.message, "bad");
+  }
+}
+
+async function syncAllAccountsAction() {
+  try {
+    els.syncAllAccounts.disabled = true;
+    showNotice("Syncing all accounts…");
+    const data = await api("/api/tiktok-accounts/sync", { method: "POST" });
+    await loadAccounts();
+    const ok = data.results?.filter((r) => r.ok).length || 0;
+    const failed = data.results?.filter((r) => !r.ok).length || 0;
+    const msg = failed ? `Synced ${ok} account${ok === 1 ? "" : "s"}, ${failed} failed.` : `All ${ok} account${ok === 1 ? "" : "s"} synced.`;
+    showNotice(msg, failed ? "" : "good");
+  } catch (error) {
+    showNotice(error.message, "bad");
+  } finally {
+    els.syncAllAccounts.disabled = false;
   }
 }
 
