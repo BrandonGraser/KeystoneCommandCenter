@@ -3083,6 +3083,7 @@ body.chat-resizing .shell {
 
 .chat-sidebar-toggle:hover {
   background: var(--panel-2);
+  transform: translateY(-50%);
 }
 
 .chat-sidebar-toggle .chat-badge {
