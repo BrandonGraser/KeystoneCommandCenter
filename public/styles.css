@@ -1089,14 +1089,14 @@ select.status-badge.inline-status-select:hover {
   color: var(--ink);
 }
 
-.status-badge.status-pending-approval { color: var(--st-pending-approval); border-color: var(--st-pending-approval); background: color-mix(in srgb, var(--st-pending-approval) 8%, transparent); }
-.status-badge.status-tommy-review { color: var(--st-tommy-review); border-color: var(--st-tommy-review); background: color-mix(in srgb, var(--st-tommy-review) 8%, transparent); }
-.status-badge.status-brandon-review { color: var(--st-brandon-review); border-color: var(--st-brandon-review); background: color-mix(in srgb, var(--st-brandon-review) 8%, transparent); }
-.status-badge.status-working { color: var(--st-working); border-color: var(--st-working); background: color-mix(in srgb, var(--st-working) 8%, transparent); }
-.status-badge.status-not-started { color: var(--st-not-started); border-color: var(--st-not-started); background: color-mix(in srgb, var(--st-not-started) 8%, transparent); }
-.status-badge.status-pending { color: var(--st-pending); border-color: var(--st-pending); background: color-mix(in srgb, var(--st-pending) 8%, transparent); }
-.status-badge.status-brb { color: var(--st-brb); border-color: var(--st-brb); background: color-mix(in srgb, var(--st-brb) 8%, transparent); }
-.status-badge.status-done-status { color: var(--st-done); border-color: var(--st-done); background: color-mix(in srgb, var(--st-done) 8%, transparent); }
+.status-badge.status-pending-approval { color: var(--st-pending-approval); border-color: color-mix(in srgb, var(--st-pending-approval) 30%, transparent); background: color-mix(in srgb, var(--st-pending-approval) 8%, transparent); }
+.status-badge.status-tommy-review { color: var(--st-tommy-review); border-color: color-mix(in srgb, var(--st-tommy-review) 30%, transparent); background: color-mix(in srgb, var(--st-tommy-review) 8%, transparent); }
+.status-badge.status-brandon-review { color: var(--st-brandon-review); border-color: color-mix(in srgb, var(--st-brandon-review) 30%, transparent); background: color-mix(in srgb, var(--st-brandon-review) 8%, transparent); }
+.status-badge.status-working { color: var(--st-working); border-color: color-mix(in srgb, var(--st-working) 30%, transparent); background: color-mix(in srgb, var(--st-working) 8%, transparent); }
+.status-badge.status-not-started { color: var(--st-not-started); border-color: color-mix(in srgb, var(--st-not-started) 30%, transparent); background: color-mix(in srgb, var(--st-not-started) 8%, transparent); }
+.status-badge.status-pending { color: var(--st-pending); border-color: color-mix(in srgb, var(--st-pending) 30%, transparent); background: color-mix(in srgb, var(--st-pending) 8%, transparent); }
+.status-badge.status-brb { color: var(--st-brb); border-color: color-mix(in srgb, var(--st-brb) 30%, transparent); background: color-mix(in srgb, var(--st-brb) 8%, transparent); }
+.status-badge.status-done-status { color: var(--st-done); border-color: color-mix(in srgb, var(--st-done) 30%, transparent); background: color-mix(in srgb, var(--st-done) 8%, transparent); }
 
 .due {
   display: grid;
@@ -1669,18 +1669,28 @@ select.status-badge.inline-status-select:hover {
   padding: 4px 0;
 }
 
-.last-msg {
+.unread-msg-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  color: var(--muted-2);
+  gap: 5px;
+  padding: 0 8px;
+  min-height: 18px;
+  border-radius: 20px;
+  background: color-mix(in srgb, #e05c5c 12%, transparent);
+  color: #e05c5c;
   font-size: 10px;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
-.last-msg .author-name {
-  letter-spacing: 0;
+.unread-msg-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e05c5c;
+  flex-shrink: 0;
 }
 
 /* ---------------------------------------------------------------

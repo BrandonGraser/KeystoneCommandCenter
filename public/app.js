@@ -27,6 +27,22 @@ const state = {
   chatChannelCounts: {}
 };
 
+function getTaskSeenTimestamps() {
+  try { return JSON.parse(localStorage.getItem("taskSeenTimestamps") || "{}"); } catch { return {}; }
+}
+function markTaskRead(taskId) {
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task?.last_message) return;
+  const seen = getTaskSeenTimestamps();
+  seen[taskId] = task.last_message.created_at;
+  localStorage.setItem("taskSeenTimestamps", JSON.stringify(seen));
+}
+function hasUnreadMessages(task) {
+  if (!task.last_message) return false;
+  const seen = getTaskSeenTimestamps();
+  return !seen[task.id] || seen[task.id] < task.last_message.created_at;
+}
+
 const CATEGORY_TONES = {
   "ThxSoMch": { accent: "#0033a0", background: "#e5edff", border: "#b8c8f6" },
   "Drezzdon": { accent: "#9d1c2d", background: "#fde8eb", border: "#edb8c1" },
@@ -164,6 +180,7 @@ async function init() {
   }
   startLiveSync();
   animatePageIn();
+  state.pageAnimated = true;
 }
 
 function animatePageIn() {
@@ -702,7 +719,7 @@ function renderTaskRow(task) {
           <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
           ${statusSelect}
           ${task.image_count ? `<span class="img-count">${task.image_count} img</span>` : ""}
-          ${task.last_message ? `<span class="last-msg">last: <span class="author-name author-${authorSlug(task.last_message.author)}">${escapeHtml(task.last_message.author)}</span></span>` : ""}
+          ${task.last_message && hasUnreadMessages(task) ? `<span class="unread-msg-badge">New message</span>` : ""}
         </div>
       </div>
       <div class="due ${due.className}" title="${escapeHtml(due.label)}">
@@ -1122,6 +1139,7 @@ async function toggleTaskExpanded(taskId) {
   }
   state.expandedTaskId = taskId;
   state.focusedMessageId = null;
+  markTaskRead(taskId);
   await Promise.all([loadTaskMessages(taskId), loadTaskImages(taskId)]);
   renderTasks();
   scrollExpandedChatToEnd(taskId);
@@ -2054,8 +2072,7 @@ function switchTab(tab) {
   if (tab === "notes" && sbFrame && !sbFrame.src.includes("storyboard")) {
     sbFrame.src = "/storyboard/index.html";
   }
-  // Animate tab content entrance
-  animateTabIn(tab);
+  if (state.pageAnimated) animateTabIn(tab);
 }
 
 function animateTabIn(tab) {
