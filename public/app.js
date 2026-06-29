@@ -167,12 +167,67 @@ async function init() {
 }
 
 function animatePageIn() {
-  if (typeof gsap === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  gsap.from(".main-tabs", { opacity: 0, y: -12, duration: 0.4, ease: "power2.out" });
-  gsap.from(".metrics .metric", { opacity: 0, y: 16, duration: 0.45, stagger: 0.06, ease: "power2.out", delay: 0.1 });
-  gsap.from(".resource-block", { opacity: 0, y: 12, duration: 0.4, stagger: 0.08, ease: "power2.out", delay: 0.2 });
-  gsap.from(".controls", { opacity: 0, y: 12, duration: 0.4, ease: "power2.out", delay: 0.3 });
-  gsap.from(".status-group", { opacity: 0, y: 18, duration: 0.5, stagger: 0.08, ease: "power2.out", delay: 0.35 });
+  const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Add dot pattern background to body
+  document.body.classList.add("dot-bg");
+
+  // Initialize magic-card mouse tracking on interactive cards
+  initMagicCards();
+
+  // Animate metric numbers with ticker effect
+  animateMetricNumbers();
+
+  if (prefersReduced) return;
+
+  // Use GSAP if available, otherwise use CSS blur-fade
+  if (typeof gsap !== "undefined") {
+    gsap.from(".main-tabs", { opacity: 0, y: -12, duration: 0.5, ease: "power2.out" });
+    gsap.from(".metrics", { opacity: 0, y: 16, duration: 0.5, ease: "power2.out", delay: 0.08 });
+    gsap.from(".metrics .metric", { opacity: 0, y: 12, scale: 0.97, duration: 0.45, stagger: 0.06, ease: "power2.out", delay: 0.15 });
+    gsap.from(".resource-block", { opacity: 0, y: 12, duration: 0.4, stagger: 0.08, ease: "power2.out", delay: 0.25 });
+    gsap.from(".controls", { opacity: 0, y: 12, duration: 0.4, ease: "power2.out", delay: 0.35 });
+    gsap.from(".status-group", { opacity: 0, y: 18, duration: 0.5, stagger: 0.08, ease: "power2.out", delay: 0.4 });
+  } else {
+    // Fallback: CSS blur-fade classes
+    document.querySelectorAll(".main-tabs, .metrics, .resource-block, .controls, .status-group").forEach((el, i) => {
+      el.classList.add("blur-fade", `blur-fade-delay-${Math.min(i + 1, 8)}`);
+    });
+  }
+}
+
+// --- Magic Card: mouse-following spotlight on cards ---
+function initMagicCards() {
+  document.addEventListener("mousemove", (e) => {
+    const cards = document.querySelectorAll(".task-row, .account-row, .metric");
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        card.style.setProperty("--magic-x", `${e.clientX - rect.left}px`);
+        card.style.setProperty("--magic-y", `${e.clientY - rect.top}px`);
+      }
+    }
+  });
+}
+
+// --- Number Ticker: animate metric numbers counting up ---
+function animateMetricNumbers() {
+  const metricEls = document.querySelectorAll(".metric strong[data-metric]");
+  for (const el of metricEls) {
+    const target = parseInt(el.textContent, 10);
+    if (isNaN(target) || target === 0) continue;
+    const duration = 800;
+    const start = performance.now();
+    const tick = (now) => {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = Math.round(eased * target);
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    el.textContent = "0";
+    requestAnimationFrame(tick);
+  }
 }
 
 function applyStoredResourceCollapse() {
@@ -520,6 +575,7 @@ async function attachChatImage(expanded, file) {
 
 function renderChrome(bootstrap) {
   els.metrics.innerHTML = [
+    `<div class="border-beam" style="--beam-from:#9E7AFF;--beam-to:#FE8BBB;--beam-speed:8s;"></div>`,
     `<div class="metric metric-mascot"><img src="${state.theme === "dark" ? "/cat_white.gif" : "/cat.gif"}" alt="mascot" class="mascot-img"></div>`,
     metric("Open tasks", bootstrap.counts.open, "open"),
     metric("Total active", bootstrap.counts.tasks, "tasks"),
@@ -1999,6 +2055,20 @@ function switchTab(tab) {
   if (tab === "notes" && sbFrame && !sbFrame.src.includes("storyboard")) {
     sbFrame.src = "/storyboard/index.html";
   }
+  // Animate tab content entrance
+  animateTabIn(tab);
+}
+
+function animateTabIn(tab) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (typeof gsap === "undefined") return;
+  if (tab === "tasks") {
+    gsap.from(".status-group", { opacity: 0, y: 14, duration: 0.4, stagger: 0.06, ease: "power2.out" });
+  } else if (tab === "accounts") {
+    gsap.from(".account-overall", { opacity: 0, y: 14, duration: 0.4, ease: "power2.out" });
+    gsap.from(".account-metrics .metric", { opacity: 0, y: 10, scale: 0.97, duration: 0.35, stagger: 0.06, ease: "power2.out", delay: 0.1 });
+    gsap.from(".account-group", { opacity: 0, y: 14, duration: 0.4, stagger: 0.06, ease: "power2.out", delay: 0.2 });
+  }
 }
 
 async function loadAccounts() {
@@ -2087,6 +2157,7 @@ function renderAccountMetrics() {
   const counts = { stocked: 0, low: 0, out: 0 };
   for (const account of accountsState.accounts) counts[runoutBucket(account.runout_date)]++;
   els.accountMetrics.innerHTML = `
+    <div class="border-beam" style="--beam-from:#6db8ae;--beam-to:#d8b54a;--beam-speed:7s;"></div>
     <div class="metric account-metric-stocked">
       <strong>${counts.stocked}</strong>
       <span>Stocked · 5+ days</span>
