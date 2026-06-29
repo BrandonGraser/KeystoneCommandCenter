@@ -1699,6 +1699,7 @@ select.status-badge.inline-status-select:hover {
 
 dialog {
   width: min(780px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
   border: 1px solid var(--line-strong);
   border-radius: 16px;
   background: var(--panel);
@@ -1708,7 +1709,7 @@ dialog {
     0 4px 16px rgba(0, 0, 0, 0.2),
     0 16px 48px rgba(0, 0, 0, 0.3),
     0 0 0 1px rgba(255,255,255,0.04) inset;
-  overflow: hidden;
+  overflow-y: auto;
   animation: dialog-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
