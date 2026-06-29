@@ -107,11 +107,32 @@ body {
   font-family: "Cascadia Mono", "JetBrains Mono", Consolas, "SF Mono", ui-monospace, monospace;
   font-size: 13px;
   line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
   background: var(--invert-bg);
   color: var(--invert-ink);
+}
+
+/* Polished scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-2);
 }
 
 a {
@@ -145,7 +166,7 @@ button {
   justify-content: center;
   gap: 7px;
   border: 1px solid var(--line-strong);
-  border-radius: 0;
+  border-radius: 6px;
   background: transparent;
   color: var(--ink);
   cursor: pointer;
@@ -153,36 +174,42 @@ button {
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
 }
 
 button:hover {
   border-color: var(--ink);
   background: var(--panel-2);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 button:active {
   background: var(--line);
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 1px solid var(--ink);
-  outline-offset: 1px;
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
 .primary {
   background: var(--invert-bg);
   color: var(--invert-ink);
   border-color: var(--invert-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .primary:hover {
   background: var(--ink);
   color: var(--invert-ink);
   border-color: var(--ink);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .danger {
@@ -195,6 +222,7 @@ textarea:focus-visible {
   background: var(--danger);
   color: var(--bg);
   border-color: var(--danger);
+  box-shadow: 0 4px 12px rgba(224, 92, 92, 0.25);
 }
 
 .icon-button {
@@ -209,19 +237,24 @@ input,
 textarea {
   min-height: 36px;
   border: 1px solid var(--line);
-  border-radius: 0;
+  border-radius: 6px;
   background: var(--panel);
   padding: 7px 10px;
   font-size: 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 select:hover,
 input:hover,
-textarea:hover,
+textarea:hover {
+  border-color: var(--line-strong);
+}
+
 select:focus,
 input:focus,
 textarea:focus {
-  border-color: var(--line-strong);
+  border-color: var(--muted);
+  box-shadow: 0 0 0 3px rgba(141, 141, 141, 0.1);
 }
 
 select {
@@ -293,8 +326,11 @@ label span,
   display: grid;
   grid-template-columns: auto repeat(3, minmax(0, 1fr)) minmax(190px, 1fr);
   border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--panel);
   margin-bottom: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .metric {
@@ -388,7 +424,10 @@ label span,
 
 .resource-block {
   border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--panel);
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .resource-heading {
@@ -448,15 +487,14 @@ label span,
   width: 24px;
   min-height: 24px;
   margin-left: auto;
-  /* The "+" glyph's ink sits high and slightly left of its advance box;
-     asymmetric padding nudges the flex-centered glyph to the optical center. */
   padding: 2px 0 0 1px;
   border: 1px solid var(--line);
+  border-radius: 6px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
 .add-resource:hover {
@@ -514,10 +552,12 @@ label span,
   min-height: 26px;
   padding: 3px 8px;
   border: 1px solid var(--line);
+  border-radius: 6px;
   color: var(--ink);
   font-size: 12px;
   text-decoration: none;
   overflow-wrap: anywhere;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 a.login-resource-button:hover {
@@ -578,15 +618,19 @@ a.login-resource-button:hover {
   align-items: end;
   gap: 14px;
   border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--panel);
   padding: 14px;
   margin-bottom: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .segmented {
   display: flex;
   flex-wrap: wrap;
   border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .segmented button {
@@ -596,6 +640,13 @@ a.login-resource-button:hover {
   border-radius: 0;
   background: transparent;
   color: var(--muted);
+  transform: none;
+  box-shadow: none;
+}
+
+.segmented button:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 .segmented button:last-child {
@@ -627,6 +678,7 @@ a.login-resource-button:hover {
 .archive-toggle {
   min-height: 36px;
   min-width: 92px;
+  border-radius: 6px;
 }
 
 .archive-toggle.active {
@@ -641,6 +693,7 @@ a.login-resource-button:hover {
 
 .notice {
   border: 1px solid var(--line-strong);
+  border-radius: 8px;
   background: var(--panel);
   padding: 10px 12px;
   margin-bottom: 14px;
@@ -672,7 +725,10 @@ a.login-resource-button:hover {
 
 .status-group {
   border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--panel);
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .group-head {
@@ -709,7 +765,7 @@ a.login-resource-button:hover {
   padding: 10px 14px 10px 16px;
   border-bottom: 1px solid var(--line);
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .task-row:last-child {
@@ -718,6 +774,7 @@ a.login-resource-button:hover {
 
 .task-row:hover {
   background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px rgba(141, 141, 141, 0.06);
 }
 
 .task-row::before {
@@ -726,8 +783,13 @@ a.login-resource-button:hover {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 2px;
+  width: 3px;
   background: var(--due-none);
+  transition: width 0.15s ease;
+}
+
+.task-row:hover::before {
+  width: 4px;
 }
 
 .task-row.status-row-pending-approval::before { background: var(--st-pending-approval); }
@@ -840,6 +902,7 @@ a.login-resource-button:hover {
   min-height: 18px;
   padding: 0 7px;
   border: 1px solid var(--line);
+  border-radius: 4px;
   background: transparent;
   color: var(--muted);
   font-size: 10px;
@@ -851,6 +914,7 @@ a.login-resource-button:hover {
   content: "";
   width: 6px;
   height: 6px;
+  border-radius: 50%;
   margin-right: 6px;
   background: var(--category-accent, var(--muted-2));
 }
@@ -862,13 +926,11 @@ a.login-resource-button:hover {
   max-width: 100%;
   padding: 0 7px;
   border: 1px solid var(--line);
-  border-radius: 0;
+  border-radius: 4px;
   background: transparent;
   color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.1em;
-  /* letter-spacing adds a trailing gap after the last letter; nudge the text
-     right by the same amount so it reads centered inside the border. */
   text-indent: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -943,6 +1005,7 @@ select.status-badge.inline-status-select:hover {
   border-color: var(--line);
   color: var(--muted);
   font-size: 10px;
+  border-radius: 4px;
 }
 
 .row-actions button:hover {
@@ -966,6 +1029,7 @@ select.status-badge.inline-status-select:hover {
 
 .empty {
   border: 1px dashed var(--line-strong);
+  border-radius: 10px;
   background: var(--panel);
   padding: 28px;
   text-align: center;
@@ -976,9 +1040,9 @@ select.status-badge.inline-status-select:hover {
 }
 
 @keyframes rowFlash {
-  0% { background: var(--panel-2); }
-  40% { background: var(--line); }
-  100% { background: transparent; }
+  0% { background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--good); }
+  40% { background: rgba(111, 191, 143, 0.08); box-shadow: inset 0 0 0 1px var(--good); }
+  100% { background: transparent; box-shadow: none; }
 }
 
 .task-row.celebrate-done {
@@ -1059,6 +1123,7 @@ select.status-badge.inline-status-select:hover {
   position: relative;
   min-width: 0;
   border: 1px solid var(--line);
+  border-radius: 6px;
   background: var(--panel);
   padding: 6px 8px;
 }
@@ -1086,6 +1151,7 @@ select.status-badge.inline-status-select:hover {
 
 .task-chat {
   border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--panel);
   margin-top: 16px;
   padding: 12px;
@@ -1115,11 +1181,12 @@ select.status-badge.inline-status-select:hover {
 .chat-message {
   position: relative;
   border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--bg);
   padding: 8px 10px;
   color: var(--muted);
   cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease;
+  transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .chat-message:hover,
@@ -1172,6 +1239,8 @@ select.status-badge.inline-status-select:hover {
   justify-content: center;
   padding: 32px;
   background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   cursor: zoom-out;
 }
 
@@ -1184,6 +1253,8 @@ select.status-badge.inline-status-select:hover {
   max-height: 100%;
   object-fit: contain;
   border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
 }
 
 .image-lightbox-close {
@@ -1232,7 +1303,9 @@ select.status-badge.inline-status-select:hover {
 .task-image-item {
   position: relative;
   border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--bg);
+  overflow: hidden;
 }
 
 .task-image-thumb {
@@ -1278,9 +1351,16 @@ select.status-badge.inline-status-select:hover {
   min-height: 110px;
   padding: 8px;
   border: 1px dashed var(--line-strong);
+  border-radius: 8px;
   color: var(--muted);
   text-align: center;
   cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.task-image-add:hover {
+  border-color: var(--muted);
+  background: rgba(141, 141, 141, 0.04);
 }
 
 .task-image-add:focus {
@@ -1313,6 +1393,7 @@ select.status-badge.inline-status-select:hover {
   min-height: 18px;
   padding: 0 7px;
   border: 1px solid var(--line);
+  border-radius: 4px;
   color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -1456,14 +1537,18 @@ select.status-badge.inline-status-select:hover {
 dialog {
   width: min(780px, calc(100vw - 24px));
   border: 1px solid var(--line-strong);
-  border-radius: 0;
+  border-radius: 14px;
   background: var(--panel);
   color: var(--ink);
   padding: 0;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
 }
 
 dialog::backdrop {
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .dialog-head {
@@ -1561,14 +1646,17 @@ dialog::backdrop {
   min-height: 26px;
   padding: 0 10px;
   border: 1px solid var(--line);
+  border-radius: 20px;
   color: var(--muted);
   font-size: 10px;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
 }
 
 .category-pill-option::before {
   content: "";
   width: 6px;
   height: 6px;
+  border-radius: 50%;
   margin-right: 6px;
   background: var(--pill-accent, var(--muted-2));
 }
@@ -1576,6 +1664,7 @@ dialog::backdrop {
 .category-pill-option.active {
   border-color: var(--ink);
   color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
 }
 
 .category-select-hidden {
@@ -1627,6 +1716,7 @@ dialog::backdrop {
   gap: 6px;
   min-width: 0;
   border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--bg);
   padding: 7px;
 }
@@ -1674,6 +1764,7 @@ dialog::backdrop {
   gap: 8px;
   align-items: center;
   border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--bg);
   padding: 8px;
 }
@@ -1849,7 +1940,9 @@ dialog::backdrop {
   display: flex;
   gap: 0;
   border: 1px solid var(--line);
+  border-radius: 8px;
   margin-bottom: 14px;
+  overflow: hidden;
 }
 
 .main-tab {
@@ -1864,6 +1957,14 @@ dialog::backdrop {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   cursor: pointer;
+  transform: none;
+  box-shadow: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.main-tab:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 .main-tab:last-child {
@@ -1909,6 +2010,11 @@ dialog::backdrop {
   border: 1px solid var(--line);
   background: var(--panel);
   padding: 12px 14px;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.account-row:hover {
+  background: var(--panel-2);
 }
 
 .account-avatar {
@@ -1962,6 +2068,7 @@ dialog::backdrop {
   min-height: 18px;
   padding: 0 8px;
   border: 1px solid var(--line);
+  border-radius: 4px;
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1988,6 +2095,7 @@ dialog::backdrop {
   gap: 6px;
   padding: 2px 8px;
   border: 1px solid var(--line);
+  border-radius: 4px;
   font-size: 10px;
 }
 
@@ -2090,7 +2198,10 @@ dialog::backdrop {
 /* Collapsible group sections. */
 .account-group {
   border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--panel);
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .account-group + .account-group {
@@ -2230,7 +2341,9 @@ dialog::backdrop {
   gap: 1px;
   background: var(--line);
   border: 1px solid var(--line);
+  border-radius: 8px;
   margin-bottom: 10px;
+  overflow: hidden;
 }
 
 .account-stat {
@@ -2358,6 +2471,7 @@ dialog::backdrop {
 
 .chart {
   border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--panel);
   padding: 10px 12px;
   min-width: 0;
@@ -2436,11 +2550,13 @@ dialog::backdrop {
   min-height: 18px;
   padding: 0 9px;
   border: 1px solid var(--good);
+  border-radius: 4px;
   color: var(--good);
   font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .account-upload-btn:hover {
@@ -2451,9 +2567,11 @@ dialog::backdrop {
 /* Overall (all-accounts) stacked daily chart at the top of the tab */
 .account-overall {
   border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--panel);
   padding: 14px;
   margin-bottom: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .overall-head {
@@ -2516,10 +2634,12 @@ dialog::backdrop {
   pointer-events: none;
   background: var(--panel-2);
   border: 1px solid var(--line-strong);
+  border-radius: 6px;
   color: var(--ink);
   font-size: 11px;
   padding: 4px 8px;
   white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .overall-tip[hidden] {
@@ -2695,6 +2815,7 @@ body.chat-resizing .shell {
   background: var(--panel);
   border: 1px solid var(--line);
   border-left: 0;
+  border-radius: 0 8px 8px 0;
   cursor: pointer;
   font-size: 18px;
   transition: background 0.15s;
@@ -2824,6 +2945,7 @@ body.chat-resizing .shell {
 .chat-msg-group {
   padding: 8px 10px;
   border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--panel);
 }
 

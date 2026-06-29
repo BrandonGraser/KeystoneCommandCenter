@@ -155,18 +155,24 @@ async function init() {
   applyStoredResourceCollapse();
   renderChatChannels();
   await Promise.all([loadTasks(), loadResources(), initChatCounts()]);
-  // Returning from a TikTok connect lands on /?tiktok=connected — show the
-  // Accounts tab with fresh numbers and a confirmation.
   if (new URLSearchParams(location.search).get("tiktok") === "connected") {
     switchTab("accounts");
     showNotice("TikTok connected — engagement metrics updated.", "good");
     try { history.replaceState(null, "", location.pathname); } catch {}
   } else {
-    // Restore the last-used tab here (not during bindEvents): this runs after the
-    // module has fully evaluated, so the accounts state/consts are initialized.
     switchTab(getStoredTab());
   }
   startLiveSync();
+  animatePageIn();
+}
+
+function animatePageIn() {
+  if (typeof gsap === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  gsap.from(".main-tabs", { opacity: 0, y: -12, duration: 0.4, ease: "power2.out" });
+  gsap.from(".metrics .metric", { opacity: 0, y: 16, duration: 0.45, stagger: 0.06, ease: "power2.out", delay: 0.1 });
+  gsap.from(".resource-block", { opacity: 0, y: 12, duration: 0.4, stagger: 0.08, ease: "power2.out", delay: 0.2 });
+  gsap.from(".controls", { opacity: 0, y: 12, duration: 0.4, ease: "power2.out", delay: 0.3 });
+  gsap.from(".status-group", { opacity: 0, y: 18, duration: 0.5, stagger: 0.08, ease: "power2.out", delay: 0.35 });
 }
 
 function applyStoredResourceCollapse() {

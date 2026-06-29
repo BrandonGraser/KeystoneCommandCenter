@@ -13,6 +13,8 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.3"
+    "@gsap/react": "^2.1.2",
+    "@libsql/client": "^0.17.3",
+    "gsap": "^3.15.0"
   }
 }
