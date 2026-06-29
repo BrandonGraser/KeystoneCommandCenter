@@ -3024,6 +3024,8 @@ dialog::backdrop {
 
 .chat-sidebar.collapsed {
   transform: translateX(calc(var(--chat-w) * -1));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .chat-sidebar.resizing {
@@ -3330,40 +3332,6 @@ body.chat-resizing .shell {
    =================================================================== */
 
 /* --- Border Beam: animated light traveling along container border --- */
-@keyframes border-beam-travel {
-  0%   { offset-distance: 0%; }
-  100% { offset-distance: 100%; }
-}
-
-.border-beam-wrap {
-  position: relative;
-  overflow: hidden;
-}
-
-.border-beam {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  border-radius: inherit;
-  border: 1px solid transparent;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  -webkit-mask-composite: xor;
-  padding: 1px;
-}
-
-.border-beam::after {
-  content: "";
-  position: absolute;
-  width: 60px;
-  aspect-ratio: 1;
-  background: linear-gradient(to left, var(--beam-from, #9E7AFF), var(--beam-to, #FE8BBB), transparent);
-  offset-path: rect(0 auto auto 0 round 60px);
-  animation: border-beam-travel var(--beam-speed, 6s) linear infinite;
-  animation-delay: var(--beam-delay, 0s);
-}
 
 /* --- Shimmer Button: traveling light around perimeter --- */
 @keyframes shimmer-slide {

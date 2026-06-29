@@ -575,7 +575,6 @@ async function attachChatImage(expanded, file) {
 
 function renderChrome(bootstrap) {
   els.metrics.innerHTML = [
-    `<div class="border-beam" style="--beam-from:#9E7AFF;--beam-to:#FE8BBB;--beam-speed:8s;"></div>`,
     `<div class="metric metric-mascot"><img src="${state.theme === "dark" ? "/cat_white.gif" : "/cat.gif"}" alt="mascot" class="mascot-img"></div>`,
     metric("Open tasks", bootstrap.counts.open, "open"),
     metric("Total active", bootstrap.counts.tasks, "tasks"),
@@ -2157,7 +2156,6 @@ function renderAccountMetrics() {
   const counts = { stocked: 0, low: 0, out: 0 };
   for (const account of accountsState.accounts) counts[runoutBucket(account.runout_date)]++;
   els.accountMetrics.innerHTML = `
-    <div class="border-beam" style="--beam-from:#6db8ae;--beam-to:#d8b54a;--beam-speed:7s;"></div>
     <div class="metric account-metric-stocked">
       <strong>${counts.stocked}</strong>
       <span>Stocked · 5+ days</span>
