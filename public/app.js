@@ -2168,6 +2168,7 @@ function renderAccounts() {
       </section>
     `;
   }).join("");
+  refreshIcons();
 }
 
 function sortAccounts(accounts) {
