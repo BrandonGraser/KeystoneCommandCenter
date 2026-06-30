@@ -155,6 +155,10 @@ const els = {
   notesView: document.querySelector("#notesView")
 };
 
+function refreshIcons() {
+  if (typeof lucide !== "undefined") lucide.createIcons();
+}
+
 const SYNC_INTERVAL_MS = 5000;
 
 init();
@@ -183,6 +187,7 @@ async function init() {
   startLiveSync();
   animatePageIn();
   state.pageAnimated = true;
+  refreshIcons();
 }
 
 function animatePageIn() {
@@ -603,10 +608,10 @@ function renderChrome(bootstrap) {
     metric("Total active", bootstrap.counts.tasks, "tasks"),
     metric("Overdue", bootstrap.counts.overdue, "overdue"),
     `<div class="metric metric-action">
-      <button id="newTaskButton" class="primary">New Task</button>
+      <button id="newTaskButton" class="primary"><i data-lucide="plus" style="width:15px;height:15px"></i> New Task</button>
       <div class="action-subrow">
         <button id="ringButton" class="secondary ring-button" type="button">
-          <span class="ring-icon" aria-hidden="true"></span>
+          <i data-lucide="bell-ring" style="width:14px;height:14px"></i>
           Ring Tommy
         </button>
         <button id="themeToggleButton" class="secondary theme-toggle" type="button" aria-pressed="${state.theme === "dark"}"></button>
@@ -615,6 +620,7 @@ function renderChrome(bootstrap) {
   ].join("");
   renderThemeToggle();
   renderArchiveToggle();
+  refreshIcons();
 
   if (!state.assignees.includes(state.activeAssignee)) {
     state.activeAssignee = state.assignees[0] || "";
@@ -647,7 +653,10 @@ function renderAssigneeTabs() {
 function renderArchiveToggle() {
   if (!els.archiveToggle) return;
   els.archiveToggle.classList.toggle("active", state.showArchive);
-  els.archiveToggle.textContent = state.showArchive ? "Back to Active" : "Archive";
+  els.archiveToggle.innerHTML = state.showArchive
+    ? `<i data-lucide="arrow-left" style="width:14px;height:14px"></i> Back to Active`
+    : `<i data-lucide="archive" style="width:14px;height:14px"></i> Archive`;
+  refreshIcons();
   els.archiveToggle.setAttribute("aria-pressed", String(state.showArchive));
 }
 
@@ -689,6 +698,7 @@ function renderTasks() {
     .filter((status) => groups.has(status))
     .map((status) => renderGroup(status, groups.get(status)))
     .join("");
+  refreshIcons();
 }
 
 function renderGroup(status, tasks) {
@@ -736,8 +746,8 @@ function renderTaskRow(task) {
       <div class="row-actions">
         <span class="expand-hint">${state.expandedTaskId === task.id ? "▲ Hide" : "▼ View"}</span>
         ${state.showArchive
-          ? `<button type="button" data-action="restore-task">Restore</button>`
-          : `<button type="button" class="row-archive-button" data-action="archive-task" title="Archive task">Archive</button><button type="button" class="row-delete-button danger" data-action="delete-task" title="Permanently delete">Delete</button><button type="button" data-action="duplicate-task">Duplicate</button><button type="button" data-action="edit">Edit</button>`}
+          ? `<button type="button" data-action="restore-task"><i data-lucide="undo-2" style="width:13px;height:13px"></i> Restore</button>`
+          : `<button type="button" class="row-archive-button" data-action="archive-task" title="Archive task"><i data-lucide="archive" style="width:13px;height:13px"></i> Archive</button><button type="button" class="row-delete-button danger" data-action="delete-task" title="Permanently delete"><i data-lucide="trash-2" style="width:13px;height:13px"></i> Delete</button><button type="button" data-action="duplicate-task"><i data-lucide="copy" style="width:13px;height:13px"></i> Duplicate</button><button type="button" data-action="edit"><i data-lucide="pencil" style="width:13px;height:13px"></i> Edit</button>`}
       </div>
     </article>
   `;
@@ -1797,10 +1807,11 @@ function renderThemeToggle() {
   const button = document.querySelector("#themeToggleButton");
   if (!button) return;
   const isDark = state.theme === "dark";
-  button.innerHTML = `<span class="theme-icon ${isDark ? "theme-icon-sun" : "theme-icon-moon"}" aria-hidden="true"></span>`;
+  button.innerHTML = `<i data-lucide="${isDark ? "sun" : "moon"}" style="width:16px;height:16px"></i>`;
   button.setAttribute("aria-pressed", String(isDark));
   button.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
   button.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+  refreshIcons();
 }
 
 const pendingImages = {};
@@ -2374,8 +2385,8 @@ function renderAccountRow(account) {
         ${links.length ? `<div class="account-links">${links.join("")}</div>` : ""}
       </div>
       <div class="account-actions">
-        <button type="button" data-action="sync-account" title="Sync engagement metrics from TikTok">Sync</button>
-        <button type="button" data-action="edit-account">Edit</button>
+        <button type="button" data-action="sync-account" title="Sync engagement metrics from TikTok"><i data-lucide="refresh-cw" style="width:13px;height:13px"></i> Sync</button>
+        <button type="button" data-action="edit-account"><i data-lucide="pencil" style="width:13px;height:13px"></i> Edit</button>
       </div>
       ${expanded ? renderAccountExpanded(account) : ""}
     </article>

@@ -95,8 +95,8 @@
             </select>
           </label>
           <div class="accounts-actions">
-            <button type="button" id="syncAllAccounts" class="secondary">Sync All</button>
-            <button type="button" id="addAccount" class="primary">Add account</button>
+            <button type="button" id="syncAllAccounts" class="secondary"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Sync All</button>
+            <button type="button" id="addAccount" class="primary"><i data-lucide="plus" style="width:15px;height:15px"></i> Add account</button>
           </div>
         </section>
         <div class="account-board" id="accountBoard"></div>
@@ -107,13 +107,13 @@
       </div>
       <aside class="chat-sidebar collapsed" id="chatSidebar">
         <button type="button" class="chat-sidebar-toggle" id="chatSidebarToggle" title="Toggle chat">
-          <span class="chat-sidebar-toggle-icon">💬</span>
+          <span class="chat-sidebar-toggle-icon"><i data-lucide="message-circle" style="width:20px;height:20px"></i></span>
           <span class="chat-badge" id="chatBadge"></span>
         </button>
         <div class="chat-sidebar-inner">
           <div class="chat-sidebar-header">
             <h3>Chat</h3>
-            <button type="button" class="chat-sidebar-close" id="chatSidebarClose" title="Close chat">&times;</button>
+            <button type="button" class="chat-sidebar-close" id="chatSidebarClose" title="Close chat"><i data-lucide="x" style="width:16px;height:16px"></i></button>
           </div>
           <div class="chat-sidebar-channels" id="chatChannels"></div>
           <div class="chat-sidebar-messages" id="chatSidebarMessages"></div>
@@ -133,7 +133,7 @@
             <h2 id="dialogTitle">What do you want me to do?</h2>
             <p class="eyebrow" id="dialogMode">New task</p>
           </div>
-          <button type="button" id="closeDialog" class="icon-button" title="Close">x</button>
+          <button type="button" id="closeDialog" class="icon-button" title="Close"><i data-lucide="x" style="width:16px;height:16px"></i></button>
         </div>
 
         <input type="hidden" id="taskId">
@@ -204,10 +204,10 @@
           <div id="taskImages" class="task-image-grid"></div>
         </div>
         <div class="dialog-actions">
-          <button type="button" id="archiveTask" class="danger">Archive</button>
+          <button type="button" id="archiveTask" class="danger"><i data-lucide="archive" style="width:14px;height:14px"></i> Archive</button>
           <span></span>
           <button type="button" id="cancelTask">Cancel</button>
-          <button type="submit" class="primary">Save</button>
+          <button type="submit" class="primary"><i data-lucide="check" style="width:14px;height:14px"></i> Save</button>
         </div>
       </form>
     </dialog>
@@ -219,7 +219,7 @@
             <h2 id="resourceDialogTitle">Add resource</h2>
             <p class="eyebrow">Directory item</p>
           </div>
-          <button type="button" id="closeResourceDialog" class="icon-button" title="Close">x</button>
+          <button type="button" id="closeResourceDialog" class="icon-button" title="Close"><i data-lucide="x" style="width:16px;height:16px"></i></button>
         </div>
         <input id="resourceSection" type="hidden" value="important_links">
         <label>
@@ -255,7 +255,7 @@
             <h2>Ring Tommy</h2>
             <p class="eyebrow">Send a note or problem</p>
           </div>
-          <button type="button" id="closeRingDialog" class="icon-button" title="Close">x</button>
+          <button type="button" id="closeRingDialog" class="icon-button" title="Close"><i data-lucide="x" style="width:16px;height:16px"></i></button>
         </div>
         <label class="ring-description-field">
           <span>Description</span>
@@ -285,7 +285,7 @@
         <div class="dialog-actions">
           <span></span>
           <button type="button" id="cancelRing">Cancel</button>
-          <button type="submit" class="primary">Send Ring</button>
+          <button type="submit" class="primary"><i data-lucide="bell-ring" style="width:14px;height:14px"></i> Send Ring</button>
         </div>
       </form>
     </dialog>
@@ -297,7 +297,7 @@
             <h2 id="accountDialogTitle">Add account</h2>
             <p class="eyebrow" id="accountDialogMode">New TikTok account</p>
           </div>
-          <button type="button" id="closeAccountDialog" class="icon-button" title="Close">x</button>
+          <button type="button" id="closeAccountDialog" class="icon-button" title="Close"><i data-lucide="x" style="width:16px;height:16px"></i></button>
         </div>
 
         <input type="hidden" id="accountId">
@@ -372,6 +372,7 @@
     </dialog>
 
     <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>
