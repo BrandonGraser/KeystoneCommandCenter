@@ -7,17 +7,17 @@
 html[data-theme="dark"] {
   color-scheme: dark;
   --chat-w: 340px;
-  --bg: #1a1a1a;
-  --panel: #232323;
-  --panel-2: #2d2d2d;
+  --bg: #141414;
+  --panel: #1e1e1e;
+  --panel-2: #282828;
   --ink: #ededed;
   --muted: #a3a3a3;
   --muted-2: #737373;
   --line: #3a3a3a;
   --line-strong: #4a4a4a;
-  --ember: #e85d3a;
-  --ember-soft: rgba(232, 93, 58, 0.12);
-  --invert-bg: #e85d3a;
+  --ember: #d92b1e;
+  --ember-soft: rgba(217, 43, 30, 0.12);
+  --invert-bg: #d92b1e;
   --invert-ink: #ffffff;
   --danger: #e05c5c;
   --good: #6fbf8f;
@@ -54,9 +54,9 @@ html[data-theme="light"] {
   --muted-2: #9a9a9a;
   --line: #dcdcd8;
   --line-strong: #b9b9b4;
-  --ember: #d04e2e;
-  --ember-soft: rgba(208, 78, 46, 0.12);
-  --invert-bg: #d04e2e;
+  --ember: #c4251a;
+  --ember-soft: rgba(196, 37, 26, 0.12);
+  --invert-bg: #c4251a;
   --invert-ink: #ffffff;
   --danger: #b53636;
   --good: #2e7d4f;
@@ -116,7 +116,7 @@ body {
 }
 
 ::selection {
-  background: var(--ember-soft, rgba(232, 93, 58, 0.12));
+  background: var(--ember-soft, rgba(217, 43, 30, 0.12));
   color: #fff;
 }
 
@@ -201,9 +201,9 @@ textarea:focus-visible {
 
 .primary {
   position: relative;
-  background: var(--ember, #e85d3a);
+  background: var(--ember, #d92b1e);
   color: #ffffff;
-  border-color: var(--ember, #e85d3a);
+  border-color: var(--ember, #d92b1e);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   overflow: hidden;
   font-weight: 600;
@@ -235,11 +235,11 @@ textarea:focus-visible {
 }
 
 .primary:hover {
-  background: var(--ember, #e85d3a);
+  background: var(--ember, #d92b1e);
   color: #ffffff;
-  border-color: var(--ember, #e85d3a);
+  border-color: var(--ember, #d92b1e);
   filter: brightness(1.1);
-  box-shadow: 0 4px 16px rgba(232, 93, 58, 0.3);
+  box-shadow: 0 4px 16px rgba(217, 43, 30, 0.3);
 }
 
 .danger {
@@ -283,7 +283,7 @@ textarea:hover {
 select:focus,
 input:focus,
 textarea:focus {
-  border-color: var(--ember, #e85d3a);
+  border-color: var(--ember, #d92b1e);
   box-shadow: none;
 }
 
@@ -322,7 +322,7 @@ input[type="radio"] {
 --------------------------------------------------------------- */
 
 .shell {
-  width: min(1024px, calc(100vw - 48px));
+  width: min(1400px, calc(100vw - 48px));
   margin: 0 auto;
   padding: 20px 0 56px;
 }
@@ -355,16 +355,16 @@ label span,
 
 .metrics {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
   position: relative;
 }
 
 .metric {
-  padding: 20px;
+  padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--panel);
   position: relative;
   overflow: hidden;
@@ -379,7 +379,7 @@ label span,
   pointer-events: none;
   background: radial-gradient(
     200px circle at var(--magic-x, -200px) var(--magic-y, -200px),
-    var(--ember-soft, rgba(232,93,58,0.08)),
+    var(--ember-soft, rgba(217,43,30,0.08)),
     transparent 100%
   );
   opacity: 0;
@@ -405,7 +405,7 @@ label span,
 }
 
 .metric:first-of-type {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 
 .metric:last-child {
@@ -415,7 +415,7 @@ label span,
 .metric strong {
   display: block;
   font-family: "Space Grotesk", sans-serif;
-  font-size: 48px;
+  font-size: 32px;
   font-weight: 600;
   line-height: 1.1;
   color: var(--ink);
@@ -469,6 +469,9 @@ label span,
 
 .theme-toggle {
   padding: 0;
+  width: 36px;
+  min-height: 36px;
+  border-radius: 8px;
 }
 
 .theme-icon::before {
@@ -736,7 +739,7 @@ a.login-resource-button:hover {
 }
 
 .segmented button.active {
-  background: var(--ember, #e85d3a);
+  background: var(--ember, #d92b1e);
   color: #ffffff;
 }
 
@@ -854,7 +857,7 @@ a.login-resource-button:hover {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--ember, #e85d3a);
+  background: var(--ember, #d92b1e);
   flex-shrink: 0;
 }
 
@@ -894,7 +897,7 @@ a.login-resource-button:hover {
   pointer-events: none;
   background: radial-gradient(
     280px circle at var(--magic-x, -200px) var(--magic-y, -200px),
-    var(--ember-soft, rgba(232,93,58,0.06)),
+    var(--ember-soft, rgba(217,43,30,0.06)),
     transparent 100%
   );
   opacity: 0;
@@ -1164,7 +1167,7 @@ select.status-badge.inline-status-select:hover {
 }
 
 .row-actions button:hover {
-  color: var(--ember, #e85d3a);
+  color: var(--ember, #d92b1e);
   background: var(--bg);
 }
 
@@ -1175,12 +1178,7 @@ select.status-badge.inline-status-select:hover {
 }
 
 .expand-hint {
-  color: var(--muted-2);
-  font-family: "Space Grotesk", sans-serif;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  display: none;
 }
 
 .empty {
@@ -2167,15 +2165,7 @@ dialog::backdrop {
 
 @media (max-width: 1040px) {
   .metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .metric {
-    border-bottom: 1px solid var(--line);
-  }
-
-  .metric:nth-child(even) {
-    border-right: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .task-row {
@@ -2195,7 +2185,7 @@ dialog::backdrop {
   }
 
   .metrics {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
 
   .resources-row {
@@ -2288,7 +2278,7 @@ dialog::backdrop {
 
 .main-tab.active {
   background: var(--bg);
-  color: var(--ember, #e85d3a);
+  color: var(--ember, #d92b1e);
   position: relative;
 }
 
@@ -2379,8 +2369,8 @@ dialog::backdrop {
 }
 
 .account-row:hover .account-avatar {
-  border-color: rgba(232, 93, 58, 0.4);
-  box-shadow: 0 0 12px rgba(232, 93, 58, 0.15);
+  border-color: rgba(217, 43, 30, 0.4);
+  box-shadow: 0 0 12px rgba(217, 43, 30, 0.15);
 }
 
 .account-avatar img {
@@ -2951,7 +2941,7 @@ dialog::backdrop {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, #e85d3a, #f4a261, #6aa0ff, #e85d3a);
+  background: linear-gradient(90deg, #d92b1e, #f4a261, #6aa0ff, #d92b1e);
   background-size: 300% 100%;
   animation: gradient-flow 6s ease infinite;
 }
@@ -3445,8 +3435,10 @@ body.chat-resizing .shell {
 
 .storyboard-frame {
   width: 100%;
-  height: calc(100vh - 48px);
+  height: calc(100vh - 80px);
   border: none;
+  background: var(--bg);
+  border-radius: 12px;
 }
 
 .color-picker-swatch:hover {
@@ -3574,7 +3566,7 @@ body.chat-resizing .shell {
   padding: 1px;
   background: radial-gradient(
     300px circle at var(--magic-x) var(--magic-y),
-    var(--magic-border-from, #e85d3a),
+    var(--magic-border-from, #d92b1e),
     var(--magic-border-to, #f4a261),
     transparent 100%
   );
@@ -3608,7 +3600,7 @@ body.chat-resizing .shell {
   pointer-events: none;
   border-radius: inherit;
   padding: var(--shine-width, 1px);
-  background-image: radial-gradient(transparent, transparent, var(--shine-color-1, #e85d3a), var(--shine-color-2, #f4a261), transparent, transparent);
+  background-image: radial-gradient(transparent, transparent, var(--shine-color-1, #d92b1e), var(--shine-color-2, #f4a261), transparent, transparent);
   background-size: 300% 300%;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -3742,8 +3734,8 @@ html[data-theme="light"] .glare-hover::before {
 
 /* --- Pulsating glow for important buttons --- */
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 var(--pulse-color, rgba(232, 93, 58, 0.4)); }
-  50%      { box-shadow: 0 0 16px 4px var(--pulse-color, rgba(232, 93, 58, 0.15)); }
+  0%, 100% { box-shadow: 0 0 0 0 var(--pulse-color, rgba(217, 43, 30, 0.4)); }
+  50%      { box-shadow: 0 0 16px 4px var(--pulse-color, rgba(217, 43, 30, 0.15)); }
 }
 
 .pulse-glow {
@@ -3780,7 +3772,7 @@ html[data-theme="light"] .depth-shadow {
 
 .gradient-accent-line {
   height: 2px;
-  background: linear-gradient(90deg, #e85d3a, #f4a261, #6aa0ff, #e85d3a);
+  background: linear-gradient(90deg, #d92b1e, #f4a261, #6aa0ff, #d92b1e);
   background-size: 300% 100%;
   animation: gradient-flow 6s ease infinite;
   border-radius: 1px;
