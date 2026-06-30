@@ -441,13 +441,15 @@ label span,
   align-items: center;
   grid-column: 1 / -1;
   padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .metric-action:hover {
-  border-color: transparent;
+  border-color: transparent !important;
+  background: transparent !important;
 }
 
 .metric-action::before {
@@ -456,6 +458,16 @@ label span,
 
 .metric-action .primary {
   flex: none;
+}
+
+.metric-action .secondary {
+  background: transparent;
+  border-color: var(--line-strong);
+}
+
+.metric-action .secondary:hover {
+  background: var(--panel);
+  border-color: var(--ink);
 }
 
 .action-subrow {

@@ -104,30 +104,30 @@
         --red: #e6e6e6;
         --red-dim: #262626;
         --blue: #6aa0ff;
-        --panel: #0e0e0e;
-        --panel-soft: #131313;
+        --panel: #1e1e1e;
+        --panel-soft: #1e1e1e;
         --line: #262626;
         --muted: #8d8d8d;
         font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, "Liberation Mono", Menlo, monospace;
       }
 
-      body, #root { background: #0a0a0a; }
+      body, #root { background: #141414; }
 
       .app-shell {
-        background: #0a0a0a;
+        background: #141414;
       }
 
       /* Top strip */
       .top-strip {
         background:
-          linear-gradient(180deg, rgba(10,10,10,0.92) 0%, rgba(10,10,10,0.52) 58%, transparent 100%),
-          radial-gradient(ellipse at 50% 18%, rgba(10,10,10,0.82), transparent 62%);
+          linear-gradient(180deg, rgba(20,20,20,0.92) 0%, rgba(20,20,20,0.52) 58%, transparent 100%),
+          radial-gradient(ellipse at 50% 18%, rgba(20,20,20,0.82), transparent 62%);
       }
 
       /* Map tabs — monochrome with subtle accent */
       .map-tab {
         border: 1px solid #262626;
-        background: #0e0e0e;
+        background: #1e1e1e;
         color: #8d8d8d;
       }
       .map-tab.is-active {
@@ -149,7 +149,7 @@
 
       .map-panel__delete {
         border: 1px solid #3f3f3f;
-        background: #0e0e0e;
+        background: #1e1e1e;
       }
       .map-panel__delete:hover:not(:disabled) {
         border-color: #e05c5c;
@@ -161,7 +161,7 @@
         background:
           linear-gradient(rgba(230,230,230,0.03) 1px, transparent 1px),
           linear-gradient(90deg, rgba(230,230,230,0.03) 1px, transparent 1px),
-          #0a0a0a !important;
+          #141414 !important;
         background-size: 64px 64px;
       }
 
@@ -174,7 +174,7 @@
         fill: #e6e6e6;
       }
       .react-flow__edge-textbg {
-        fill: #0a0a0a;
+        fill: #141414;
         stroke: #3f3f3f;
       }
 
@@ -188,7 +188,7 @@
       .story-card {
         background:
           linear-gradient(90deg, rgba(255,255,255,0.03), transparent 42%),
-          #0e0e0e;
+          #1e1e1e;
         font-family: inherit;
       }
 
@@ -217,7 +217,7 @@
 
       .context-node-menu button {
         border: 1px solid #262626;
-        background: #0e0e0e;
+        background: #1e1e1e;
       }
       .context-node-menu button:hover,
       .node-mini-menu button:hover {
@@ -227,7 +227,7 @@
 
       .node-mini-menu button {
         border: 1px solid #3f3f3f;
-        background: #0e0e0e;
+        background: #1e1e1e;
       }
 
       .edge-editor label {
@@ -236,13 +236,13 @@
       .edge-editor input,
       .edge-editor select {
         border: 1px solid #262626;
-        background: #0a0a0a;
+        background: #141414;
         color: #e6e6e6;
       }
 
       /* Focus panel (node editor overlay) */
       .focus-backdrop {
-        background: rgba(10,10,10,0.7);
+        background: rgba(20,20,20,0.7);
       }
       .focus-panel {
         border: 1px solid #3f3f3f;
@@ -255,7 +255,7 @@
       }
       .focus-panel__header button {
         border: 1px solid #262626;
-        background: #0e0e0e;
+        background: #1e1e1e;
       }
       .focus-panel label {
         color: #8d8d8d;
@@ -265,7 +265,7 @@
       .focus-panel textarea,
       .attribute-note-box textarea {
         border: 1px solid #262626;
-        background: #0a0a0a;
+        background: #141414;
         color: #e6e6e6;
         font-family: inherit;
       }
@@ -278,28 +278,28 @@
       }
       .danger-button:hover {
         background: #e05c5c;
-        color: #0a0a0a;
+        color: #141414;
       }
 
       /* Map delete confirm dialog */
       .map-delete-confirm {
-        background: rgba(10,10,10,0.8);
+        background: rgba(20,20,20,0.8);
       }
       .map-delete-confirm__panel {
         border: 1px solid #3f3f3f;
-        background: #0e0e0e;
+        background: #1e1e1e;
       }
       .map-delete-confirm__panel strong {
         color: #e05c5c;
       }
       .map-delete-confirm__panel input {
         border: 1px solid #262626;
-        background: #0a0a0a;
+        background: #141414;
         color: #e6e6e6;
       }
       .map-delete-confirm__actions button {
         border: 1px solid #262626;
-        background: #131313;
+        background: #1e1e1e;
       }
       .map-delete-confirm__yes:not(:disabled) {
         border-color: #e05c5c;
