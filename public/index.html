@@ -159,6 +159,14 @@
             <input id="taskDue" type="date">
           </label>
         </div>
+        <div class="urgency-section">
+          <label class="urgency-label">
+            <span>Urgency</span>
+            <output id="taskUrgencyValue" class="urgency-value">5</output>
+          </label>
+          <input id="taskUrgency" type="range" min="1" max="10" value="5" class="urgency-slider">
+          <div class="urgency-scale"><span>1</span><span>10</span></div>
+        </div>
         <label class="check-row">
           <input id="taskDone" type="checkbox">
           <span>Done</span>

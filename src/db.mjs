@@ -253,6 +253,9 @@ function migrate(database) {
   if (!taskColumns.some((column) => column.name === "archived_at")) {
     database.exec("ALTER TABLE tasks ADD COLUMN archived_at TEXT;");
   }
+  if (!taskColumns.some((column) => column.name === "urgency")) {
+    database.exec("ALTER TABLE tasks ADD COLUMN urgency INTEGER NOT NULL DEFAULT 5;");
+  }
   const resourceColumns = database.prepare("PRAGMA table_info(resource_items)").all();
   if (!resourceColumns.some((column) => column.name === "username")) {
     database.exec("ALTER TABLE resource_items ADD COLUMN username TEXT;");
@@ -372,6 +375,7 @@ export function listTasks(filters = {}) {
           WHEN 'Done' THEN 8
           ELSE 9
         END,
+        urgency DESC,
         due_date IS NULL ASC,
         due_date ASC,
         ${showArchived ? "archived_at DESC," : ""}
@@ -394,8 +398,8 @@ export function createTask(input, meta = {}) {
     .prepare(`
       INSERT INTO tasks (
         assignee, title, details, project, category, status, done, due_date, stamp_at,
-        source_filename, source_tab, source_row, import_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        source_filename, source_tab, source_row, import_id, urgency
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     .run(
       payload.assignee,
@@ -410,7 +414,8 @@ export function createTask(input, meta = {}) {
       meta.source_filename || null,
       meta.source_tab || null,
       meta.source_row || null,
-      meta.import_id || null
+      meta.import_id || null,
+      payload.urgency ?? 5
     );
 
   const taskId = Number(result.lastInsertRowid);
@@ -427,7 +432,7 @@ export function updateTask(id, input) {
   const sets = [];
   const params = [];
 
-  for (const field of ["assignee", "title", "details", "project", "category", "status", "due_date", "stamp_at", "archived"]) {
+  for (const field of ["assignee", "title", "details", "project", "category", "status", "due_date", "stamp_at", "archived", "urgency"]) {
     if (field in payload) {
       sets.push(`${field} = ?`);
       params.push(field === "archived" ? (payload[field] ? 1 : 0) : payload[field]);
@@ -503,6 +508,7 @@ export function duplicateTask(id) {
     category: source.category || "Misc.",
     status,
     done: false,
+    urgency: source.urgency ?? 5,
     due_date: status === "BRB" ? null : source.due_date || null,
     links: source.links.map((link) => ({
       label: link.label,

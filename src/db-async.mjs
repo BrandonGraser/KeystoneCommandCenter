@@ -290,6 +290,9 @@ async function migrate(client) {
   if (!taskColNames.includes("archived_at")) {
     await client.execute("ALTER TABLE tasks ADD COLUMN archived_at TEXT");
   }
+  if (!taskColNames.includes("urgency")) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN urgency INTEGER NOT NULL DEFAULT 5");
+  }
 
   const resourceCols = await client.execute("PRAGMA table_info(resource_items)");
   const resourceColNames = resourceCols.rows.map((r) => r["name"]);
@@ -470,6 +473,7 @@ export async function listTasks(filters = {}) {
           WHEN 'Done' THEN 7
           ELSE 8
         END,
+        urgency DESC,
         due_date IS NULL ASC,
         due_date ASC,
         ${showArchived ? "archived_at DESC," : ""}
@@ -495,7 +499,7 @@ export async function createTask(input, meta = {}) {
   const client = await getDb();
   const result = await client.execute({
     sql: `INSERT INTO tasks (assignee, title, details, project, category, status, done, due_date, stamp_at,
-      source_filename, source_tab, source_row, import_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      source_filename, source_tab, source_row, import_id, urgency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       payload.assignee,
       payload.title,
@@ -509,7 +513,8 @@ export async function createTask(input, meta = {}) {
       meta.source_filename || null,
       meta.source_tab || null,
       meta.source_row || null,
-      meta.import_id || null
+      meta.import_id || null,
+      payload.urgency ?? 5
     ]
   });
   const taskId = Number(result.lastInsertRowid);
@@ -526,7 +531,7 @@ export async function updateTask(id, input) {
   const sets = [];
   const params = [];
 
-  for (const field of ["assignee", "title", "details", "project", "category", "status", "due_date", "stamp_at", "archived"]) {
+  for (const field of ["assignee", "title", "details", "project", "category", "status", "due_date", "stamp_at", "archived", "urgency"]) {
     if (field in payload) {
       sets.push(`${field} = ?`);
       params.push(field === "archived" ? (payload[field] ? 1 : 0) : payload[field]);
@@ -592,6 +597,7 @@ export async function duplicateTask(id) {
     category: source.category || "Misc.",
     status,
     done: false,
+    urgency: source.urgency ?? 5,
     due_date: status === "BRB" ? null : source.due_date || null,
     links: source.links.map((l) => ({ label: l.label, url: l.url || "" })),
     notes: source.notes.map((n) => ({ person: n.person, body: n.body })),

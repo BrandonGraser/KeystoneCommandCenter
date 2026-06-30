@@ -97,6 +97,7 @@ export function validateTaskPayload(input, { partial = false } = {}) {
   if ("stamp_at" in input) output.stamp_at = normalizeDateTimeInput(input.stamp_at);
   if ("done" in input) output.done = Boolean(input.done);
   if ("archived" in input) output.archived = Boolean(input.archived);
+  if ("urgency" in input) output.urgency = Math.max(1, Math.min(10, Math.round(Number(input.urgency) || 5)));
 
   if (!partial || "assignee" in input) {
     output.assignee = normalizeAssignee(input.assignee);

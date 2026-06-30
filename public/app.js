@@ -87,6 +87,8 @@ const els = {
   taskCategory: document.querySelector("#taskCategory"),
   taskDue: document.querySelector("#taskDue"),
   taskDone: document.querySelector("#taskDone"),
+  taskUrgency: document.querySelector("#taskUrgency"),
+  taskUrgencyValue: document.querySelector("#taskUrgencyValue"),
   taskWorkflow: document.querySelector("#taskWorkflow"),
   addWorkflowStep: document.querySelector("#addWorkflowStep"),
   taskLinks: document.querySelector("#taskLinks"),
@@ -520,6 +522,10 @@ function bindEvents() {
     event.preventDefault();
     await addFormImageFile(file);
   });
+  els.taskUrgency.addEventListener("input", () => {
+    els.taskUrgencyValue.textContent = els.taskUrgency.value;
+    els.taskUrgency.style.setProperty("--urgency-pct", `${((els.taskUrgency.value - 1) / 9) * 100}%`);
+  });
   els.taskCategory.addEventListener("change", () => applyCategoryTone(els.taskCategory, els.taskCategory.value));
   document.querySelector("#categoryPillPicker")?.addEventListener("click", (event) => {
     const pill = event.target.closest(".category-pill-option");
@@ -718,6 +724,7 @@ function renderTaskRow(task) {
         <div class="task-tags">
           <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
           ${statusSelect}
+          <span class="urgency-badge urgency-${urgencyTier(task.urgency)}" title="Urgency ${task.urgency ?? 5}/10">${task.urgency ?? 5}</span>
           ${task.image_count ? `<span class="img-count">${task.image_count} img</span>` : ""}
           ${task.last_message && hasUnreadMessages(task) ? `<span class="unread-msg-badge">New message</span>` : ""}
         </div>
@@ -957,6 +964,9 @@ function openTaskDialog(task = null) {
   renderCategoryPillPicker(els.taskCategory.value);
   els.taskDue.value = task ? (task.due_date || "") : today();
   els.taskDone.checked = Boolean(task?.done);
+  els.taskUrgency.value = task?.urgency ?? 5;
+  els.taskUrgencyValue.textContent = els.taskUrgency.value;
+  els.taskUrgency.style.setProperty("--urgency-pct", `${((els.taskUrgency.value - 1) / 9) * 100}%`);
   fillWorkflowInputs(task?.workflow_steps || []);
   fillLinkInputs((task?.links || []).filter((link) => !isNoteLink(link)));
   fillNoteLinkInputs((task?.links || []).filter(isNoteLink), els.taskAssignee.value);
@@ -993,6 +1003,7 @@ async function saveTask(event) {
     category: els.taskCategory.value,
     due_date: els.taskDue.value || null,
     done: els.taskDone.checked,
+    urgency: Number(els.taskUrgency.value) || 5,
     workflow_steps: collectWorkflowInputs(),
     links: [...collectLinkInputs(), ...collectNoteLinkInputs()],
     notes: parseNoteTextarea(els.taskNotes.value)
@@ -1889,6 +1900,13 @@ function renderCategoryPillPicker(selectedCategory = "Misc.") {
       style="--pill-accent: ${tone.accent}; --pill-bg: ${tone.background}; --pill-border: ${tone.border};"
     >${escapeHtml(category)}</button>`;
   }).join("");
+}
+
+function urgencyTier(value) {
+  const v = value ?? 5;
+  if (v >= 8) return "high";
+  if (v >= 4) return "mid";
+  return "low";
 }
 
 function taskStatusMeta(status, done = false) {
