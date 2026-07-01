@@ -2306,8 +2306,9 @@ function renderAccountOverall() {
     `<span style="top:${((1 - f) * 100).toFixed(1)}%">${formatCount(Math.round(maxTotal * f))}</span>`
   ).join("");
   const mode = accountsState.overallChartMode;
+  const chartW = (els.accountOverall?.offsetWidth || 800) - 44;
   const chartSvg = mode === "line"
-    ? lineChartSvg(contributors, maxTotal, days)
+    ? lineChartSvg(contributors, maxTotal, days, chartW)
     : stackedBarsSvg(contributors, maxTotal, days);
   const chart = grand > 0
     ? `<div class="overall-yaxis">${yAxis}</div>${chartSvg}`
@@ -2359,9 +2360,9 @@ function stackedBarsSvg(contributors, maxTotal, days) {
   return `<svg class="overall-bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${grid}${rects}</svg>`;
 }
 
-function lineChartSvg(contributors, maxTotal, days) {
-  const W = 1200;
-  const H = 260;
+function lineChartSvg(contributors, maxTotal, days, containerW) {
+  const W = containerW || 800;
+  const H = 220;
   const pad = 12;
   const plotH = H - pad * 2;
   const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
