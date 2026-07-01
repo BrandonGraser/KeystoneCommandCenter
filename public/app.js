@@ -2360,13 +2360,13 @@ function stackedBarsSvg(contributors, maxTotal, days) {
 }
 
 function lineChartSvg(contributors, maxTotal, days) {
-  const W = 700;
-  const H = 220;
-  const pad = 8;
+  const W = 1200;
+  const H = 260;
+  const pad = 12;
   const plotH = H - pad * 2;
   const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
     const y = (pad + (1 - f) * plotH).toFixed(1);
-    return `<line class="overall-grid" x1="0" y1="${y}" x2="${W}" y2="${y}" vector-effect="non-scaling-stroke"></line>`;
+    return `<line class="overall-grid" x1="0" y1="${y}" x2="${W}" y2="${y}"></line>`;
   }).join("");
   let paths = "";
   let dots = "";
@@ -2381,16 +2381,15 @@ function lineChartSvg(contributors, maxTotal, days) {
     for (let i = 1; i < pts.length; i++) {
       const prev = pts[i - 1];
       const cur = pts[i];
-      const tension = (cur.x - prev.x) * 0.35;
+      const tension = (cur.x - prev.x) * 0.3;
       d += ` C${(prev.x + tension).toFixed(1)},${prev.y.toFixed(1)} ${(cur.x - tension).toFixed(1)},${cur.y.toFixed(1)} ${cur.x.toFixed(1)},${cur.y.toFixed(1)}`;
     }
-    paths += `<path data-acct="${c.id}" fill="none" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="${d}" vector-effect="non-scaling-stroke" opacity="0.85"></path>`;
-    for (const pt of pts) {
-      const idx = pts.indexOf(pt);
-      dots += `<circle data-acct="${c.id}" data-tip="${escapeHtml(`${c.name}: ${formatCount(c.perDay[idx])}`)}" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="2" fill="${c.color}" stroke="var(--bg)" stroke-width="1"></circle>`;
+    paths += `<path data-acct="${c.id}" fill="none" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="${d}" opacity="0.85"></path>`;
+    for (let i = 0; i < pts.length; i++) {
+      dots += `<circle data-acct="${c.id}" data-tip="${escapeHtml(`${c.name}: ${formatCount(c.perDay[i])}`)}" cx="${pts[i].x.toFixed(1)}" cy="${pts[i].y.toFixed(1)}" r="3" fill="${c.color}" stroke="var(--bg)" stroke-width="1.5"></circle>`;
     }
   }
-  return `<svg class="overall-bars overall-lines" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${grid}${paths}${dots}</svg>`;
+  return `<svg class="overall-bars overall-lines" viewBox="0 0 ${W} ${H}" role="img">${grid}${paths}${dots}</svg>`;
 }
 
 // Group collapse state, remembered per group name in localStorage.
