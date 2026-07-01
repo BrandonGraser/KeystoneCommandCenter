@@ -1242,8 +1242,17 @@ select.status-badge.inline-status-select:hover {
 
 .task-expanded {
   border-bottom: 1px solid var(--line);
-  background: var(--bg);
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 27px,
+      var(--line) 27px,
+      var(--line) 28px
+    ),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel-2) 60%, transparent), var(--bg));
   padding: 16px;
+  border-left: 3px solid var(--ember);
 }
 
 .task-expanded:last-child {
@@ -2966,7 +2975,7 @@ dialog::backdrop {
 
 .overall-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
@@ -3043,6 +3052,57 @@ dialog::backdrop {
 
 .overall-bars rect.acct-dim {
   opacity: 0.16;
+}
+
+.overall-lines {
+  overflow: visible;
+}
+
+.overall-lines polyline {
+  transition: opacity 0.12s ease;
+}
+
+.overall-lines polyline.acct-dim {
+  opacity: 0.16;
+}
+
+.overall-lines circle {
+  transition: opacity 0.12s ease;
+}
+
+.overall-lines circle.acct-dim {
+  opacity: 0.16;
+}
+
+.chart-mode-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 2px;
+  align-self: center;
+}
+
+.chart-mode-btn {
+  all: unset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: background 0.12s, color 0.12s;
+}
+
+.chart-mode-btn:hover {
+  color: var(--ink);
+}
+
+.chart-mode-btn.active {
+  background: var(--ember);
+  color: #fff;
 }
 
 .overall-axis {
@@ -3799,4 +3859,30 @@ html[data-theme="light"] .depth-shadow {
   background-size: 300% 100%;
   animation: gradient-flow 6s ease infinite;
   border-radius: 1px;
+}
+
+/* PAY DAY overlay */
+.payday-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.payday-text {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(48px, 12vw, 120px);
+  font-weight: 800;
+  color: #ffd700;
+  text-shadow:
+    0 0 20px rgba(255, 215, 0, 0.6),
+    0 0 60px rgba(255, 215, 0, 0.3),
+    0 4px 12px rgba(0, 0, 0, 0.5);
+  letter-spacing: 0.06em;
+  user-select: none;
 }

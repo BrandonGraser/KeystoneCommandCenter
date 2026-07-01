@@ -188,6 +188,20 @@ async function init() {
   animatePageIn();
   state.pageAnimated = true;
   refreshIcons();
+  if (new Date().getDate() === 1) showPayday();
+}
+
+function showPayday() {
+  const overlay = document.createElement("div");
+  overlay.className = "payday-overlay";
+  overlay.innerHTML = `<span class="payday-text">PAY DAY!!!!</span>`;
+  document.body.appendChild(overlay);
+  if (typeof gsap !== "undefined") {
+    gsap.from(".payday-text", { scale: 0.3, opacity: 0, duration: 0.5, ease: "back.out(2)" });
+    gsap.to(".payday-overlay", { opacity: 0, delay: 2.5, duration: 0.5, onComplete: () => overlay.remove() });
+  } else {
+    setTimeout(() => overlay.remove(), 3000);
+  }
 }
 
 function animatePageIn() {
@@ -1953,7 +1967,8 @@ const accountsState = {
   avatar: "", // working avatar (data URL) while the dialog is open
   search: "",
   sort: "runout",
-  overallMetric: "views", // which stat the overall chart shows
+  overallMetric: "views",
+  overallChartMode: "bar",
   expanded: new Set() // account ids whose credentials panel is open
 };
 
@@ -2024,9 +2039,16 @@ function bindAccountEvents() {
   });
   els.accountOverall.addEventListener("click", (event) => {
     const tab = event.target.closest(".overall-tab");
-    if (!tab) return;
-    accountsState.overallMetric = tab.dataset.metric;
-    renderAccountOverall();
+    if (tab) {
+      accountsState.overallMetric = tab.dataset.metric;
+      renderAccountOverall();
+      return;
+    }
+    const modeBtn = event.target.closest(".chart-mode-btn");
+    if (modeBtn) {
+      accountsState.overallChartMode = modeBtn.dataset.mode;
+      renderAccountOverall();
+    }
   });
   // Hovering a bar segment or a legend entry highlights that account across
   // every bar and dims the rest.
@@ -2283,9 +2305,17 @@ function renderAccountOverall() {
   const yAxis = fracs.map((f) =>
     `<span style="top:${((1 - f) * 100).toFixed(1)}%">${formatCount(Math.round(maxTotal * f))}</span>`
   ).join("");
+  const mode = accountsState.overallChartMode;
+  const chartSvg = mode === "line"
+    ? lineChartSvg(contributors, maxTotal, days)
+    : stackedBarsSvg(contributors, maxTotal, days);
   const chart = grand > 0
-    ? `<div class="overall-yaxis">${yAxis}</div>${stackedBarsSvg(contributors, maxTotal, days)}`
+    ? `<div class="overall-yaxis">${yAxis}</div>${chartSvg}`
     : `<p class="detail-empty overall-empty">No ${escapeHtml(metric)} recorded in the last 14 days yet. Sync accounts to populate this.</p>`;
+  const modeToggle = `<div class="chart-mode-toggle">
+    <button type="button" class="chart-mode-btn ${mode === "bar" ? "active" : ""}" data-mode="bar" title="Stacked bars"><i data-lucide="bar-chart-3" style="width:14px;height:14px"></i></button>
+    <button type="button" class="chart-mode-btn ${mode === "line" ? "active" : ""}" data-mode="line" title="Line graph"><i data-lucide="trending-up" style="width:14px;height:14px"></i></button>
+  </div>`;
   const legend = contributors.map((c) =>
     `<span class="overall-legend-item" data-acct="${c.id}"><i style="background:${c.color}"></i>${escapeHtml(c.name)} <strong>${formatCount(c.total)}</strong></span>`
   ).join("");
@@ -2297,11 +2327,13 @@ function renderAccountOverall() {
         <p class="overall-total"><strong>${formatCount(grand)}</strong> ${escapeHtml(metric)}</p>
       </div>
       <div class="overall-tabs segmented">${tabs}</div>
+      ${modeToggle}
     </div>
     <div class="overall-chart ${grand > 0 ? "has-axis" : ""}">${chart}</div>
     ${grand > 0 ? `<div class="overall-axis">${labels.map((l) => `<span>${l}</span>`).join("")}</div>` : ""}
     ${legend ? `<div class="overall-legend">${legend}</div>` : ""}
   `;
+  refreshIcons();
 }
 
 function stackedBarsSvg(contributors, maxTotal, days) {
@@ -2325,6 +2357,32 @@ function stackedBarsSvg(contributors, maxTotal, days) {
     }
   }
   return `<svg class="overall-bars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${grid}${rects}</svg>`;
+}
+
+function lineChartSvg(contributors, maxTotal, days) {
+  const W = 700;
+  const H = 150;
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const y = ((1 - f) * H).toFixed(1);
+    return `<line class="overall-grid" x1="0" y1="${y}" x2="${W}" y2="${y}" vector-effect="non-scaling-stroke"></line>`;
+  }).join("");
+  let paths = "";
+  let dots = "";
+  for (const c of contributors) {
+    const points = [];
+    for (let p = 0; p < days; p++) {
+      const x = days > 1 ? (p / (days - 1)) * W : W / 2;
+      const y = H - (c.perDay[p] / maxTotal) * H;
+      points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    }
+    paths += `<polyline data-acct="${c.id}" fill="none" stroke="${c.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${points.join(" ")}" vector-effect="non-scaling-stroke"></polyline>`;
+    for (let p = 0; p < days; p++) {
+      const x = days > 1 ? (p / (days - 1)) * W : W / 2;
+      const y = H - (c.perDay[p] / maxTotal) * H;
+      dots += `<circle data-acct="${c.id}" data-tip="${escapeHtml(`${c.name}: ${formatCount(c.perDay[p])}`)}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="${c.color}" stroke="var(--bg)" stroke-width="1.5"></circle>`;
+    }
+  }
+  return `<svg class="overall-bars overall-lines" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${grid}${paths}${dots}</svg>`;
 }
 
 // Group collapse state, remembered per group name in localStorage.
