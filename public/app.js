@@ -2361,28 +2361,36 @@ function stackedBarsSvg(contributors, maxTotal, days) {
 
 function lineChartSvg(contributors, maxTotal, days) {
   const W = 700;
-  const H = 150;
+  const H = 220;
+  const pad = 8;
+  const plotH = H - pad * 2;
   const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
-    const y = ((1 - f) * H).toFixed(1);
+    const y = (pad + (1 - f) * plotH).toFixed(1);
     return `<line class="overall-grid" x1="0" y1="${y}" x2="${W}" y2="${y}" vector-effect="non-scaling-stroke"></line>`;
   }).join("");
   let paths = "";
   let dots = "";
   for (const c of contributors) {
-    const points = [];
+    const pts = [];
     for (let p = 0; p < days; p++) {
       const x = days > 1 ? (p / (days - 1)) * W : W / 2;
-      const y = H - (c.perDay[p] / maxTotal) * H;
-      points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+      const y = pad + plotH - (c.perDay[p] / maxTotal) * plotH;
+      pts.push({ x, y });
     }
-    paths += `<polyline data-acct="${c.id}" fill="none" stroke="${c.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${points.join(" ")}" vector-effect="non-scaling-stroke"></polyline>`;
-    for (let p = 0; p < days; p++) {
-      const x = days > 1 ? (p / (days - 1)) * W : W / 2;
-      const y = H - (c.perDay[p] / maxTotal) * H;
-      dots += `<circle data-acct="${c.id}" data-tip="${escapeHtml(`${c.name}: ${formatCount(c.perDay[p])}`)}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="${c.color}" stroke="var(--bg)" stroke-width="1.5"></circle>`;
+    let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+    for (let i = 1; i < pts.length; i++) {
+      const prev = pts[i - 1];
+      const cur = pts[i];
+      const tension = (cur.x - prev.x) * 0.35;
+      d += ` C${(prev.x + tension).toFixed(1)},${prev.y.toFixed(1)} ${(cur.x - tension).toFixed(1)},${cur.y.toFixed(1)} ${cur.x.toFixed(1)},${cur.y.toFixed(1)}`;
+    }
+    paths += `<path data-acct="${c.id}" fill="none" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="${d}" vector-effect="non-scaling-stroke" opacity="0.85"></path>`;
+    for (const pt of pts) {
+      const idx = pts.indexOf(pt);
+      dots += `<circle data-acct="${c.id}" data-tip="${escapeHtml(`${c.name}: ${formatCount(c.perDay[idx])}`)}" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="2" fill="${c.color}" stroke="var(--bg)" stroke-width="1"></circle>`;
     }
   }
-  return `<svg class="overall-bars overall-lines" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">${grid}${paths}${dots}</svg>`;
+  return `<svg class="overall-bars overall-lines" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${grid}${paths}${dots}</svg>`;
 }
 
 // Group collapse state, remembered per group name in localStorage.
