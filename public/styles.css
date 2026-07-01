@@ -3223,6 +3223,10 @@ body.chat-resizing .shell {
   transform: translateY(-50%);
 }
 
+.chat-sidebar:not(.collapsed) .chat-sidebar-toggle {
+  display: none;
+}
+
 .chat-sidebar-toggle .chat-badge {
   display: none;
   position: absolute;
