@@ -1733,7 +1733,7 @@ select.status-badge.inline-status-select:hover {
 --------------------------------------------------------------- */
 
 dialog {
-  width: min(780px, calc(100vw - 24px));
+  width: min(960px, calc(100vw - 24px));
   max-height: calc(100vh - 24px);
   border: 1px solid var(--line-strong);
   border-radius: 16px;
@@ -1874,7 +1874,7 @@ dialog::backdrop {
   width: 100%;
   height: 6px;
   border-radius: 3px;
-  background: linear-gradient(to right, var(--good) var(--urgency-pct, 44%), var(--line) var(--urgency-pct, 44%));
+  background: linear-gradient(to right, var(--ember) var(--urgency-pct, 50%), var(--line) var(--urgency-pct, 50%));
   outline: none;
   cursor: pointer;
   --urgency-pct: 44%;
@@ -1886,7 +1886,7 @@ dialog::backdrop {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--ink);
+  background: var(--ember);
   border: 2px solid var(--bg);
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
   cursor: pointer;
@@ -1896,7 +1896,7 @@ dialog::backdrop {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--ink);
+  background: var(--ember);
   border: 2px solid var(--bg);
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
   cursor: pointer;
@@ -3162,6 +3162,7 @@ dialog::backdrop {
   transform: translateX(calc(var(--chat-w) * -1));
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  z-index: 1;
 }
 
 .chat-sidebar.resizing {

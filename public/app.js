@@ -529,7 +529,10 @@ function bindEvents() {
   });
   els.taskUrgency.addEventListener("input", () => {
     els.taskUrgencyValue.textContent = els.taskUrgency.value;
-    els.taskUrgency.style.setProperty("--urgency-pct", `${((els.taskUrgency.value - 1) / 9) * 100}%`);
+    els.taskUrgency.style.setProperty("--urgency-pct", `${((els.taskUrgency.value - 1) / 4) * 100}%`);
+  });
+  [els.taskDialog, els.ringDialog, els.resourceDialog, els.accountDialog].forEach(d => {
+    d.addEventListener("cancel", e => e.preventDefault());
   });
   els.taskCategory.addEventListener("change", () => applyCategoryTone(els.taskCategory, els.taskCategory.value));
   document.querySelector("#categoryPillPicker")?.addEventListener("click", (event) => {
@@ -734,7 +737,7 @@ function renderTaskRow(task) {
         <div class="task-tags">
           <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
           ${statusSelect}
-          <span class="urgency-badge urgency-${urgencyTier(task.urgency)}" title="Urgency ${task.urgency ?? 5}/10">${task.urgency ?? 5}</span>
+          <span class="urgency-badge urgency-${urgencyTier(task.urgency)}" title="Urgency ${task.urgency ?? 3}/5">${task.urgency ?? 3}</span>
           ${task.image_count ? `<span class="img-count">${task.image_count} img</span>` : ""}
           ${task.last_message && hasUnreadMessages(task) ? `<span class="unread-msg-badge">New message</span>` : ""}
         </div>
@@ -974,9 +977,9 @@ function openTaskDialog(task = null) {
   renderCategoryPillPicker(els.taskCategory.value);
   els.taskDue.value = task ? (task.due_date || "") : today();
   els.taskDone.checked = Boolean(task?.done);
-  els.taskUrgency.value = task?.urgency ?? 5;
+  els.taskUrgency.value = task?.urgency ?? 3;
   els.taskUrgencyValue.textContent = els.taskUrgency.value;
-  els.taskUrgency.style.setProperty("--urgency-pct", `${((els.taskUrgency.value - 1) / 9) * 100}%`);
+  els.taskUrgency.style.setProperty("--urgency-pct", `${((els.taskUrgency.value - 1) / 4) * 100}%`);
   fillWorkflowInputs(task?.workflow_steps || []);
   fillLinkInputs((task?.links || []).filter((link) => !isNoteLink(link)));
   fillNoteLinkInputs((task?.links || []).filter(isNoteLink), els.taskAssignee.value);
@@ -1013,7 +1016,7 @@ async function saveTask(event) {
     category: els.taskCategory.value,
     due_date: els.taskDue.value || null,
     done: els.taskDone.checked,
-    urgency: Number(els.taskUrgency.value) || 5,
+    urgency: Number(els.taskUrgency.value) || 3,
     workflow_steps: collectWorkflowInputs(),
     links: [...collectLinkInputs(), ...collectNoteLinkInputs()],
     notes: parseNoteTextarea(els.taskNotes.value)
@@ -1914,9 +1917,9 @@ function renderCategoryPillPicker(selectedCategory = "Misc.") {
 }
 
 function urgencyTier(value) {
-  const v = value ?? 5;
-  if (v >= 8) return "high";
-  if (v >= 4) return "mid";
+  const v = value ?? 3;
+  if (v >= 4) return "high";
+  if (v >= 2) return "mid";
   return "low";
 }
 
