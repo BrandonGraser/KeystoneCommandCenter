@@ -3058,6 +3058,7 @@ dialog::backdrop {
 
 .overall-lines {
   overflow: visible;
+  height: 220px;
 }
 
 .overall-lines polyline {

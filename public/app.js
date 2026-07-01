@@ -2382,7 +2382,7 @@ function lineChartSvg(contributors, maxTotal, days) {
       dots += `<circle data-acct="${c.id}" data-tip="${escapeHtml(`${c.name}: ${formatCount(c.perDay[p])}`)}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="${c.color}" stroke="var(--bg)" stroke-width="1.5"></circle>`;
     }
   }
-  return `<svg class="overall-bars overall-lines" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${grid}${paths}${dots}</svg>`;
+  return `<svg class="overall-bars overall-lines" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">${grid}${paths}${dots}</svg>`;
 }
 
 // Group collapse state, remembered per group name in localStorage.
