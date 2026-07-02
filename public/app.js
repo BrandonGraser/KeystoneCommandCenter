@@ -141,8 +141,6 @@ const els = {
   accountEmail: document.querySelector("#accountEmail"),
   accountPassword: document.querySelector("#accountPassword"),
   accountScheduledThrough: document.querySelector("#accountScheduledThrough"),
-  accountSteps: document.querySelector("#accountSteps"),
-  addAccountStep: document.querySelector("#addAccountStep"),
   chatSidebar: document.querySelector("#chatSidebar"),
   chatSidebarToggle: document.querySelector("#chatSidebarToggle"),
   chatChannels: document.querySelector("#chatChannels"),
@@ -1957,7 +1955,6 @@ function taskStatusMeta(status, done = false) {
 // Fully independent of the task board: own state, render, dialog, API.
 // ===================================================================
 
-const DEFAULT_ACCOUNT_STEPS_UI = ["AI", "Editor", "Scheduler", "Poster"];
 
 const accountsState = {
   accounts: [],
@@ -1999,18 +1996,6 @@ function bindAccountEvents() {
   els.syncAllAccounts.addEventListener("click", syncAllAccountsAction);
   els.closeAccountDialog.addEventListener("click", () => els.accountDialog.close());
   els.cancelAccount.addEventListener("click", () => els.accountDialog.close());
-  els.addAccountStep.addEventListener("click", () => {
-    accountsState.steps.push({ label: "", assignee: "" });
-    renderAccountSteps();
-  });
-  els.accountSteps.addEventListener("input", syncStepFromEvent);
-  els.accountSteps.addEventListener("change", syncStepFromEvent);
-  els.accountSteps.addEventListener("click", (event) => {
-    const remove = event.target.closest(".account-step-remove");
-    if (!remove) return;
-    accountsState.steps.splice(Number(remove.dataset.stepIndex), 1);
-    renderAccountSteps();
-  });
   els.accountForm.addEventListener("submit", saveAccount);
   els.deleteAccount.addEventListener("click", deleteCurrentAccount);
   els.accountBoard.addEventListener("click", onAccountBoardClick);
@@ -2428,14 +2413,6 @@ function runoutState(dateStr) {
 
 function renderAccountRow(account) {
   const runout = runoutState(account.runout_date);
-  const stepChips = (account.steps || []).map((step) => `
-    <span class="account-step-chip">
-      <span class="account-step-chip-label">${escapeHtml(step.label)}</span>
-      ${step.assignee
-        ? `<span class="author-name author-${authorSlug(step.assignee)}">${escapeHtml(step.assignee)}</span>`
-        : `<span class="account-step-unassigned">—</span>`}
-    </span>
-  `).join("");
   const links = [];
   if (account.ae_project_url) links.push(`<a href="${escapeHtml(account.ae_project_url)}" target="_blank" rel="noreferrer">AE Project</a>`);
   if (account.tutorial_url) links.push(`<a href="${escapeHtml(account.tutorial_url)}" target="_blank" rel="noreferrer">Tutorial</a>`);
@@ -2450,7 +2427,6 @@ function renderAccountRow(account) {
           <span class="runout-badge runout-${runout.className}" title="${escapeHtml(runout.title)}">${escapeHtml(runout.label)}</span>
           ${account.upload_url ? `<a class="account-upload-btn" href="${escapeHtml(account.upload_url)}" target="_blank" rel="noreferrer" title="Open the upload link">Upload</a>` : ""}
         </div>
-        <div class="account-steps-row">${stepChips || `<span class="detail-empty">No steps</span>`}</div>
         ${renderAccountInlineStats(account)}
         ${links.length ? `<div class="account-links">${links.join("")}</div>` : ""}
       </div>
@@ -2714,10 +2690,6 @@ function openAccountDialog(account = null) {
   populateGroupOptions();
   accountsState.avatar = account?.avatar || "";
   renderAvatarPreview();
-  accountsState.steps = account
-    ? (account.steps || []).map((step) => ({ label: step.label, assignee: step.assignee || "" }))
-    : DEFAULT_ACCOUNT_STEPS_UI.map((label) => ({ label, assignee: "" }));
-  renderAccountSteps();
   els.deleteAccount.hidden = !account;
   els.accountDialog.showModal();
 }
@@ -2730,27 +2702,6 @@ function populateGroupOptions() {
   els.accountGroupList.innerHTML = names.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
 }
 
-function renderAccountSteps() {
-  els.accountSteps.innerHTML = accountsState.steps.map((step, index) => `
-    <div class="account-step-item">
-      <input class="account-step-input" data-step-index="${index}" data-field="label" value="${escapeHtml(step.label)}" placeholder="Step (e.g. Editor)" aria-label="Step name">
-      <select class="account-step-select" data-step-index="${index}" data-field="assignee" aria-label="Assignee">
-        <option value="">Unassigned</option>
-        ${state.assignees.map((name) => `<option value="${escapeHtml(name)}"${name === step.assignee ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
-      </select>
-      <button type="button" class="account-step-remove" data-step-index="${index}" title="Remove step">×</button>
-    </div>
-  `).join("");
-}
-
-// Keep the in-memory step list in sync with edits so add/remove re-renders
-// don't wipe out what the user just typed.
-function syncStepFromEvent(event) {
-  const field = event.target.closest("[data-field]");
-  if (!field) return;
-  const index = Number(field.dataset.stepIndex);
-  if (accountsState.steps[index]) accountsState.steps[index][field.dataset.field] = field.value;
-}
 
 async function saveAccount(event) {
   event.preventDefault();
@@ -2768,10 +2719,7 @@ async function saveAccount(event) {
     password: els.accountPassword.value,
     scheduled_through: els.accountScheduledThrough.value || "",
     group_name: els.accountGroup.value.trim(),
-    avatar: accountsState.avatar || "",
-    steps: accountsState.steps
-      .map((step) => ({ label: step.label.trim(), assignee: step.assignee }))
-      .filter((step) => step.label)
+    avatar: accountsState.avatar || ""
   };
   if (!payload.name) {
     showNotice("Enter an account name.", "bad");
