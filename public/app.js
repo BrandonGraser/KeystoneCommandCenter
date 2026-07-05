@@ -114,6 +114,7 @@ const els = {
   tasksView: document.querySelector("#tasksView"),
   accountsView: document.querySelector("#accountsView"),
   accountBoard: document.querySelector("#accountBoard"),
+  syncProgress: document.querySelector("#syncProgress"),
   accountMetrics: document.querySelector("#accountMetrics"),
   accountOverall: document.querySelector("#accountOverall"),
   accountSearch: document.querySelector("#accountSearch"),
@@ -1963,7 +1964,9 @@ const accountsState = {
   overview: null, // /api/metrics/overview payload for the current window
   topVideos: [], // cross-account leaderboard for the current window
   accountVideos: {}, // accountId -> top videos, fetched on expand
-  expanded: new Set() // account ids whose credentials panel is open
+  expanded: new Set(), // account ids whose credentials panel is open
+  flash: new Set(), // account ids that just finished syncing — rows flash once
+  syncing: false // a Sync All run is in progress
 };
 
 const UNGROUPED_LABEL = "Ungrouped";
@@ -2198,6 +2201,9 @@ function renderAccounts() {
       </section>
     `;
   }).join("");
+  // Flash classes are one-shot: rows just rendered play their animation once,
+  // and the next render won't re-add it.
+  accountsState.flash.clear();
   refreshIcons();
 }
 
@@ -2554,8 +2560,9 @@ function renderAccountRow(account) {
   if (account.ae_project_url) links.push(`<a href="${escapeHtml(account.ae_project_url)}" target="_blank" rel="noreferrer">AE Project</a>`);
   if (account.tutorial_url) links.push(`<a href="${escapeHtml(account.tutorial_url)}" target="_blank" rel="noreferrer">Tutorial</a>`);
   const expanded = accountsState.expanded.has(account.id);
+  const flash = accountsState.flash.has(account.id);
   return `
-    <article class="account-row ${expanded ? "expanded" : ""}" data-account-id="${account.id}">
+    <article class="account-row ${expanded ? "expanded" : ""}${flash ? " just-synced" : ""}" data-account-id="${account.id}">
       ${renderAccountAvatar(account)}
       <div class="account-main">
         <div class="account-headline">
@@ -2840,7 +2847,7 @@ async function onAccountBoardClick(event) {
     return;
   }
   if (event.target.closest("[data-action='sync-account']")) {
-    await syncAccount(id);
+    await syncAccount(id, event.target.closest("[data-action='sync-account']"));
     return;
   }
   if (event.target.closest("[data-action='disconnect-tiktok']")) {
@@ -2927,32 +2934,96 @@ async function deleteCurrentAccount() {
   await loadAccounts();
 }
 
-async function syncAccount(id) {
+async function syncAccount(id, button = null) {
   try {
-    showNotice("Syncing metrics…");
+    button?.classList.add("syncing");
+    if (button) button.disabled = true;
     await api(`/api/tiktok-accounts/${id}/sync`, { method: "POST" });
+    accountsState.flash.add(id);
     await loadAccounts();
     showNotice("Sync complete.", "good");
   } catch (error) {
     showNotice(error.message, "bad");
+    button?.classList.remove("syncing");
+    if (button) button.disabled = false;
   }
 }
 
+// Sync All runs client-side, one request per account (3 at a time), so the
+// progress panel can show exactly which accounts are syncing and how far
+// along the run is. Rows light up as their fresh numbers land.
 async function syncAllAccountsAction() {
-  try {
-    els.syncAllAccounts.disabled = true;
-    showNotice("Syncing all accounts…");
-    const data = await api("/api/tiktok-accounts/sync", { method: "POST" });
-    await loadAccounts();
-    const ok = data.results?.filter((r) => r.ok).length || 0;
-    const failed = data.results?.filter((r) => !r.ok).length || 0;
-    const msg = failed ? `Synced ${ok} account${ok === 1 ? "" : "s"}, ${failed} failed.` : `All ${ok} account${ok === 1 ? "" : "s"} synced.`;
-    showNotice(msg, failed ? "" : "good");
-  } catch (error) {
-    showNotice(error.message, "bad");
-  } finally {
-    els.syncAllAccounts.disabled = false;
+  if (accountsState.syncing) return;
+  const targets = accountsState.accounts.filter((account) => account.tiktok_connected);
+  const skipped = accountsState.accounts.length - targets.length;
+  if (!targets.length) {
+    showNotice("No TikTok-connected accounts to sync — connect an account first.", "bad");
+    return;
   }
+
+  accountsState.syncing = true;
+  els.syncAllAccounts.disabled = true;
+  els.syncAllAccounts.classList.add("syncing");
+  const progress = { done: 0, ok: 0, failed: 0, failures: [], active: new Set() };
+  renderSyncProgress(progress, targets.length);
+
+  let next = 0;
+  const worker = async () => {
+    while (next < targets.length) {
+      const account = targets[next++];
+      progress.active.add(account.name);
+      renderSyncProgress(progress, targets.length);
+      try {
+        const data = await api(`/api/tiktok-accounts/${account.id}/sync`, { method: "POST" });
+        const index = accountsState.accounts.findIndex((a) => a.id === account.id);
+        if (index >= 0 && data.account) accountsState.accounts[index] = data.account;
+        progress.ok++;
+        accountsState.flash.add(account.id);
+      } catch (error) {
+        progress.failed++;
+        progress.failures.push(`${account.name}: ${error.message}`);
+      }
+      progress.done++;
+      progress.active.delete(account.name);
+      renderSyncProgress(progress, targets.length);
+      renderAccounts(); // fresh numbers appear row by row as each sync lands
+    }
+  };
+
+  try {
+    await Promise.all(Array.from({ length: Math.min(3, targets.length) }, worker));
+  } finally {
+    accountsState.syncing = false;
+    els.syncAllAccounts.disabled = false;
+    els.syncAllAccounts.classList.remove("syncing");
+    els.syncProgress.hidden = true;
+  }
+
+  await loadAccounts(); // refresh the overall chart + leaderboards once at the end
+  const skippedNote = skipped ? ` (${skipped} not connected, skipped)` : "";
+  if (progress.failed) {
+    const detail = progress.failures.slice(0, 3).join(" · ") + (progress.failures.length > 3 ? " · …" : "");
+    showNotice(`Synced ${progress.ok} of ${targets.length}${skippedNote} — ${progress.failed} failed: ${detail}`, "bad");
+  } else {
+    showNotice(`All ${progress.ok} account${progress.ok === 1 ? "" : "s"} synced${skippedNote}.`, "good");
+  }
+}
+
+function renderSyncProgress(progress, total) {
+  if (!els.syncProgress) return;
+  const pct = total ? Math.round((progress.done / total) * 100) : 0;
+  const active = [...progress.active];
+  const current = active.length
+    ? `Syncing ${active.slice(0, 3).map(escapeHtml).join(", ")}${active.length > 3 ? "…" : ""}`
+    : "Finishing up…";
+  els.syncProgress.hidden = false;
+  els.syncProgress.innerHTML = `
+    <div class="sync-progress-head">
+      <span class="sync-progress-label"><span class="sync-progress-spinner"></span> ${current}</span>
+      <span class="sync-progress-tally">${progress.done}/${total}${progress.failed ? ` · ${progress.failed} failed` : ""}</span>
+    </div>
+    <div class="sync-progress-bar"><i style="width:${pct}%"></i></div>
+  `;
 }
 
 // ===================================================================

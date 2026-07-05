@@ -17,6 +17,9 @@
         <button type="button" class="main-tab" data-tab="notes">Notes</button>
       </nav>
 
+      <!-- Global notice: outside the tab views so feedback shows on every tab -->
+      <div id="notice" class="notice" hidden></div>
+
       <div id="tasksView">
       <section class="metrics" id="metrics"></section>
 
@@ -67,8 +70,6 @@
         </div>
       </section>
 
-      <div id="notice" class="notice" hidden></div>
-
       <section class="workspace">
         <div class="task-board" id="taskBoard"></div>
       </section>
@@ -99,6 +100,7 @@
             <button type="button" id="addAccount" class="primary"><i data-lucide="plus" style="width:15px;height:15px"></i> Add account</button>
           </div>
         </section>
+        <div id="syncProgress" class="sync-progress" hidden></div>
         <div class="account-board" id="accountBoard"></div>
       </div>
 
