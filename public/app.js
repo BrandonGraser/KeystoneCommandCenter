@@ -157,7 +157,7 @@ function refreshIcons() {
   if (typeof lucide !== "undefined") lucide.createIcons();
 }
 
-const SYNC_INTERVAL_MS = 5000;
+const SYNC_INTERVAL_MS = 15000;
 
 init();
 
@@ -174,7 +174,7 @@ async function init() {
   renderLinkInputs();
   applyStoredResourceCollapse();
   renderChatChannels();
-  await Promise.all([loadTasks(), loadResources(), initChatCounts()]);
+  await initialLoad();
   if (new URLSearchParams(location.search).get("tiktok") === "connected") {
     switchTab("accounts");
     showNotice("TikTok connected — engagement metrics updated.", "good");
@@ -235,15 +235,12 @@ function animatePageIn() {
 // --- Magic Card: mouse-following spotlight on cards ---
 function initMagicCards() {
   document.addEventListener("mousemove", (e) => {
-    const cards = document.querySelectorAll(".task-row, .account-row, .metric");
-    for (const card of cards) {
-      const rect = card.getBoundingClientRect();
-      if (e.clientX >= rect.left && e.clientX <= rect.right &&
-          e.clientY >= rect.top && e.clientY <= rect.bottom) {
-        card.style.setProperty("--magic-x", `${e.clientX - rect.left}px`);
-        card.style.setProperty("--magic-y", `${e.clientY - rect.top}px`);
-      }
-    }
+    // Only the card under the cursor needs its spotlight moved.
+    const card = e.target.closest?.(".task-row, .account-row, .metric");
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
+    card.style.setProperty("--magic-x", `${e.clientX - rect.left}px`);
+    card.style.setProperty("--magic-y", `${e.clientY - rect.top}px`);
   });
 }
 
@@ -301,9 +298,8 @@ window.addEventListener("unhandledrejection", (event) => {
 
 function startLiveSync() {
   window.setInterval(() => { syncNow(); }, SYNC_INTERVAL_MS);
-  window.setInterval(() => { pollChat(); }, SYNC_INTERVAL_MS);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) { syncNow(); pollChat(); }
+    if (!document.hidden) syncNow();
   });
 }
 
@@ -314,41 +310,40 @@ function getAllChannels() {
   return ["general", ...allUsers.filter((u) => u !== user).map((u) => dmChannel(user, u))];
 }
 
-async function pollChat() {
-  if (document.hidden) return;
+// First page load: one /api/sync call seeds tasks, counts, resources, and
+// per-channel chat counts (everything the recurring sync also refreshes).
+async function initialLoad() {
+  const data = await api(`/api/sync?${taskQueryParams()}`);
+  state.tasks = data.tasks || [];
+  renderTasks();
+  updateMetricCounts(data.counts);
+  renderResources(data.resources || []);
+  for (const ch of getAllChannels()) {
+    const count = data.chatCounts?.[ch] ?? 0;
+    state.chatSeenCounts[ch] = count;
+    state.chatChannelCounts[ch] = count;
+  }
+  renderChatChannels();
+}
+
+// New-message detection off the cheap per-channel counts that ride along on
+// /api/sync — full message bodies are only fetched for the open channel.
+function handleChatCounts(chatCounts = {}) {
   const isCollapsed = els.chatSidebar.classList.contains("collapsed");
   let anyNew = false;
-  try {
-    const channels = getAllChannels();
-    const results = await Promise.all(
-      channels.map((ch) => api(`/api/chat/${encodeURIComponent(ch)}/messages`).then((d) => ({ ch, msgs: d.messages || [] })))
-    );
-    for (const { ch, msgs } of results) {
-      state.chatChannelCounts[ch] = msgs.length;
-      if (msgs.length > (state.chatSeenCounts[ch] ?? msgs.length)) {
-        anyNew = true;
-      }
-      if (ch === state.chatChannel) {
-        state.chatKnownCount = msgs.length;
-        const hasNew = msgs.length > state.chatLastSeenCount;
-        if (isCollapsed) {
-          if (hasNew) els.chatBadge.classList.add("visible");
-        } else {
-          state.chatLastSeenCount = msgs.length;
-          state.chatSeenCounts[ch] = msgs.length;
-          if (JSON.stringify(msgs) !== JSON.stringify(state.chatMessages)) {
-            state.chatMessages = msgs;
-            renderChatMessages();
-          }
-        }
-      }
-    }
-    if (anyNew) {
-      playPing();
-      if (isCollapsed) els.chatBadge.classList.add("visible");
-      renderChatChannels();
-    }
-  } catch {}
+  for (const ch of getAllChannels()) {
+    const count = chatCounts[ch] ?? 0;
+    state.chatChannelCounts[ch] = count;
+    if (count > (state.chatSeenCounts[ch] ?? count)) anyNew = true;
+  }
+  if (!anyNew) return;
+  playPing();
+  if (isCollapsed) {
+    els.chatBadge.classList.add("visible");
+  } else if ((chatCounts[state.chatChannel] ?? 0) > (state.chatSeenCounts[state.chatChannel] ?? 0)) {
+    loadChatMessages();
+  }
+  renderChatChannels();
 }
 
 let syncInFlight = false;
@@ -362,11 +357,7 @@ async function syncNow() {
 
   syncInFlight = true;
   try {
-    const [bootstrap, data, resources] = await Promise.all([
-      api("/api/bootstrap"),
-      api(`/api/tasks?${taskQueryParams()}`),
-      api("/api/resources")
-    ]);
+    const data = await api(`/api/sync?${taskQueryParams()}`);
     if (JSON.stringify(data.tasks) !== JSON.stringify(state.tasks)) {
       state.tasks = data.tasks;
       if (state.expandedTaskId) {
@@ -383,8 +374,9 @@ async function syncNow() {
       await loadTaskMessages(state.expandedTaskId);
       if (JSON.stringify(state.taskMessages[state.expandedTaskId] || []) !== before) renderTasks();
     }
-    updateMetricCounts(bootstrap.counts);
-    renderResources(resources.resources);
+    updateMetricCounts(data.counts);
+    renderResources(data.resources);
+    handleChatCounts(data.chatCounts);
   } catch {
     // Network hiccups during background sync are non-fatal; next tick retries.
   } finally {
@@ -1966,6 +1958,11 @@ const accountsState = {
   sort: "runout",
   overallMetric: "views",
   overallChartMode: "bar",
+  windowDays: 14, // 14 | 30 | 90 — drives the overall chart + leaderboards
+  chartSource: "posted", // posted (by post date) | growth (daily gained) | followers
+  overview: null, // /api/metrics/overview payload for the current window
+  topVideos: [], // cross-account leaderboard for the current window
+  accountVideos: {}, // accountId -> top videos, fetched on expand
   expanded: new Set() // account ids whose credentials panel is open
 };
 
@@ -2023,6 +2020,22 @@ function bindAccountEvents() {
     renderAvatarPreview();
   });
   els.accountOverall.addEventListener("click", (event) => {
+    const windowBtn = event.target.closest(".overall-window-btn");
+    if (windowBtn) {
+      accountsState.windowDays = Number(windowBtn.dataset.days) || 14;
+      accountsState.accountVideos = {}; // per-account lists are window-scoped
+      loadAccounts();
+      return;
+    }
+    const sourceBtn = event.target.closest(".overall-source-btn");
+    if (sourceBtn) {
+      accountsState.chartSource = sourceBtn.dataset.source;
+      // Metric tab sets differ per source (posts vs shares) — reset if invalid.
+      const metrics = OVERALL_METRICS[accountsState.chartSource] || [];
+      if (!metrics.some(([k]) => k === accountsState.overallMetric)) accountsState.overallMetric = "views";
+      renderAccountOverall();
+      return;
+    }
     const tab = event.target.closest(".overall-tab");
     if (tab) {
       accountsState.overallMetric = tab.dataset.metric;
@@ -2127,8 +2140,15 @@ function animateTabIn(tab) {
 }
 
 async function loadAccounts() {
-  const data = await api("/api/tiktok-accounts");
+  const days = accountsState.windowDays;
+  const [data, overview, top] = await Promise.all([
+    api("/api/tiktok-accounts"),
+    api(`/api/metrics/overview?days=${days}`).catch(() => null),
+    api(`/api/videos/top?days=${days}&limit=12`).catch(() => ({ videos: [] }))
+  ]);
   accountsState.accounts = data.accounts || [];
+  accountsState.overview = overview;
+  accountsState.topVideos = top.videos || [];
   accountsState.loaded = true;
   renderAccounts();
 }
@@ -2241,91 +2261,184 @@ function accountColor(index) {
   return `hsl(${hue} ${sat}% ${light}%)`;
 }
 
-const OVERALL_METRICS = [["views", "Views"], ["likes", "Likes"], ["comments", "Comments"], ["posts", "Posts"]];
+const OVERALL_METRICS = {
+  posted: [["views", "Views"], ["likes", "Likes"], ["comments", "Comments"], ["posts", "Posts"]],
+  growth: [["views", "Views"], ["likes", "Likes"], ["comments", "Comments"], ["shares", "Shares"]]
+};
+const WINDOW_OPTIONS = [14, 30, 90];
+const CHART_SOURCES = [["posted", "By post date"], ["growth", "Daily gained"], ["followers", "Followers"]];
 
-// Top-of-page overall chart: a per-day stacked bar where each color is one
-// account's contribution to the selected metric over the last 14 days.
-function renderAccountOverall() {
-  if (!els.accountOverall) return;
-  const metric = accountsState.overallMetric;
-  const days = 14;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const axis0 = today.getTime() - (days - 1) * 86400000;
-  const labels = [];
-  for (let i = 0; i < days; i++) {
-    const d = new Date(axis0 + i * 86400000);
-    labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
+function lastNonNull(values) {
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (values[i] != null) return values[i];
   }
+  return null;
+}
+
+// Per-account series for the overall chart, pulled from the overview payload.
+function overallContributors(metric) {
+  const overview = accountsState.overview;
+  if (!overview) return [];
+  const source = accountsState.chartSource;
 
   // Stable colors keyed by account id (sorted) so they don't shift with UI sort.
   const colorOf = {};
   [...accountsState.accounts].sort((a, b) => a.id - b.id).forEach((a, i) => { colorOf[a.id] = accountColor(i); });
 
   const contributors = [];
-  for (const account of accountsState.accounts) {
-    let daily = null;
-    try { daily = JSON.parse(account.metrics_daily); } catch { /* none */ }
-    if (!daily || !Array.isArray(daily[metric])) continue;
-    const startMs = new Date(`${daily.start}T00:00:00`).getTime();
-    const perDay = new Array(days).fill(0);
-    daily[metric].forEach((v, j) => {
-      const pos = Math.round((startMs + j * 86400000 - axis0) / 86400000);
-      if (pos >= 0 && pos < days) perDay[pos] += Number(v) || 0;
-    });
-    const total = perDay.reduce((s, x) => s + x, 0);
-    if (total > 0) contributors.push({ id: account.id, name: account.name, color: colorOf[account.id], perDay, total });
+  for (const acct of overview.accounts) {
+    let perDay = null;
+    if (source === "followers") perDay = acct.growth?.followers || null;
+    else if (source === "growth") perDay = acct.growth?.[metric] || null;
+    else perDay = acct.posted?.[metric] || null;
+    if (!perDay) continue;
+
+    if (source === "followers") {
+      const latest = lastNonNull(perDay);
+      if (latest == null) continue;
+      contributors.push({ id: acct.id, name: acct.name, color: colorOf[acct.id] || accountColor(0), perDay, total: latest, absolute: true });
+    } else {
+      const total = perDay.reduce((s, x) => s + (Number(x) || 0), 0);
+      if (total > 0) contributors.push({ id: acct.id, name: acct.name, color: colorOf[acct.id] || accountColor(0), perDay, total });
+    }
   }
   contributors.sort((a, b) => b.total - a.total);
+  return contributors;
+}
 
-  const dayTotals = new Array(days).fill(0);
-  for (const c of contributors) c.perDay.forEach((v, p) => { dayTotals[p] += v; });
-  const maxTotal = Math.max(1, ...dayTotals);
+// Top-of-page overall chart: every account's contribution to the selected
+// metric over the selected window, as stacked bars or lines. Three sources:
+// "by post date" (video totals on their post day), "daily gained" (snapshot
+// diffs), and absolute follower counts.
+function renderAccountOverall() {
+  if (!els.accountOverall) return;
+  const source = accountsState.chartSource;
+  const metric = source === "followers" ? "followers" : accountsState.overallMetric;
+  const days = accountsState.overview?.days || accountsState.windowDays;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const axis0 = today.getTime() - (days - 1) * 86400000;
+  // Thin the x-axis labels on long windows so they stay readable.
+  const labelStep = Math.max(1, Math.ceil(days / 14));
+  const labels = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(axis0 + i * 86400000);
+    labels.push(i % labelStep === 0 || i === days - 1 ? `${d.getMonth() + 1}/${d.getDate()}` : "");
+  }
+
+  const contributors = overallContributors(metric);
+
+  const stacked = source !== "followers" && accountsState.overallChartMode === "bar";
+  let maxTotal = 1;
+  if (stacked) {
+    const dayTotals = new Array(days).fill(0);
+    for (const c of contributors) c.perDay.forEach((v, p) => { dayTotals[p] += Number(v) || 0; });
+    maxTotal = Math.max(1, ...dayTotals);
+  } else {
+    for (const c of contributors) {
+      for (const v of c.perDay) if (v != null) maxTotal = Math.max(maxTotal, Number(v) || 0);
+    }
+  }
   const grand = contributors.reduce((s, c) => s + c.total, 0);
 
-  const tabs = OVERALL_METRICS.map(([k, label]) =>
+  const windowTabs = WINDOW_OPTIONS.map((d) =>
+    `<button type="button" class="overall-window-btn ${d === accountsState.windowDays ? "active" : ""}" data-days="${d}">${d}d</button>`
+  ).join("");
+  const sourceTabs = CHART_SOURCES.map(([k, label]) =>
+    `<button type="button" class="overall-source-btn ${k === source ? "active" : ""}" data-source="${k}">${label}</button>`
+  ).join("");
+  const metricTabs = source === "followers" ? "" : OVERALL_METRICS[source].map(([k, label]) =>
     `<button type="button" class="overall-tab ${k === metric ? "active" : ""}" data-metric="${k}">${label}</button>`
   ).join("");
+
   const fracs = [1, 0.75, 0.5, 0.25, 0];
   const yAxis = fracs.map((f) =>
     `<span style="top:${((1 - f) * 100).toFixed(1)}%">${formatCount(Math.round(maxTotal * f))}</span>`
   ).join("");
-  const mode = accountsState.overallChartMode;
+  const mode = source === "followers" ? "line" : accountsState.overallChartMode;
   const chartW = (els.accountOverall?.offsetWidth || 800) - 44;
   const chartSvg = mode === "line"
     ? lineChartSvg(contributors, maxTotal, days, chartW)
     : stackedBarsSvg(contributors, maxTotal, days);
-  const chart = grand > 0
+  const emptyMessage = source === "growth"
+    ? "No daily-growth history yet — it starts accruing with every sync from now on."
+    : source === "followers"
+      ? "No follower data yet — hit Reconnect on each account to grant the new stats permission, then Sync."
+      : `No ${escapeHtml(metric)} recorded in this window yet. Sync accounts to populate this.`;
+  const chart = contributors.length
     ? `<div class="overall-yaxis">${yAxis}</div>${chartSvg}`
-    : `<p class="detail-empty overall-empty">No ${escapeHtml(metric)} recorded in the last 14 days yet. Sync accounts to populate this.</p>`;
-  const modeToggle = `<div class="chart-mode-toggle">
+    : `<p class="detail-empty overall-empty">${emptyMessage}</p>`;
+  const modeToggle = source === "followers" ? "" : `<div class="chart-mode-toggle">
     <button type="button" class="chart-mode-btn ${mode === "bar" ? "active" : ""}" data-mode="bar" title="Stacked bars"><i data-lucide="bar-chart-3" style="width:14px;height:14px"></i></button>
     <button type="button" class="chart-mode-btn ${mode === "line" ? "active" : ""}" data-mode="line" title="Line graph"><i data-lucide="trending-up" style="width:14px;height:14px"></i></button>
   </div>`;
   const legend = contributors.map((c) =>
     `<span class="overall-legend-item" data-acct="${c.id}"><i style="background:${c.color}"></i>${escapeHtml(c.name)} <strong>${formatCount(c.total)}</strong></span>`
   ).join("");
+  const totalLabel = source === "followers" ? "followers" : (source === "growth" ? `${escapeHtml(metric)} gained` : escapeHtml(metric));
 
   els.accountOverall.innerHTML = `
     <div class="overall-head">
       <div>
-        <span class="control-label">All accounts · last 14 days</span>
-        <p class="overall-total"><strong>${formatCount(grand)}</strong> ${escapeHtml(metric)}</p>
+        <span class="control-label">All accounts · last ${days} days</span>
+        <p class="overall-total"><strong>${formatCount(grand)}</strong> ${totalLabel}</p>
       </div>
-      <div class="overall-tabs segmented">${tabs}</div>
-      ${modeToggle}
+      <div class="overall-controls">
+        <div class="overall-windows segmented">${windowTabs}</div>
+        <div class="overall-sources segmented">${sourceTabs}</div>
+        ${metricTabs ? `<div class="overall-tabs segmented">${metricTabs}</div>` : ""}
+        ${modeToggle}
+      </div>
     </div>
-    <div class="overall-chart ${grand > 0 ? "has-axis" : ""}">${chart}</div>
-    ${grand > 0 ? `<div class="overall-axis">${labels.map((l) => `<span>${l}</span>`).join("")}</div>` : ""}
+    <div class="overall-chart ${contributors.length ? "has-axis" : ""}">${chart}</div>
+    ${contributors.length ? `<div class="overall-axis">${labels.map((l) => `<span>${l}</span>`).join("")}</div>` : ""}
     ${legend ? `<div class="overall-legend">${legend}</div>` : ""}
+    ${renderTopVideos()}
   `;
   refreshIcons();
+}
+
+// 6/24-style label for a unix-seconds timestamp.
+function videoDate(createTime) {
+  if (!createTime) return "";
+  const d = new Date(createTime * 1000);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+// Cross-account leaderboard: best videos in the window, ranked by views.
+function renderTopVideos() {
+  const videos = accountsState.topVideos;
+  if (!videos.length) return "";
+  const cards = videos.map((v, i) => {
+    const title = v.title ? escapeHtml(v.title) : "Untitled video";
+    const when = videoDate(v.create_time);
+    const cover = v.cover_url
+      ? `<img src="${escapeHtml(v.cover_url)}" alt="" loading="lazy" onerror="this.remove()">`
+      : "";
+    const inner = `
+      <span class="video-card-rank">#${i + 1}</span>
+      <div class="video-card-cover">${cover}</div>
+      <div class="video-card-body">
+        <span class="video-card-title">${title}</span>
+        <span class="video-card-account">${escapeHtml(v.account_name || "")}${when ? ` · ${when}` : ""}</span>
+        <span class="video-card-stats"><strong>${formatCount(v.views)}</strong> views · ${formatCount(v.likes)} likes</span>
+      </div>`;
+    return v.share_url
+      ? `<a class="video-card" href="${escapeHtml(v.share_url)}" target="_blank" rel="noreferrer">${inner}</a>`
+      : `<div class="video-card">${inner}</div>`;
+  }).join("");
+  return `
+    <div class="top-videos">
+      <span class="control-label">Top videos · last ${accountsState.windowDays} days</span>
+      <div class="top-videos-row">${cards}</div>
+    </div>
+  `;
 }
 
 function stackedBarsSvg(contributors, maxTotal, days) {
   const W = 700;
   const H = 150;
-  const gap = 6;
+  const gap = days > 60 ? 1 : days > 20 ? 3 : 6;
   const bw = (W - (days - 1) * gap) / days;
   const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
     const y = ((1 - f) * H).toFixed(1);
@@ -2354,25 +2467,36 @@ function lineChartSvg(contributors, maxTotal, days, containerW) {
     const y = (pad + (1 - f) * plotH).toFixed(1);
     return `<line class="overall-grid" x1="0" y1="${y}" x2="${W}" y2="${y}"></line>`;
   }).join("");
+  const dotR = days > 30 ? 2 : 3;
   let paths = "";
   let dots = "";
   for (const c of contributors) {
+    // null = no data that day (e.g. follower counts between syncs): break the
+    // line there instead of drawing a misleading zero.
     const pts = [];
     for (let p = 0; p < days; p++) {
+      const v = c.perDay[p];
+      if (v == null) { pts.push(null); continue; }
       const x = days > 1 ? (p / (days - 1)) * W : W / 2;
-      const y = pad + plotH - (c.perDay[p] / maxTotal) * plotH;
-      pts.push({ x, y });
+      const y = pad + plotH - ((Number(v) || 0) / maxTotal) * plotH;
+      pts.push({ x, y, v });
     }
-    let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
-    for (let i = 1; i < pts.length; i++) {
-      const prev = pts[i - 1];
-      const cur = pts[i];
-      const tension = (cur.x - prev.x) * 0.3;
-      d += ` C${(prev.x + tension).toFixed(1)},${prev.y.toFixed(1)} ${(cur.x - tension).toFixed(1)},${cur.y.toFixed(1)} ${cur.x.toFixed(1)},${cur.y.toFixed(1)}`;
+    let d = "";
+    let prev = null;
+    for (const pt of pts) {
+      if (!pt) { prev = null; continue; }
+      if (!prev) {
+        d += `M${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
+      } else {
+        const tension = (pt.x - prev.x) * 0.3;
+        d += ` C${(prev.x + tension).toFixed(1)},${prev.y.toFixed(1)} ${(pt.x - tension).toFixed(1)},${pt.y.toFixed(1)} ${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
+      }
+      prev = pt;
     }
-    paths += `<path data-acct="${c.id}" fill="none" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="${d}" opacity="0.85"></path>`;
-    for (let i = 0; i < pts.length; i++) {
-      dots += `<circle data-acct="${c.id}" data-tip="${escapeHtml(`${c.name}: ${formatCount(c.perDay[i])}`)}" cx="${pts[i].x.toFixed(1)}" cy="${pts[i].y.toFixed(1)}" r="3" fill="${c.color}" stroke="var(--bg)" stroke-width="1.5"></circle>`;
+    if (d) paths += `<path data-acct="${c.id}" fill="none" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="${d}" opacity="0.85"></path>`;
+    for (const pt of pts) {
+      if (!pt) continue;
+      dots += `<circle data-acct="${c.id}" data-tip="${escapeHtml(`${c.name}: ${formatCount(pt.v)}`)}" cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="${dotR}" fill="${c.color}" stroke="var(--bg)" stroke-width="1.5"></circle>`;
     }
   }
   return `<svg class="overall-bars overall-lines" viewBox="0 0 ${W} ${H}" role="img">${grid}${paths}${dots}</svg>`;
@@ -2406,7 +2530,8 @@ function runoutState(dateStr) {
   if (days < 0) return { className: "overdue", label: "Out of content", title };
   if (days === 0) return { className: "today", label: "Runs out today", title };
   if (days === 1) return { className: "today", label: "1 day left", title };
-  if (days <= 3) return { className: "soon", label: `${days} days left`, title };
+  // "soon" matches the summary tiles' "running low" bucket (1–4 days).
+  if (days <= 4) return { className: "soon", label: `${days} days left`, title };
   if (days <= 7) return { className: "week", label: `${days} days left`, title };
   return { className: "ok", label: `${days} days left`, title };
 }
@@ -2475,8 +2600,12 @@ function renderAccountInlineStats(account) {
   if (account.post_count === 0) {
     return `<div class="account-inline-stats"><span class="account-inline-posts">No posts · last 14 days</span></div>`;
   }
+  const followers = account.follower_count != null
+    ? `<span><strong>${formatCount(account.follower_count)}</strong> followers</span>`
+    : "";
   return `
     <div class="account-inline-stats">
+      ${followers}
       <span><strong>${formatCount(account.total_views)}</strong> views ${renderDelta(account.total_views, account.prev_views)}</span>
       <span><strong>${formatCount(account.total_likes)}</strong> likes ${renderDelta(account.total_likes, account.prev_likes)}</span>
       <span class="account-inline-posts">${formatCount(account.post_count)} posts · 14d</span>
@@ -2541,9 +2670,13 @@ function renderAccountMetricsPanel(account) {
     </div>
   `;
   const source = account.metrics_source === "tiktok" ? "via TikTok" : "";
+  const followers = account.follower_count != null
+    ? `<div class="account-stat account-stat-followers"><strong>${formatCount(account.follower_count)}</strong><span>Followers</span></div>`
+    : "";
   return `
     <p class="account-metrics-heading">${METRICS_WINDOW_LABEL} <span class="account-metrics-sub">vs previous 14${source ? ` · ${source}` : ""}</span></p>
     <div class="account-metrics-grid">
+      ${followers}
       ${stat("Views", formatCount(views), views, prevViews)}
       ${stat("Likes", formatCount(account.total_likes), account.total_likes, account.prev_likes)}
       ${stat("Comments", formatCount(account.total_comments), account.total_comments, account.prev_comments)}
@@ -2553,8 +2686,46 @@ function renderAccountMetricsPanel(account) {
       ${stat("Engagement", `${engagement.toFixed(1)}%`, engagement, prevEngagement)}
     </div>
     ${renderAccountCharts(account, { engagement })}
+    ${renderAccountTopVideos(account)}
     ${stamp}
   `;
+}
+
+// Best videos for one account in the current window, fetched when the row is
+// expanded (see ensureAccountVideos).
+function renderAccountTopVideos(account) {
+  const videos = accountsState.accountVideos[account.id];
+  if (!videos || !videos.length) return "";
+  const items = videos.map((v, i) => {
+    const title = v.title ? escapeHtml(v.title) : "Untitled video";
+    const when = videoDate(v.create_time);
+    const label = v.share_url
+      ? `<a href="${escapeHtml(v.share_url)}" target="_blank" rel="noreferrer">${title}</a>`
+      : title;
+    return `
+      <li>
+        <span class="account-video-rank">#${i + 1}</span>
+        <span class="account-video-title">${label}${when ? `<em>${when}</em>` : ""}</span>
+        <span class="account-video-stats"><strong>${formatCount(v.views)}</strong> views · ${formatCount(v.likes)} likes · ${formatCount(v.comments)} comments</span>
+      </li>
+    `;
+  }).join("");
+  return `
+    <div class="account-top-videos">
+      <p class="account-metrics-heading">Top videos · last ${accountsState.windowDays} days</p>
+      <ol class="account-video-list">${items}</ol>
+    </div>
+  `;
+}
+
+async function ensureAccountVideos(id) {
+  if (accountsState.accountVideos[id]) return;
+  try {
+    const data = await api(`/api/tiktok-accounts/${id}/videos?days=${accountsState.windowDays}&limit=5`);
+    accountsState.accountVideos[id] = data.videos || [];
+  } catch {
+    accountsState.accountVideos[id] = [];
+  }
 }
 
 function renderAccountCharts(account, { engagement }) {
@@ -2668,8 +2839,12 @@ async function onAccountBoardClick(event) {
     return;
   }
   // Otherwise, toggle the credentials panel for this account.
-  if (accountsState.expanded.has(id)) accountsState.expanded.delete(id);
-  else accountsState.expanded.add(id);
+  if (accountsState.expanded.has(id)) {
+    accountsState.expanded.delete(id);
+  } else {
+    accountsState.expanded.add(id);
+    await ensureAccountVideos(id);
+  }
   renderAccounts();
 }
 
@@ -2793,19 +2968,6 @@ function playPing() {
 
 function dmChannel(user1, user2) {
   return `dm:${[user1, user2].sort().join(":")}`;
-}
-
-async function initChatCounts() {
-  try {
-    const channels = getAllChannels();
-    const results = await Promise.all(
-      channels.map((ch) => api(`/api/chat/${encodeURIComponent(ch)}/messages`).then((d) => ({ ch, count: (d.messages || []).length })))
-    );
-    for (const { ch, count } of results) {
-      state.chatSeenCounts[ch] = count;
-      state.chatChannelCounts[ch] = count;
-    }
-  } catch {}
 }
 
 function renderChatChannels() {

@@ -22,9 +22,9 @@ const TASK_TABS = new Map([
 
 const NOTE_PEOPLE = ["Tommy", "Brandon", "Mac"];
 
-export function importWorkbook(buffer, filename) {
+export async function importWorkbook(buffer, filename) {
   const sheets = readWorkbook(buffer);
-  const importId = createImport(filename);
+  const importId = await createImport(filename);
   const summary = {
     importId,
     filename,
@@ -40,7 +40,7 @@ export function importWorkbook(buffer, filename) {
     if (!TASK_TABS.has(normalizedName)) continue;
 
     const assignee = TASK_TABS.get(normalizedName);
-    const tabSummary = importTaskSheet(rows, {
+    const tabSummary = await importTaskSheet(rows, {
       assignee,
       sheetName,
       filename,
@@ -53,11 +53,11 @@ export function importWorkbook(buffer, filename) {
     summary.tabs.push(tabSummary);
   }
 
-  finishImport(importId, summary);
+  await finishImport(importId, summary);
   return summary;
 }
 
-function importTaskSheet(rows, meta) {
+async function importTaskSheet(rows, meta) {
   const summary = {
     tab: meta.sheetName,
     importedRows: 0,
@@ -103,7 +103,7 @@ function importTaskSheet(rows, meta) {
     if (inDailyNotes) {
       const note = extractDailyNote(values, meta.assignee);
       if (note) {
-        createDailyNoteFromImport(note, {
+        await createDailyNoteFromImport(note, {
           source_filename: meta.filename,
           source_tab: meta.sheetName,
           source_row: row.rowNumber,
@@ -122,7 +122,7 @@ function importTaskSheet(rows, meta) {
       continue;
     }
 
-    createTask(task, {
+    await createTask(task, {
       source_filename: meta.filename,
       source_tab: meta.sheetName,
       source_row: row.rowNumber,

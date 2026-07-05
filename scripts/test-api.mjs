@@ -90,5 +90,36 @@ check("delete resource", delRes.status === 200 && delRes.body.ok === true);
 const boot = await call("GET", "/api/bootstrap");
 check("bootstrap", boot.status === 200 && Array.isArray(boot.body.assignees));
 
+// combined polling endpoint
+const sync = await call("GET", "/api/sync");
+check(
+  "combined /api/sync",
+  sync.status === 200 && Array.isArray(sync.body.tasks) && Array.isArray(sync.body.resources)
+    && sync.body.counts && typeof sync.body.chatCounts === "object",
+  JSON.stringify(Object.keys(sync.body))
+);
+
+// tiktok accounts + metrics endpoints
+const acct = await call("POST", "/api/tiktok-accounts", { name: "Test account" });
+check("create tiktok account", acct.status === 201 && acct.body.account?.id > 0, JSON.stringify(acct.body));
+const acctId = acct.body.account.id;
+
+const overview = await call("GET", "/api/metrics/overview?days=30");
+check(
+  "metrics overview",
+  overview.status === 200 && overview.body.days === 30 && Array.isArray(overview.body.accounts)
+    && overview.body.accounts.some((a) => a.id === acctId),
+  JSON.stringify(overview.body).slice(0, 200)
+);
+
+const topVideos = await call("GET", "/api/videos/top?days=30");
+check("top videos", topVideos.status === 200 && Array.isArray(topVideos.body.videos));
+
+const acctVideos = await call("GET", `/api/tiktok-accounts/${acctId}/videos?days=30&limit=5`);
+check("account videos", acctVideos.status === 200 && Array.isArray(acctVideos.body.videos));
+
+const delAcct = await call("DELETE", `/api/tiktok-accounts/${acctId}`);
+check("delete tiktok account", delAcct.status === 200 && delAcct.body.deleted === true);
+
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nAll checks passed.");
 process.exit(failures ? 1 : 0);

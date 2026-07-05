@@ -1,317 +1,487 @@
-import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+// Unified async data layer for BOTH deployments.
+//
+// One @libsql/client connection serves every environment:
+//   - Vercel/production: TURSO_DATABASE_URL + TURSO_AUTH_TOKEN (remote Turso)
+//   - local/Docker: file:data/tasks.sqlite (same SQLite file the old sync
+//     node:sqlite layer used, so existing local data carries over)
+//
+// This module replaced the old split (src/db.mjs sync + src/db-async.mjs) —
+// the two copies had drifted (production was missing the daily metrics
+// pipeline entirely). Everything is async now; there is exactly one schema.
+
+import { createClient } from "@libsql/client";
 import { ASSIGNEES, DAILY_CATEGORIES, DEFAULT_ACCOUNT_STEPS, STATUSES, cleanMultiline, validateAccountPayload, validateTaskPayload } from "./validators.mjs";
 
-const DB_PATH = process.env.DB_PATH
-  ? resolve(process.env.DB_PATH)
-  : join(process.cwd(), "data", "tasks.sqlite");
-let db;
+let _initPromise = null;
 
-export function getDb() {
-  if (db) return db;
-  mkdirSync(dirname(DB_PATH), { recursive: true });
-  db = new DatabaseSync(DB_PATH);
-  db.exec("PRAGMA foreign_keys = ON;");
-  db.exec("PRAGMA journal_mode = WAL;");
-  migrate(db);
-  seedAssignees(db);
-  return db;
+function getDb() {
+  if (!_initPromise) {
+    _initPromise = _init().catch((error) => {
+      _initPromise = null;
+      throw error;
+    });
+  }
+  return _initPromise;
 }
 
-function migrate(database) {
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS assignees (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      sort_order INTEGER NOT NULL
+async function _init() {
+  if (process.env.VERCEL && !process.env.TURSO_DATABASE_URL) {
+    const error = new Error(
+      "Database is not configured: TURSO_DATABASE_URL is missing. Vercel's filesystem is temporary, so saves would be lost. Add TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in the Vercel project's environment variables, then redeploy."
     );
-
-    CREATE TABLE IF NOT EXISTS imports (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      filename TEXT NOT NULL,
-      imported_at TEXT NOT NULL DEFAULT (datetime('now')),
-      imported_rows INTEGER NOT NULL DEFAULT 0,
-      skipped_rows INTEGER NOT NULL DEFAULT 0,
-      task_rows INTEGER NOT NULL DEFAULT 0,
-      daily_note_rows INTEGER NOT NULL DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS tasks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      assignee TEXT NOT NULL,
-      title TEXT NOT NULL,
-      details TEXT,
-      project TEXT,
-      category TEXT,
-      status TEXT NOT NULL DEFAULT 'BRB',
-      done INTEGER NOT NULL DEFAULT 0,
-      due_date TEXT,
-      stamp_at TEXT,
-      source_filename TEXT,
-      source_tab TEXT,
-      source_row INTEGER,
-      import_id INTEGER,
-      archived INTEGER NOT NULL DEFAULT 0,
-      archived_at TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (import_id) REFERENCES imports(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS task_links (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      label TEXT NOT NULL,
-      url TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS task_notes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      person TEXT NOT NULL,
-      body TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS task_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      author TEXT NOT NULL,
-      body TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS task_workflow_steps (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      label TEXT NOT NULL,
-      sort_order INTEGER NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS task_images (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      image TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS daily_notes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      note_date TEXT NOT NULL,
-      assignee TEXT,
-      category TEXT,
-      body TEXT NOT NULL,
-      source_filename TEXT,
-      source_tab TEXT,
-      source_row INTEGER,
-      import_id INTEGER,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (import_id) REFERENCES imports(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS resource_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      section TEXT NOT NULL,
-      title TEXT NOT NULL,
-      url TEXT,
-      note TEXT,
-      username TEXT,
-      password TEXT,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS tiktok_accounts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      ae_project_url TEXT,
-      tutorial_url TEXT,
-      username TEXT,
-      email TEXT,
-      password TEXT,
-      scheduled_through TEXT,
-      flowstage_account_id TEXT,
-      flowstage_synced_through TEXT,
-      flowstage_synced_at TEXT,
-      group_name TEXT,
-      avatar TEXT,
-      upload_url TEXT,
-      metrics_daily TEXT,
-      total_views INTEGER,
-      total_likes INTEGER,
-      total_comments INTEGER,
-      total_shares INTEGER,
-      post_count INTEGER,
-      prev_views INTEGER,
-      prev_likes INTEGER,
-      prev_comments INTEGER,
-      prev_shares INTEGER,
-      prev_post_count INTEGER,
-      metrics_synced_at TEXT,
-      metrics_source TEXT,
-      tiktok_open_id TEXT,
-      tiktok_access_token TEXT,
-      tiktok_refresh_token TEXT,
-      tiktok_token_expires_at TEXT,
-      tiktok_connected_at TEXT,
-      archived INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS tiktok_account_steps (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      account_id INTEGER NOT NULL,
-      label TEXT NOT NULL,
-      assignee TEXT,
-      position INTEGER NOT NULL DEFAULT 0,
-      FOREIGN KEY (account_id) REFERENCES tiktok_accounts(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS tiktok_daily_snapshots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      account_id INTEGER NOT NULL,
-      snapshot_date TEXT NOT NULL,
-      total_views INTEGER NOT NULL DEFAULT 0,
-      total_likes INTEGER NOT NULL DEFAULT 0,
-      total_comments INTEGER NOT NULL DEFAULT 0,
-      total_shares INTEGER NOT NULL DEFAULT 0,
-      UNIQUE(account_id, snapshot_date),
-      FOREIGN KEY (account_id) REFERENCES tiktok_accounts(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_daily_snapshots_account_date ON tiktok_daily_snapshots (account_id, snapshot_date);
-    CREATE INDEX IF NOT EXISTS idx_tiktok_account_steps_account ON tiktok_account_steps (account_id);
-    CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks (assignee);
-    CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status);
-    CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks (due_date);
-    CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks (archived);
-    CREATE INDEX IF NOT EXISTS idx_links_task ON task_links (task_id);
-    CREATE INDEX IF NOT EXISTS idx_notes_task ON task_notes (task_id);
-    CREATE INDEX IF NOT EXISTS idx_messages_task ON task_messages (task_id);
-    CREATE INDEX IF NOT EXISTS idx_workflow_task ON task_workflow_steps (task_id);
-    CREATE INDEX IF NOT EXISTS idx_images_task ON task_images (task_id);
-    CREATE INDEX IF NOT EXISTS idx_resource_items_section ON resource_items (section, sort_order);
-
-    CREATE TABLE IF NOT EXISTS storyboard_workspace (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      data TEXT NOT NULL DEFAULT '{}',
-      version INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    INSERT OR IGNORE INTO storyboard_workspace (id, data, version) VALUES (1, '{}', 0);
-
-    CREATE TABLE IF NOT EXISTS canvas_notes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL DEFAULT '',
-      body TEXT NOT NULL DEFAULT '',
-      x REAL NOT NULL DEFAULT 100,
-      y REAL NOT NULL DEFAULT 100,
-      width REAL,
-      height REAL,
-      color TEXT NOT NULL DEFAULT 'yellow',
-      pinned INTEGER NOT NULL DEFAULT 0,
-      z_index INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS chat_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      channel TEXT NOT NULL,
-      author TEXT NOT NULL,
-      body TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_chat_messages_channel ON chat_messages (channel, created_at);
-  `);
-
-  const dailyColumns = database.prepare("PRAGMA table_info(daily_notes)").all();
-  if (!dailyColumns.some((column) => column.name === "category")) {
-    database.exec("ALTER TABLE daily_notes ADD COLUMN category TEXT;");
+    error.status = 503;
+    throw error;
   }
-  const taskColumns = database.prepare("PRAGMA table_info(tasks)").all();
-  if (!taskColumns.some((column) => column.name === "category")) {
-    database.exec("ALTER TABLE tasks ADD COLUMN category TEXT;");
+
+  const dbPath = process.env.DB_PATH || "data/tasks.sqlite";
+  const url = process.env.TURSO_DATABASE_URL || `file:${dbPath}`;
+
+  if (url.startsWith("file:")) {
+    const { mkdirSync } = await import("node:fs");
+    const { dirname, resolve } = await import("node:path");
+    mkdirSync(dirname(resolve(url.slice(5))), { recursive: true });
   }
-  if (!taskColumns.some((column) => column.name === "archived_at")) {
-    database.exec("ALTER TABLE tasks ADD COLUMN archived_at TEXT;");
+
+  const client = createClient({
+    url,
+    authToken: process.env.TURSO_AUTH_TOKEN || undefined
+  });
+
+  await migrate(client);
+  await seedAssignees(client);
+  return client;
+}
+
+function toRow(columns, row) {
+  if (!row) return null;
+  const obj = {};
+  for (const col of columns) obj[col] = row[col];
+  return obj;
+}
+
+function rows(result) {
+  return result.rows.map((row) => toRow(result.columns, row));
+}
+
+function firstRow(result) {
+  return result.rows[0] ? toRow(result.columns, result.rows[0]) : null;
+}
+
+async function migrate(client) {
+  await client.batch([
+    {
+      sql: `CREATE TABLE IF NOT EXISTS assignees (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        sort_order INTEGER NOT NULL
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS imports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT NOT NULL,
+        imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+        imported_rows INTEGER NOT NULL DEFAULT 0,
+        skipped_rows INTEGER NOT NULL DEFAULT 0,
+        task_rows INTEGER NOT NULL DEFAULT 0,
+        daily_note_rows INTEGER NOT NULL DEFAULT 0
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        assignee TEXT NOT NULL,
+        title TEXT NOT NULL,
+        details TEXT,
+        project TEXT,
+        category TEXT,
+        status TEXT NOT NULL DEFAULT 'BRB',
+        done INTEGER NOT NULL DEFAULT 0,
+        due_date TEXT,
+        stamp_at TEXT,
+        source_filename TEXT,
+        source_tab TEXT,
+        source_row INTEGER,
+        import_id INTEGER,
+        archived INTEGER NOT NULL DEFAULT 0,
+        archived_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (import_id) REFERENCES imports(id)
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS task_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        label TEXT NOT NULL,
+        url TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS task_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        person TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS task_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        author TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS task_workflow_steps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        label TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS task_images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        image TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS daily_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_date TEXT NOT NULL,
+        assignee TEXT,
+        category TEXT,
+        body TEXT NOT NULL,
+        source_filename TEXT,
+        source_tab TEXT,
+        source_row INTEGER,
+        import_id INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (import_id) REFERENCES imports(id)
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS resource_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        section TEXT NOT NULL,
+        title TEXT NOT NULL,
+        url TEXT,
+        note TEXT,
+        username TEXT,
+        password TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS tiktok_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        ae_project_url TEXT,
+        tutorial_url TEXT,
+        username TEXT,
+        email TEXT,
+        password TEXT,
+        scheduled_through TEXT,
+        group_name TEXT,
+        avatar TEXT,
+        upload_url TEXT,
+        metrics_daily TEXT,
+        total_views INTEGER,
+        total_likes INTEGER,
+        total_comments INTEGER,
+        total_shares INTEGER,
+        post_count INTEGER,
+        prev_views INTEGER,
+        prev_likes INTEGER,
+        prev_comments INTEGER,
+        prev_shares INTEGER,
+        prev_post_count INTEGER,
+        metrics_synced_at TEXT,
+        metrics_source TEXT,
+        follower_count INTEGER,
+        following_count INTEGER,
+        profile_likes INTEGER,
+        tiktok_video_count INTEGER,
+        tiktok_open_id TEXT,
+        tiktok_access_token TEXT,
+        tiktok_refresh_token TEXT,
+        tiktok_token_expires_at TEXT,
+        tiktok_connected_at TEXT,
+        archived INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS tiktok_account_steps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        label TEXT NOT NULL,
+        assignee TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (account_id) REFERENCES tiktok_accounts(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      // One row per TikTok video ever seen for an account. Stats are the
+      // latest known values; rows persist even after a video falls out of
+      // the API's recent-videos window, so history keeps accumulating.
+      sql: `CREATE TABLE IF NOT EXISTS tiktok_videos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        video_id TEXT NOT NULL,
+        create_time INTEGER,
+        title TEXT,
+        cover_url TEXT,
+        share_url TEXT,
+        duration INTEGER,
+        views INTEGER NOT NULL DEFAULT 0,
+        likes INTEGER NOT NULL DEFAULT 0,
+        comments INTEGER NOT NULL DEFAULT 0,
+        shares INTEGER NOT NULL DEFAULT 0,
+        first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(account_id, video_id),
+        FOREIGN KEY (account_id) REFERENCES tiktok_accounts(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      // One row per account per day with RAW CUMULATIVE totals (not diffs).
+      // Daily growth is computed at query time by differencing consecutive
+      // snapshots, so a missed or double sync can never corrupt history.
+      sql: `CREATE TABLE IF NOT EXISTS tiktok_account_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        snapshot_date TEXT NOT NULL,
+        views INTEGER NOT NULL DEFAULT 0,
+        likes INTEGER NOT NULL DEFAULT 0,
+        comments INTEGER NOT NULL DEFAULT 0,
+        shares INTEGER NOT NULL DEFAULT 0,
+        video_count INTEGER NOT NULL DEFAULT 0,
+        follower_count INTEGER,
+        following_count INTEGER,
+        profile_likes INTEGER,
+        UNIQUE(account_id, snapshot_date),
+        FOREIGN KEY (account_id) REFERENCES tiktok_accounts(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS canvas_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL DEFAULT '',
+        body TEXT NOT NULL DEFAULT '',
+        x REAL NOT NULL DEFAULT 100,
+        y REAL NOT NULL DEFAULT 100,
+        width REAL,
+        height REAL,
+        color TEXT NOT NULL DEFAULT 'yellow',
+        pinned INTEGER NOT NULL DEFAULT 0,
+        z_index INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel TEXT NOT NULL,
+        author TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS storyboard_workspace (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        data TEXT NOT NULL DEFAULT '{}',
+        version INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    }
+  ], "write");
+
+  await client.batch([
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks (assignee)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks (due_date)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks (archived)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_links_task ON task_links (task_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_notes_task ON task_notes (task_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_messages_task ON task_messages (task_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_workflow_task ON task_workflow_steps (task_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_images_task ON task_images (task_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_resource_items_section ON resource_items (section, sort_order)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks (category)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_daily_notes_category ON daily_notes (category)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks (archived_at)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_account_steps_account ON tiktok_account_steps (account_id)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_chat_messages_channel ON chat_messages (channel, created_at)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_videos_account_time ON tiktok_videos (account_id, create_time)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_videos_views ON tiktok_videos (views)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_account_snapshots_date ON tiktok_account_snapshots (account_id, snapshot_date)" }
+  ], "write");
+
+  const dailyCols = await client.execute("PRAGMA table_info(daily_notes)");
+  if (!dailyCols.rows.some((r) => r["name"] === "category")) {
+    await client.execute("ALTER TABLE daily_notes ADD COLUMN category TEXT");
   }
-  if (!taskColumns.some((column) => column.name === "urgency")) {
-    database.exec("ALTER TABLE tasks ADD COLUMN urgency INTEGER NOT NULL DEFAULT 5;");
+
+  const taskCols = await client.execute("PRAGMA table_info(tasks)");
+  const taskColNames = taskCols.rows.map((r) => r["name"]);
+  if (!taskColNames.includes("category")) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN category TEXT");
   }
-  const resourceColumns = database.prepare("PRAGMA table_info(resource_items)").all();
-  if (!resourceColumns.some((column) => column.name === "username")) {
-    database.exec("ALTER TABLE resource_items ADD COLUMN username TEXT;");
+  if (!taskColNames.includes("archived_at")) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN archived_at TEXT");
   }
-  if (!resourceColumns.some((column) => column.name === "password")) {
-    database.exec("ALTER TABLE resource_items ADD COLUMN password TEXT;");
+  if (!taskColNames.includes("urgency")) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN urgency INTEGER NOT NULL DEFAULT 5");
   }
-  const messageColumns = database.prepare("PRAGMA table_info(task_messages)").all();
-  if (!messageColumns.some((column) => column.name === "image")) {
-    database.exec("ALTER TABLE task_messages ADD COLUMN image TEXT;");
+
+  const resourceCols = await client.execute("PRAGMA table_info(resource_items)");
+  const resourceColNames = resourceCols.rows.map((r) => r["name"]);
+  if (!resourceColNames.includes("username")) {
+    await client.execute("ALTER TABLE resource_items ADD COLUMN username TEXT");
   }
-  const accountColumns = database.prepare("PRAGMA table_info(tiktok_accounts)").all();
-  const accountColNames = accountColumns.map((column) => column.name);
+  if (!resourceColNames.includes("password")) {
+    await client.execute("ALTER TABLE resource_items ADD COLUMN password TEXT");
+  }
+
+  const messageCols = await client.execute("PRAGMA table_info(task_messages)");
+  if (!messageCols.rows.some((r) => r["name"] === "image")) {
+    await client.execute("ALTER TABLE task_messages ADD COLUMN image TEXT");
+  }
+
+  const accountCols = await client.execute("PRAGMA table_info(tiktok_accounts)");
+  const accountColNames = accountCols.rows.map((r) => r["name"]);
   if (!accountColNames.includes("group_name")) {
-    database.exec("ALTER TABLE tiktok_accounts ADD COLUMN group_name TEXT;");
+    await client.execute("ALTER TABLE tiktok_accounts ADD COLUMN group_name TEXT");
   }
-  for (const col of ["total_views", "total_likes", "total_comments", "total_shares", "post_count", "prev_views", "prev_likes", "prev_comments", "prev_shares", "prev_post_count"]) {
-    if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER;`);
+  for (const col of ["total_views", "total_likes", "total_comments", "total_shares", "post_count", "prev_views", "prev_likes", "prev_comments", "prev_shares", "prev_post_count", "follower_count", "following_count", "profile_likes", "tiktok_video_count"]) {
+    if (!accountColNames.includes(col)) await client.execute(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER`);
   }
   for (const col of ["metrics_synced_at", "metrics_source", "tiktok_open_id", "tiktok_access_token", "tiktok_refresh_token", "tiktok_token_expires_at", "tiktok_connected_at", "avatar", "metrics_daily", "upload_url"]) {
-    if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} TEXT;`);
+    if (!accountColNames.includes(col)) await client.execute(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} TEXT`);
   }
-  for (const col of ["alltime_views", "alltime_likes", "alltime_comments", "alltime_shares"]) {
-    if (!accountColNames.includes(col)) database.exec(`ALTER TABLE tiktok_accounts ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 0;`);
-  }
-  database.exec("UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted';");
-  database.exec("UPDATE tasks SET status = 'Not Started' WHERE status = 'Misc.';");
-  database.exec("UPDATE tasks SET due_date = NULL WHERE status = 'BRB';");
-  database.exec("UPDATE tasks SET assignee = 'Tommy' WHERE lower(assignee) = 'ryan';");
-  database.exec("UPDATE tasks SET source_tab = NULL WHERE lower(coalesce(source_tab, '')) LIKE '%ryan%';");
-  database.exec("UPDATE daily_notes SET assignee = NULL WHERE lower(coalesce(assignee, '')) = 'ryan';");
-  database.exec("UPDATE daily_notes SET source_tab = NULL WHERE lower(coalesce(source_tab, '')) LIKE '%ryan%';");
-  database.exec("UPDATE task_notes SET person = 'General' WHERE lower(person) = 'ryan';");
-  database.exec("UPDATE task_messages SET author = 'Me' WHERE lower(author) = 'ryan';");
-  database.exec("DELETE FROM assignees WHERE lower(name) = 'ryan';");
-  database.exec("CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks (category);");
-  database.exec("CREATE INDEX IF NOT EXISTS idx_daily_notes_category ON daily_notes (category);");
-  database.exec("CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks (archived_at);");
-  database.exec("UPDATE tasks SET archived_at = coalesce(archived_at, updated_at, datetime('now')) WHERE archived = 1;");
-  const canvasCols = database.prepare("PRAGMA table_info(canvas_notes)").all().map((c) => c.name);
-  if (!canvasCols.includes("title")) database.exec("ALTER TABLE canvas_notes ADD COLUMN title TEXT NOT NULL DEFAULT ''");
-  if (!canvasCols.includes("width")) database.exec("ALTER TABLE canvas_notes ADD COLUMN width REAL");
-  if (!canvasCols.includes("height")) database.exec("ALTER TABLE canvas_notes ADD COLUMN height REAL");
-  purgeExpiredArchivedTasks(database);
+
+  await client.batch([
+    { sql: "UPDATE tasks SET status = 'BRB' WHERE status = 'Unsorted'" },
+    { sql: "UPDATE tasks SET status = 'Not Started' WHERE status = 'Misc.'" },
+    { sql: "UPDATE tasks SET due_date = NULL WHERE status = 'BRB'" },
+    { sql: "UPDATE tasks SET assignee = 'Tommy' WHERE lower(assignee) = 'ryan'" },
+    { sql: "UPDATE tasks SET source_tab = NULL WHERE lower(coalesce(source_tab, '')) LIKE '%ryan%'" },
+    { sql: "UPDATE daily_notes SET assignee = NULL WHERE lower(coalesce(assignee, '')) = 'ryan'" },
+    { sql: "UPDATE daily_notes SET source_tab = NULL WHERE lower(coalesce(source_tab, '')) LIKE '%ryan%'" },
+    { sql: "UPDATE task_notes SET person = 'General' WHERE lower(person) = 'ryan'" },
+    { sql: "UPDATE task_messages SET author = 'Me' WHERE lower(author) = 'ryan'" },
+    { sql: "DELETE FROM assignees WHERE lower(name) = 'ryan'" },
+    { sql: "UPDATE tasks SET archived_at = coalesce(archived_at, updated_at, datetime('now')) WHERE archived = 1" }
+  ], "write");
+
+  await client.execute("INSERT OR IGNORE INTO storyboard_workspace (id, data, version) VALUES (1, '{}', 0)");
+
+  const canvasCols = await client.execute("PRAGMA table_info(canvas_notes)");
+  const canvasColNames = canvasCols.rows.map((r) => r["name"]);
+  if (!canvasColNames.includes("title")) await client.execute("ALTER TABLE canvas_notes ADD COLUMN title TEXT NOT NULL DEFAULT ''");
+  if (!canvasColNames.includes("width")) await client.execute("ALTER TABLE canvas_notes ADD COLUMN width REAL");
+  if (!canvasColNames.includes("height")) await client.execute("ALTER TABLE canvas_notes ADD COLUMN height REAL");
 }
 
-function seedAssignees(database) {
-  const insert = database.prepare(
-    "INSERT OR IGNORE INTO assignees (name, sort_order) VALUES (?, ?)"
+async function seedAssignees(client) {
+  for (let i = 0; i < ASSIGNEES.length; i++) {
+    await client.execute({
+      sql: "INSERT OR IGNORE INTO assignees (name, sort_order) VALUES (?, ?)",
+      args: [ASSIGNEES[i], i + 1]
+    });
+  }
+}
+
+async function purgeExpired(client) {
+  await client.execute(
+    "DELETE FROM tasks WHERE archived = 1 AND archived_at IS NOT NULL AND archived_at < datetime('now', '-30 days')"
   );
-  ASSIGNEES.forEach((name, index) => insert.run(name, index + 1));
 }
 
-export function listTasks(filters = {}) {
-  const database = getDb();
-  purgeExpiredArchivedTasks(database);
+// --- Tasks ---------------------------------------------------------------
+
+async function hydrateTask(row, columns, client) {
+  const task = toRow(columns, row);
+  const [links, notes, steps, lastMsg, imageCount] = await Promise.all([
+    client.execute({ sql: "SELECT * FROM task_links WHERE task_id = ? ORDER BY id ASC", args: [task.id] }),
+    client.execute({ sql: "SELECT * FROM task_notes WHERE task_id = ? ORDER BY id ASC", args: [task.id] }),
+    client.execute({ sql: "SELECT * FROM task_workflow_steps WHERE task_id = ? ORDER BY sort_order ASC, id ASC", args: [task.id] }),
+    client.execute({ sql: "SELECT author, created_at FROM task_messages WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT 1", args: [task.id] }),
+    client.execute({ sql: "SELECT count(*) AS count FROM task_images WHERE task_id = ?", args: [task.id] })
+  ]);
+  return {
+    ...task,
+    done: Boolean(task.done),
+    archived: Boolean(task.archived),
+    links: rows(links),
+    notes: rows(notes),
+    workflow_steps: rows(steps),
+    last_message: firstRow(lastMsg),
+    image_count: Number(imageCount.rows[0]?.["count"] ?? 0)
+  };
+}
+
+export async function listTaskImages(taskId) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT id, task_id, image, created_at FROM task_images WHERE task_id = ? ORDER BY id ASC",
+    args: [Number(taskId)]
+  });
+  return rows(r);
+}
+
+export async function addTaskImage(taskId, image) {
+  if (typeof image !== "string" || !image.startsWith("data:image/")) {
+    const e = new Error("A valid image is required."); e.status = 400; throw e;
+  }
+  const task = await getTask(taskId);
+  if (!task) { const e = new Error("Task not found."); e.status = 404; throw e; }
+  const client = await getDb();
+  await client.execute({
+    sql: "INSERT INTO task_images (task_id, image) VALUES (?, ?)",
+    args: [Number(taskId), image]
+  });
+  return listTaskImages(taskId);
+}
+
+export async function deleteTaskImage(taskId, imageId) {
+  const client = await getDb();
+  await client.execute({
+    sql: "DELETE FROM task_images WHERE id = ? AND task_id = ?",
+    args: [Number(imageId), Number(taskId)]
+  });
+  return listTaskImages(taskId);
+}
+
+export async function listTasks(filters = {}) {
+  const client = await getDb();
+  await purgeExpired(client);
+
   const showArchived = filters.archived === "true";
   const where = showArchived
     ? ["archived = 1", "archived_at >= datetime('now', '-30 days')"]
@@ -346,23 +516,19 @@ export function listTasks(filters = {}) {
       OR lower(coalesce(details, '')) LIKE ?
       OR lower(coalesce(project, '')) LIKE ?
       OR EXISTS (
-        SELECT 1 FROM task_links
-        WHERE task_links.task_id = tasks.id
+        SELECT 1 FROM task_links WHERE task_links.task_id = tasks.id
         AND (lower(label) LIKE ? OR lower(coalesce(url, '')) LIKE ?)
       )
       OR EXISTS (
-        SELECT 1 FROM task_notes
-        WHERE task_notes.task_id = tasks.id
+        SELECT 1 FROM task_notes WHERE task_notes.task_id = tasks.id
         AND (lower(person) LIKE ? OR lower(body) LIKE ?)
       )
     )`);
     params.push(search, search, search, search, search, search, search);
   }
 
-  const rows = database
-    .prepare(`
-      SELECT * FROM tasks
-      WHERE ${where.join(" AND ")}
+  const result = await client.execute({
+    sql: `SELECT * FROM tasks WHERE ${where.join(" AND ")}
       ORDER BY done ASC,
         CASE status
           WHEN 'Pending Approval' THEN 1
@@ -379,29 +545,30 @@ export function listTasks(filters = {}) {
         due_date IS NULL ASC,
         due_date ASC,
         ${showArchived ? "archived_at DESC," : ""}
-        updated_at DESC
-    `)
-    .all(...params);
+        updated_at DESC`,
+    args: params
+  });
 
-  return rows.map(hydrateTask);
+  return Promise.all(result.rows.map((row) => hydrateTask(row, result.columns, client)));
 }
 
-export function getTask(id) {
-  const row = getDb().prepare("SELECT * FROM tasks WHERE id = ?").get(Number(id));
-  return row ? hydrateTask(row) : null;
+export async function getTask(id) {
+  const client = await getDb();
+  const result = await client.execute({
+    sql: "SELECT * FROM tasks WHERE id = ?",
+    args: [Number(id)]
+  });
+  if (!result.rows[0]) return null;
+  return hydrateTask(result.rows[0], result.columns, client);
 }
 
-export function createTask(input, meta = {}) {
+export async function createTask(input, meta = {}) {
   const payload = validateTaskPayload(input);
-  const database = getDb();
-  const result = database
-    .prepare(`
-      INSERT INTO tasks (
-        assignee, title, details, project, category, status, done, due_date, stamp_at,
-        source_filename, source_tab, source_row, import_id, urgency
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    .run(
+  const client = await getDb();
+  const result = await client.execute({
+    sql: `INSERT INTO tasks (assignee, title, details, project, category, status, done, due_date, stamp_at,
+      source_filename, source_tab, source_row, import_id, urgency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
       payload.assignee,
       payload.title,
       payload.details || null,
@@ -416,17 +583,17 @@ export function createTask(input, meta = {}) {
       meta.source_row || null,
       meta.import_id || null,
       payload.urgency ?? 5
-    );
-
+    ]
+  });
   const taskId = Number(result.lastInsertRowid);
-  replaceLinks(taskId, payload.links || []);
-  replaceNotes(taskId, payload.notes || []);
-  replaceWorkflowSteps(taskId, payload.workflow_steps || []);
+  await _replaceLinks(taskId, payload.links || [], client);
+  await _replaceNotes(taskId, payload.notes || [], client);
+  await _replaceSteps(taskId, payload.workflow_steps || [], client);
   return getTask(taskId);
 }
 
-export function updateTask(id, input) {
-  const task = getTask(id);
+export async function updateTask(id, input) {
+  const task = await getTask(id);
   if (!task) return null;
   const payload = validateTaskPayload(input, { partial: true });
   const sets = [];
@@ -445,59 +612,49 @@ export function updateTask(id, input) {
   if ("done" in payload) {
     sets.push("done = ?");
     params.push(payload.done ? 1 : 0);
-    if (payload.done && !("stamp_at" in payload)) {
-      sets.push("stamp_at = coalesce(stamp_at, datetime('now'))");
-    }
-    if (payload.done && !("status" in payload)) {
-      sets.push("status = 'Done'");
-    }
-    if (!payload.done && task.status === "Done" && !("status" in payload)) {
-      sets.push("status = 'Not Started'");
-    }
+    if (payload.done && !("stamp_at" in payload)) sets.push("stamp_at = coalesce(stamp_at, datetime('now'))");
+    if (payload.done && !("status" in payload)) sets.push("status = 'Done'");
+    if (!payload.done && task.status === "Done" && !("status" in payload)) sets.push("status = 'Not Started'");
   }
 
+  const client = await getDb();
   if (sets.length) {
     sets.push("updated_at = datetime('now')");
     params.push(Number(id));
-    getDb().prepare(`UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+    await client.execute({ sql: `UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`, args: params });
   }
-
-  if ("links" in payload) replaceLinks(Number(id), payload.links || []);
-  if ("notes" in payload) replaceNotes(Number(id), payload.notes || []);
-  if ("workflow_steps" in payload) replaceWorkflowSteps(Number(id), payload.workflow_steps || []);
+  if ("links" in payload) await _replaceLinks(Number(id), payload.links || [], client);
+  if ("notes" in payload) await _replaceNotes(Number(id), payload.notes || [], client);
+  if ("workflow_steps" in payload) await _replaceSteps(Number(id), payload.workflow_steps || [], client);
   return getTask(id);
 }
 
-export function archiveTask(id) {
-  const database = getDb();
-  database
-    .prepare("UPDATE tasks SET archived = 1, archived_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
-    .run(Number(id));
-  return { ok: true, task: getTask(id) };
+export async function archiveTask(id) {
+  const client = await getDb();
+  await client.execute({
+    sql: "UPDATE tasks SET archived = 1, archived_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+    args: [Number(id)]
+  });
+  return { ok: true, task: await getTask(id) };
 }
 
-export function deleteTask(id) {
-  const database = getDb();
-  database.prepare("DELETE FROM tasks WHERE id = ?").run(Number(id));
+export async function deleteTask(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM tasks WHERE id = ?", args: [Number(id)] });
   return { deleted: true };
 }
 
-export function restoreTask(id) {
-  const database = getDb();
-  database
-    .prepare("UPDATE tasks SET archived = 0, archived_at = NULL, updated_at = datetime('now') WHERE id = ?")
-    .run(Number(id));
-  return { ok: true, task: getTask(id) };
+export async function restoreTask(id) {
+  const client = await getDb();
+  await client.execute({
+    sql: "UPDATE tasks SET archived = 0, archived_at = NULL, updated_at = datetime('now') WHERE id = ?",
+    args: [Number(id)]
+  });
+  return { ok: true, task: await getTask(id) };
 }
 
-export function purgeExpiredArchivedTasks(database = getDb()) {
-  database
-    .prepare("DELETE FROM tasks WHERE archived = 1 AND archived_at IS NOT NULL AND archived_at < datetime('now', '-30 days')")
-    .run();
-}
-
-export function duplicateTask(id) {
-  const source = getTask(id);
+export async function duplicateTask(id) {
+  const source = await getTask(id);
   if (!source) return null;
   const status = source.done || source.status === "Done" ? "Not Started" : source.status;
   return createTask({
@@ -510,341 +667,311 @@ export function duplicateTask(id) {
     done: false,
     urgency: source.urgency ?? 5,
     due_date: status === "BRB" ? null : source.due_date || null,
-    links: source.links.map((link) => ({
-      label: link.label,
-      url: link.url || ""
-    })),
-    notes: source.notes.map((note) => ({
-      person: note.person,
-      body: note.body
-    })),
-    workflow_steps: source.workflow_steps.map((step) => ({
-      label: step.label
-    }))
+    links: source.links.map((l) => ({ label: l.label, url: l.url || "" })),
+    notes: source.notes.map((n) => ({ person: n.person, body: n.body })),
+    workflow_steps: source.workflow_steps.map((s) => ({ label: s.label }))
   });
 }
 
-export function replaceLinks(taskId, links) {
-  const database = getDb();
-  database.prepare("DELETE FROM task_links WHERE task_id = ?").run(taskId);
-  const insert = database.prepare(
-    "INSERT INTO task_links (task_id, label, url) VALUES (?, ?, ?)"
-  );
-  links.forEach((link) => insert.run(taskId, link.label, link.url || null));
+async function _replaceLinks(taskId, links, client) {
+  await client.execute({ sql: "DELETE FROM task_links WHERE task_id = ?", args: [taskId] });
+  for (const link of links) {
+    await client.execute({
+      sql: "INSERT INTO task_links (task_id, label, url) VALUES (?, ?, ?)",
+      args: [taskId, link.label, link.url || null]
+    });
+  }
 }
 
-export function replaceNotes(taskId, notes) {
-  const database = getDb();
-  database.prepare("DELETE FROM task_notes WHERE task_id = ?").run(taskId);
-  const insert = database.prepare(
-    "INSERT INTO task_notes (task_id, person, body) VALUES (?, ?, ?)"
-  );
-  notes.forEach((note) => insert.run(taskId, note.person, note.body));
+async function _replaceNotes(taskId, notes, client) {
+  await client.execute({ sql: "DELETE FROM task_notes WHERE task_id = ?", args: [taskId] });
+  for (const note of notes) {
+    await client.execute({
+      sql: "INSERT INTO task_notes (task_id, person, body) VALUES (?, ?, ?)",
+      args: [taskId, note.person, note.body]
+    });
+  }
 }
 
-export function replaceWorkflowSteps(taskId, steps) {
-  const database = getDb();
-  database.prepare("DELETE FROM task_workflow_steps WHERE task_id = ?").run(taskId);
-  const insert = database.prepare(
-    "INSERT INTO task_workflow_steps (task_id, label, sort_order) VALUES (?, ?, ?)"
-  );
-  steps.forEach((step, index) => insert.run(taskId, step.label, index + 1));
+async function _replaceSteps(taskId, steps, client) {
+  await client.execute({ sql: "DELETE FROM task_workflow_steps WHERE task_id = ?", args: [taskId] });
+  for (let i = 0; i < steps.length; i++) {
+    await client.execute({
+      sql: "INSERT INTO task_workflow_steps (task_id, label, sort_order) VALUES (?, ?, ?)",
+      args: [taskId, steps[i].label, i + 1]
+    });
+  }
 }
 
-export function addTaskLink(input) {
-  const database = getDb();
-  const result = database
-    .prepare("INSERT INTO task_links (task_id, label, url) VALUES (?, ?, ?)")
-    .run(Number(input.task_id), input.label, input.url || null);
-  return database.prepare("SELECT * FROM task_links WHERE id = ?").get(Number(result.lastInsertRowid));
+export async function addTaskLink(input) {
+  const client = await getDb();
+  const result = await client.execute({
+    sql: "INSERT INTO task_links (task_id, label, url) VALUES (?, ?, ?)",
+    args: [Number(input.task_id), input.label, input.url || null]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM task_links WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return firstRow(r);
 }
 
-export function updateTaskLink(id, input) {
-  getDb()
-    .prepare("UPDATE task_links SET label = ?, url = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(input.label, input.url || null, Number(id));
-  return getDb().prepare("SELECT * FROM task_links WHERE id = ?").get(Number(id));
+export async function updateTaskLink(id, input) {
+  const client = await getDb();
+  await client.execute({
+    sql: "UPDATE task_links SET label = ?, url = ?, updated_at = datetime('now') WHERE id = ?",
+    args: [input.label, input.url || null, Number(id)]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM task_links WHERE id = ?", args: [Number(id)] });
+  return firstRow(r);
 }
 
-export function deleteTaskLink(id) {
-  getDb().prepare("DELETE FROM task_links WHERE id = ?").run(Number(id));
+export async function deleteTaskLink(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM task_links WHERE id = ?", args: [Number(id)] });
   return { ok: true };
 }
 
-export function listTaskMessages(taskId) {
-  return getDb()
-    .prepare("SELECT * FROM task_messages WHERE task_id = ? ORDER BY created_at ASC, id ASC")
-    .all(Number(taskId));
+export async function listTaskMessages(taskId) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT * FROM task_messages WHERE task_id = ? ORDER BY created_at ASC, id ASC",
+    args: [Number(taskId)]
+  });
+  return rows(r);
 }
 
-export function createTaskMessage(taskId, input) {
+export async function createTaskMessage(taskId, input) {
   const author = String(input.author || "Me").trim() || "Me";
   const body = cleanMultiline(input.body);
   const image = typeof input.image === "string" && input.image.startsWith("data:image/") ? input.image : null;
-  if (!body && !image) {
-    const error = new Error("Message body is required.");
-    error.status = 400;
-    throw error;
-  }
-  const task = getTask(taskId);
-  if (!task) {
-    const error = new Error("Task not found.");
-    error.status = 404;
-    throw error;
-  }
-  const result = getDb()
-    .prepare("INSERT INTO task_messages (task_id, author, body, image) VALUES (?, ?, ?, ?)")
-    .run(Number(taskId), author, body, image);
-  return getDb()
-    .prepare("SELECT * FROM task_messages WHERE id = ?")
-    .get(Number(result.lastInsertRowid));
+  if (!body && !image) { const e = new Error("Message body is required."); e.status = 400; throw e; }
+  const task = await getTask(taskId);
+  if (!task) { const e = new Error("Task not found."); e.status = 404; throw e; }
+  const client = await getDb();
+  const result = await client.execute({
+    sql: "INSERT INTO task_messages (task_id, author, body, image) VALUES (?, ?, ?, ?)",
+    args: [Number(taskId), author, body, image]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM task_messages WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return firstRow(r);
 }
 
-export function deleteTaskMessage(taskId, messageId) {
-  const database = getDb();
-  const existing = database
-    .prepare("SELECT * FROM task_messages WHERE id = ? AND task_id = ?")
-    .get(Number(messageId), Number(taskId));
-  if (!existing) return null;
-  database
-    .prepare("DELETE FROM task_messages WHERE id = ? AND task_id = ?")
-    .run(Number(messageId), Number(taskId));
+export async function deleteTaskMessage(taskId, messageId) {
+  const client = await getDb();
+  const check = await client.execute({
+    sql: "SELECT id FROM task_messages WHERE id = ? AND task_id = ?",
+    args: [Number(messageId), Number(taskId)]
+  });
+  if (!check.rows[0]) return null;
+  await client.execute({
+    sql: "DELETE FROM task_messages WHERE id = ? AND task_id = ?",
+    args: [Number(messageId), Number(taskId)]
+  });
   return { ok: true };
 }
 
-export function listDailyNotes(date) {
-  const database = getDb();
+// --- Daily notes -----------------------------------------------------------
+
+export async function listDailyNotes(date) {
+  const client = await getDb();
   if (date) {
-    return database
-      .prepare("SELECT * FROM daily_notes WHERE note_date = ? ORDER BY updated_at DESC")
-      .all(date);
+    const r = await client.execute({ sql: "SELECT * FROM daily_notes WHERE note_date = ? ORDER BY updated_at DESC", args: [date] });
+    return rows(r);
   }
-  return database
-    .prepare("SELECT * FROM daily_notes ORDER BY note_date DESC, updated_at DESC LIMIT 200")
-    .all();
+  const r = await client.execute("SELECT * FROM daily_notes ORDER BY note_date DESC, updated_at DESC LIMIT 200");
+  return rows(r);
 }
 
-export function saveDailyNote(input) {
-  const database = getDb();
+export async function saveDailyNote(input) {
+  const client = await getDb();
   if (input.id) {
-    database
-      .prepare("UPDATE daily_notes SET note_date = ?, assignee = ?, category = ?, body = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(input.note_date, input.assignee || null, input.category || "Misc.", input.body, Number(input.id));
-    return database.prepare("SELECT * FROM daily_notes WHERE id = ?").get(Number(input.id));
+    await client.execute({
+      sql: "UPDATE daily_notes SET note_date = ?, assignee = ?, category = ?, body = ?, updated_at = datetime('now') WHERE id = ?",
+      args: [input.note_date, input.assignee || null, input.category || "Misc.", input.body, Number(input.id)]
+    });
+    const r = await client.execute({ sql: "SELECT * FROM daily_notes WHERE id = ?", args: [Number(input.id)] });
+    return firstRow(r);
   }
-  const result = database
-    .prepare("INSERT INTO daily_notes (note_date, assignee, category, body) VALUES (?, ?, ?, ?)")
-    .run(input.note_date, input.assignee || null, input.category || "Misc.", input.body);
-  return database.prepare("SELECT * FROM daily_notes WHERE id = ?").get(Number(result.lastInsertRowid));
+  const result = await client.execute({
+    sql: "INSERT INTO daily_notes (note_date, assignee, category, body) VALUES (?, ?, ?, ?)",
+    args: [input.note_date, input.assignee || null, input.category || "Misc.", input.body]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM daily_notes WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return firstRow(r);
 }
 
-export function deleteDailyNote(id) {
-  getDb().prepare("DELETE FROM daily_notes WHERE id = ?").run(Number(id));
+export async function deleteDailyNote(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM daily_notes WHERE id = ?", args: [Number(id)] });
   return { ok: true };
 }
 
-export function dmChannel(user1, user2) {
-  return `dm:${[user1, user2].sort().join(":")}`;
+// --- Resources ---------------------------------------------------------------
+
+export async function listResourceItems() {
+  const client = await getDb();
+  const r = await client.execute("SELECT * FROM resource_items ORDER BY section ASC, sort_order ASC, title ASC, id ASC");
+  return rows(r);
 }
 
-export function listChatMessages(channel, limit = 200) {
-  return getDb()
-    .prepare("SELECT * FROM chat_messages WHERE channel = ? ORDER BY created_at ASC LIMIT ?")
-    .all(channel, limit);
-}
-
-export function createChatMessage({ channel, author, body }) {
-  if (!body || !body.trim()) throw Object.assign(new Error("Message body is required."), { status: 400 });
-  const result = getDb()
-    .prepare("INSERT INTO chat_messages (channel, author, body) VALUES (?, ?, ?)")
-    .run(channel, author, body.trim());
-  return getDb().prepare("SELECT * FROM chat_messages WHERE id = ?").get(Number(result.lastInsertRowid));
-}
-
-export function deleteChatMessage(id) {
-  getDb().prepare("DELETE FROM chat_messages WHERE id = ?").run(Number(id));
-  return { ok: true };
-}
-
-export function listResourceItems() {
-  return getDb()
-    .prepare("SELECT * FROM resource_items ORDER BY section ASC, sort_order ASC, title ASC, id ASC")
-    .all();
-}
-
-export function createResourceItem(input) {
-  const database = getDb();
+export async function createResourceItem(input) {
+  const client = await getDb();
   const section = ["logins", "important_links"].includes(input.section) ? input.section : "important_links";
-  const maxOrder = database
-    .prepare("SELECT coalesce(max(sort_order), 0) AS sort_order FROM resource_items WHERE section = ?")
-    .get(section).sort_order;
-  const result = database
-    .prepare(`
-      INSERT INTO resource_items (section, title, url, note, username, password, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
-    .run(
-      section,
-      input.title,
-      input.url || null,
-      input.note || null,
-      input.username || null,
-      input.password || null,
-      Number(maxOrder) + 1
-    );
-  return database.prepare("SELECT * FROM resource_items WHERE id = ?").get(Number(result.lastInsertRowid));
+  const maxR = await client.execute({
+    sql: "SELECT coalesce(max(sort_order), 0) AS sort_order FROM resource_items WHERE section = ?",
+    args: [section]
+  });
+  const maxOrder = Number(maxR.rows[0]?.["sort_order"] ?? 0);
+  const result = await client.execute({
+    sql: "INSERT INTO resource_items (section, title, url, note, username, password, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    args: [section, input.title, input.url || null, input.note || null, input.username || null, input.password || null, maxOrder + 1]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM resource_items WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return firstRow(r);
 }
 
-export function deleteResourceItem(id) {
-  getDb().prepare("DELETE FROM resource_items WHERE id = ?").run(Number(id));
+export async function deleteResourceItem(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM resource_items WHERE id = ?", args: [Number(id)] });
   return { ok: true };
 }
 
 // --- Canvas notes (Notes tab) ------------------------------------------------
 
-export function listCanvasNotes() {
-  return getDb()
-    .prepare("SELECT * FROM canvas_notes ORDER BY z_index ASC, id ASC")
-    .all();
+export async function listCanvasNotes() {
+  const client = await getDb();
+  const result = await client.execute("SELECT * FROM canvas_notes ORDER BY z_index ASC, id ASC");
+  return rows(result);
 }
 
-export function createCanvasNote(input) {
-  const database = getDb();
-  const maxZ = database.prepare("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes").get().mz;
-  const result = database
-    .prepare("INSERT INTO canvas_notes (title, body, x, y, color, pinned, z_index) VALUES (?, ?, ?, ?, ?, 0, ?)")
-    .run(input.title || "", input.body || "", Number(input.x) || 100, Number(input.y) || 100, input.color || "yellow", maxZ + 1);
-  return database.prepare("SELECT * FROM canvas_notes WHERE id = ?").get(Number(result.lastInsertRowid));
+export async function createCanvasNote(input) {
+  const client = await getDb();
+  const maxRes = await client.execute("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes");
+  const maxZ = Number(maxRes.rows[0]?.["mz"] ?? 0);
+  const result = await client.execute({
+    sql: "INSERT INTO canvas_notes (title, body, x, y, color, pinned, z_index) VALUES (?, ?, ?, ?, ?, 0, ?)",
+    args: [input.title || "", input.body || "", Number(input.x) || 100, Number(input.y) || 100, input.color || "yellow", maxZ + 1]
+  });
+  const row = await client.execute({ sql: "SELECT * FROM canvas_notes WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return firstRow(row);
 }
 
-export function updateCanvasNote(id, input) {
-  const database = getDb();
-  const existing = database.prepare("SELECT * FROM canvas_notes WHERE id = ?").get(Number(id));
-  if (!existing) return null;
+export async function updateCanvasNote(id, input) {
+  const client = await getDb();
+  const existing = await client.execute({ sql: "SELECT * FROM canvas_notes WHERE id = ?", args: [Number(id)] });
+  if (!existing.rows.length) return null;
   const fields = [];
-  const params = [];
+  const args = [];
   for (const key of ["title", "body", "x", "y", "width", "height", "color", "pinned", "z_index"]) {
     if (key in input) {
       fields.push(`${key} = ?`);
-      params.push(key === "pinned" ? (input[key] ? 1 : 0) : input[key]);
+      args.push(key === "pinned" ? (input[key] ? 1 : 0) : input[key]);
     }
   }
-  if (!fields.length) return existing;
+  if (!fields.length) return firstRow(existing);
   fields.push("updated_at = datetime('now')");
-  params.push(Number(id));
-  database.prepare(`UPDATE canvas_notes SET ${fields.join(", ")} WHERE id = ?`).run(...params);
-  return database.prepare("SELECT * FROM canvas_notes WHERE id = ?").get(Number(id));
+  args.push(Number(id));
+  await client.execute({ sql: `UPDATE canvas_notes SET ${fields.join(", ")} WHERE id = ?`, args });
+  const row = await client.execute({ sql: "SELECT * FROM canvas_notes WHERE id = ?", args: [Number(id)] });
+  return firstRow(row);
 }
 
-export function deleteCanvasNote(id) {
-  getDb().prepare("DELETE FROM canvas_notes WHERE id = ?").run(Number(id));
+export async function deleteCanvasNote(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM canvas_notes WHERE id = ?", args: [Number(id)] });
   return { ok: true };
 }
 
-export function bringCanvasNoteToFront(id) {
-  const database = getDb();
-  const maxZ = database.prepare("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes").get().mz;
-  database.prepare("UPDATE canvas_notes SET z_index = ?, updated_at = datetime('now') WHERE id = ?").run(maxZ + 1, Number(id));
-  return database.prepare("SELECT * FROM canvas_notes WHERE id = ?").get(Number(id));
+export async function bringCanvasNoteToFront(id) {
+  const client = await getDb();
+  const maxRes = await client.execute("SELECT coalesce(max(z_index), 0) AS mz FROM canvas_notes");
+  const maxZ = Number(maxRes.rows[0]?.["mz"] ?? 0);
+  await client.execute({ sql: "UPDATE canvas_notes SET z_index = ?, updated_at = datetime('now') WHERE id = ?", args: [maxZ + 1, Number(id)] });
+  const row = await client.execute({ sql: "SELECT * FROM canvas_notes WHERE id = ?", args: [Number(id)] });
+  return firstRow(row);
 }
 
-// --- Storyboard workspace (Notes tab) ------------------------------------
+// --- TikTok accounts -------------------------------------------------------
 
-export function getStoryboardWorkspace() {
-  const row = getDb().prepare("SELECT data, version, updated_at FROM storyboard_workspace WHERE id = 1").get();
-  return row || { data: "{}", version: 0, updated_at: null };
-}
-
-export function saveStoryboardWorkspace(data, clientVersion) {
-  const db = getDb();
-  const current = db.prepare("SELECT version FROM storyboard_workspace WHERE id = 1").get();
-  if (current && typeof clientVersion === "number" && clientVersion < current.version) {
-    return { conflict: true, serverVersion: current.version };
-  }
-  const nextVersion = (current?.version || 0) + 1;
-  db.prepare("UPDATE storyboard_workspace SET data = ?, version = ?, updated_at = datetime('now') WHERE id = 1").run(data, nextVersion);
-  return { version: nextVersion, conflict: false };
-}
-
-// --- TikTok accounts (FlowStage tab) -------------------------------------
-// Fully independent of tasks: own tables, own helpers.
-
-function hydrateAccount(row) {
-  const database = getDb();
-  const steps = database
-    .prepare("SELECT id, label, assignee, position FROM tiktok_account_steps WHERE account_id = ? ORDER BY position ASC, id ASC")
-    .all(row.id);
+async function hydrateAccount(row, columns, client) {
+  const account = toRow(columns, row);
+  const steps = await client.execute({
+    sql: "SELECT id, label, assignee, position FROM tiktok_account_steps WHERE account_id = ? ORDER BY position ASC, id ASC",
+    args: [account.id]
+  });
   // Never send OAuth tokens to the client — expose only a connected flag.
-  const { tiktok_access_token, tiktok_refresh_token, tiktok_token_expires_at, tiktok_open_id, ...safe } = row;
+  const { tiktok_access_token, tiktok_refresh_token, tiktok_token_expires_at, tiktok_open_id, ...safe } = account;
   return {
     ...safe,
-    archived: Boolean(row.archived),
-    runout_date: row.scheduled_through || null,
+    archived: Boolean(account.archived),
+    runout_date: account.scheduled_through || null,
     tiktok_connected: Boolean(tiktok_access_token),
-    steps
+    steps: rows(steps)
   };
 }
 
-// Token accessors are server-only (not exposed via the API).
-export function getAccountTokens(id) {
-  return getDb()
-    .prepare("SELECT tiktok_open_id, tiktok_access_token, tiktok_refresh_token, tiktok_token_expires_at FROM tiktok_accounts WHERE id = ?")
-    .get(Number(id)) || {};
+export async function getAccountTokens(id) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT tiktok_open_id, tiktok_access_token, tiktok_refresh_token, tiktok_token_expires_at FROM tiktok_accounts WHERE id = ?",
+    args: [Number(id)]
+  });
+  return firstRow(r) || {};
 }
 
-export function saveAccountTikTokTokens(id, { open_id, access_token, refresh_token, expires_in }) {
+export async function saveAccountTikTokTokens(id, { open_id, access_token, refresh_token, expires_in }) {
   const expiresAt = new Date(Date.now() + (Number(expires_in) || 0) * 1000).toISOString();
-  getDb()
-    .prepare(`
-      UPDATE tiktok_accounts SET
-        tiktok_open_id = coalesce(?, tiktok_open_id),
-        tiktok_access_token = ?, tiktok_refresh_token = ?, tiktok_token_expires_at = ?,
-        tiktok_connected_at = coalesce(tiktok_connected_at, datetime('now')),
-        updated_at = datetime('now')
-      WHERE id = ?
-    `)
-    .run(open_id || null, access_token || null, refresh_token || null, expiresAt, Number(id));
+  const client = await getDb();
+  await client.execute({
+    sql: `UPDATE tiktok_accounts SET
+      tiktok_open_id = coalesce(?, tiktok_open_id),
+      tiktok_access_token = ?, tiktok_refresh_token = ?, tiktok_token_expires_at = ?,
+      tiktok_connected_at = coalesce(tiktok_connected_at, datetime('now')),
+      updated_at = datetime('now')
+    WHERE id = ?`,
+    args: [open_id || null, access_token || null, refresh_token || null, expiresAt, Number(id)]
+  });
   return getTikTokAccount(id);
 }
 
-export function disconnectAccountTikTok(id) {
-  getDb()
-    .prepare("UPDATE tiktok_accounts SET tiktok_open_id = NULL, tiktok_access_token = NULL, tiktok_refresh_token = NULL, tiktok_token_expires_at = NULL, tiktok_connected_at = NULL, updated_at = datetime('now') WHERE id = ?")
-    .run(Number(id));
+export async function disconnectAccountTikTok(id) {
+  const client = await getDb();
+  await client.execute({
+    sql: "UPDATE tiktok_accounts SET tiktok_open_id = NULL, tiktok_access_token = NULL, tiktok_refresh_token = NULL, tiktok_token_expires_at = NULL, tiktok_connected_at = NULL, updated_at = datetime('now') WHERE id = ?",
+    args: [Number(id)]
+  });
   return getTikTokAccount(id);
 }
 
-export function listTikTokAccounts() {
-  const rows = getDb()
-    .prepare(`
-      SELECT * FROM tiktok_accounts
-      WHERE archived = 0
-      ORDER BY
-        scheduled_through IS NULL ASC,
-        scheduled_through ASC,
-        sort_order ASC, id ASC
-    `)
-    .all();
-  return rows.map(hydrateAccount);
+export async function listTikTokAccounts() {
+  const client = await getDb();
+  const result = await client.execute(`
+    SELECT * FROM tiktok_accounts
+    WHERE archived = 0
+    ORDER BY
+      scheduled_through IS NULL ASC,
+      scheduled_through ASC,
+      sort_order ASC, id ASC
+  `);
+  return Promise.all(result.rows.map((row) => hydrateAccount(row, result.columns, client)));
 }
 
-export function getTikTokAccount(id) {
-  const row = getDb().prepare("SELECT * FROM tiktok_accounts WHERE id = ?").get(Number(id));
-  return row ? hydrateAccount(row) : null;
+export async function getTikTokAccount(id) {
+  const client = await getDb();
+  const result = await client.execute({ sql: "SELECT * FROM tiktok_accounts WHERE id = ?", args: [Number(id)] });
+  if (!result.rows[0]) return null;
+  return hydrateAccount(result.rows[0], result.columns, client);
 }
 
-export function createTikTokAccount(input) {
+export async function createTikTokAccount(input) {
   const payload = validateAccountPayload(input);
-  const database = getDb();
-  const maxOrder = database.prepare("SELECT coalesce(max(sort_order), 0) AS sort_order FROM tiktok_accounts").get().sort_order;
-  const result = database
-    .prepare(`
-      INSERT INTO tiktok_accounts (
-        name, ae_project_url, tutorial_url, username, email, password,
-        scheduled_through, group_name, avatar, upload_url, sort_order
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    .run(
+  const client = await getDb();
+  const maxR = await client.execute("SELECT coalesce(max(sort_order), 0) AS sort_order FROM tiktok_accounts");
+  const maxOrder = Number(maxR.rows[0]?.["sort_order"] ?? 0);
+  const result = await client.execute({
+    sql: `INSERT INTO tiktok_accounts (
+      name, ae_project_url, tutorial_url, username, email, password,
+      scheduled_through, group_name, avatar, upload_url, sort_order
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
       payload.name,
       payload.ae_project_url || null,
       payload.tutorial_url || null,
@@ -855,19 +982,19 @@ export function createTikTokAccount(input) {
       payload.group_name || null,
       payload.avatar || null,
       payload.upload_url || null,
-      Number(maxOrder) + 1
-    );
+      maxOrder + 1
+    ]
+  });
   const accountId = Number(result.lastInsertRowid);
-  // Seed the default process steps unless the caller supplied their own.
   const steps = payload.steps && payload.steps.length
     ? payload.steps
     : DEFAULT_ACCOUNT_STEPS.map((label) => ({ label, assignee: null }));
-  replaceAccountSteps(accountId, steps);
+  await _replaceAccountSteps(accountId, steps, client);
   return getTikTokAccount(accountId);
 }
 
-export function updateTikTokAccount(id, input) {
-  const account = getTikTokAccount(id);
+export async function updateTikTokAccount(id, input) {
+  const account = await getTikTokAccount(id);
   if (!account) return null;
   const payload = validateAccountPayload(input, { partial: true });
   const sets = [];
@@ -878,36 +1005,37 @@ export function updateTikTokAccount(id, input) {
       params.push(payload[field] || null);
     }
   }
+  const client = await getDb();
   if (sets.length) {
     sets.push("updated_at = datetime('now')");
     params.push(Number(id));
-    getDb().prepare(`UPDATE tiktok_accounts SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+    await client.execute({ sql: `UPDATE tiktok_accounts SET ${sets.join(", ")} WHERE id = ?`, args: params });
   }
-  if ("steps" in payload) replaceAccountSteps(Number(id), payload.steps || []);
+  if ("steps" in payload) await _replaceAccountSteps(Number(id), payload.steps || [], client);
   return getTikTokAccount(id);
 }
 
-export function replaceAccountSteps(accountId, steps) {
-  const database = getDb();
-  database.prepare("DELETE FROM tiktok_account_steps WHERE account_id = ?").run(accountId);
-  const insert = database.prepare(
-    "INSERT INTO tiktok_account_steps (account_id, label, assignee, position) VALUES (?, ?, ?, ?)"
-  );
-  steps.forEach((step, index) => insert.run(accountId, step.label, step.assignee || null, index + 1));
+async function _replaceAccountSteps(accountId, steps, client) {
+  await client.execute({ sql: "DELETE FROM tiktok_account_steps WHERE account_id = ?", args: [accountId] });
+  for (let i = 0; i < steps.length; i++) {
+    await client.execute({
+      sql: "INSERT INTO tiktok_account_steps (account_id, label, assignee, position) VALUES (?, ?, ?, ?)",
+      args: [accountId, steps[i].label, steps[i].assignee || null, i + 1]
+    });
+  }
 }
 
-export function setAccountSync(id, { metrics = null, metricsSource = null } = {}) {
+export async function setAccountSync(id, { metrics = null, metricsSource = null } = {}) {
   const m = metrics || {};
   const p = m.prev || {};
-  getDb()
-    .prepare(`
-      UPDATE tiktok_accounts SET
-        total_views = ?, total_likes = ?, total_comments = ?, total_shares = ?, post_count = ?,
-        prev_views = ?, prev_likes = ?, prev_comments = ?, prev_shares = ?, prev_post_count = ?,
-        metrics_source = ?, metrics_daily = ?, metrics_synced_at = datetime('now'), updated_at = datetime('now')
-      WHERE id = ?
-    `)
-    .run(
+  const client = await getDb();
+  await client.execute({
+    sql: `UPDATE tiktok_accounts SET
+      total_views = ?, total_likes = ?, total_comments = ?, total_shares = ?, post_count = ?,
+      prev_views = ?, prev_likes = ?, prev_comments = ?, prev_shares = ?, prev_post_count = ?,
+      metrics_source = ?, metrics_daily = ?, metrics_synced_at = datetime('now'), updated_at = datetime('now')
+    WHERE id = ?`,
+    args: [
       metrics ? (Number(m.views) || 0) : null,
       metrics ? (Number(m.likes) || 0) : null,
       metrics ? (Number(m.comments) || 0) : null,
@@ -921,79 +1049,254 @@ export function setAccountSync(id, { metrics = null, metricsSource = null } = {}
       metrics ? metricsSource : null,
       metrics && m.daily ? JSON.stringify(m.daily) : null,
       Number(id)
-    );
+    ]
+  });
   return getTikTokAccount(id);
 }
 
-export function getAccountAlltime(accountId) {
-  const row = getDb()
-    .prepare("SELECT alltime_views, alltime_likes, alltime_comments, alltime_shares FROM tiktok_accounts WHERE id = ?")
-    .get(Number(accountId));
-  if (!row) return null;
-  return { views: row.alltime_views || 0, likes: row.alltime_likes || 0, comments: row.alltime_comments || 0, shares: row.alltime_shares || 0 };
+export async function setAccountProfileStats(id, { follower_count = null, following_count = null, likes_count = null, video_count = null } = {}) {
+  const client = await getDb();
+  await client.execute({
+    sql: `UPDATE tiktok_accounts SET
+      follower_count = coalesce(?, follower_count),
+      following_count = coalesce(?, following_count),
+      profile_likes = coalesce(?, profile_likes),
+      tiktok_video_count = coalesce(?, tiktok_video_count),
+      updated_at = datetime('now')
+    WHERE id = ?`,
+    args: [follower_count, following_count, likes_count, video_count, Number(id)]
+  });
 }
 
-export function setAccountAlltime(accountId, totals) {
-  getDb()
-    .prepare("UPDATE tiktok_accounts SET alltime_views = ?, alltime_likes = ?, alltime_comments = ?, alltime_shares = ? WHERE id = ?")
-    .run(totals.views || 0, totals.likes || 0, totals.comments || 0, totals.shares || 0, Number(accountId));
-}
-
-export function addDailyGains(accountId, dateStr, gains) {
-  getDb()
-    .prepare(`
-      INSERT INTO tiktok_daily_snapshots (account_id, snapshot_date, total_views, total_likes, total_comments, total_shares)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(account_id, snapshot_date) DO UPDATE SET
-        total_views = total_views + excluded.total_views,
-        total_likes = total_likes + excluded.total_likes,
-        total_comments = total_comments + excluded.total_comments,
-        total_shares = total_shares + excluded.total_shares
-    `)
-    .run(Number(accountId), dateStr, gains.views || 0, gains.likes || 0, gains.comments || 0, gains.shares || 0);
-}
-
-export function getDailyGains(accountId, startDate) {
-  return getDb()
-    .prepare(`
-      SELECT snapshot_date, total_views, total_likes, total_comments, total_shares
-      FROM tiktok_daily_snapshots
-      WHERE account_id = ? AND snapshot_date >= ?
-      ORDER BY snapshot_date ASC
-    `)
-    .all(Number(accountId), startDate);
-}
-
-export function deleteTikTokAccount(id) {
-  getDb().prepare("DELETE FROM tiktok_accounts WHERE id = ?").run(Number(id));
+export async function deleteTikTokAccount(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM tiktok_accounts WHERE id = ?", args: [Number(id)] });
   return { deleted: true };
 }
 
-export function createImport(filename) {
-  const result = getDb()
-    .prepare("INSERT INTO imports (filename) VALUES (?)")
-    .run(filename);
+// --- Per-video history + daily snapshots (metrics pipeline) ----------------
+
+// Upsert the latest stats for each video returned by a sync. Rows are never
+// deleted: videos that fall out of TikTok's recent window keep their
+// last-known stats, so long-range aggregates stay meaningful.
+export async function upsertAccountVideos(accountId, videos) {
+  if (!videos.length) return;
+  const client = await getDb();
+  await client.batch(videos.map((v) => ({
+    sql: `INSERT INTO tiktok_videos (account_id, video_id, create_time, title, cover_url, share_url, duration, views, likes, comments, shares)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(account_id, video_id) DO UPDATE SET
+        create_time = excluded.create_time,
+        title = coalesce(excluded.title, title),
+        cover_url = coalesce(excluded.cover_url, cover_url),
+        share_url = coalesce(excluded.share_url, share_url),
+        duration = coalesce(excluded.duration, duration),
+        views = excluded.views,
+        likes = excluded.likes,
+        comments = excluded.comments,
+        shares = excluded.shares,
+        last_synced_at = datetime('now')`,
+    args: [
+      Number(accountId),
+      String(v.id),
+      Number(v.create_time) || null,
+      v.title || null,
+      v.cover_image_url || null,
+      v.share_url || null,
+      Number(v.duration) || null,
+      Number(v.view_count) || 0,
+      Number(v.like_count) || 0,
+      Number(v.comment_count) || 0,
+      Number(v.share_count) || 0
+    ]
+  })), "write");
+}
+
+// Write today's cumulative snapshot for an account: totals summed over every
+// stored video plus the latest profile stats. Re-syncing the same day just
+// overwrites the row with fresher cumulative numbers.
+export async function saveAccountSnapshot(accountId, { date, follower_count = null, following_count = null, profile_likes = null } = {}) {
+  const client = await getDb();
+  const snapshotDate = date || new Date().toISOString().slice(0, 10);
+  const totals = await client.execute({
+    sql: `SELECT count(*) AS n, coalesce(sum(views), 0) AS v, coalesce(sum(likes), 0) AS l,
+      coalesce(sum(comments), 0) AS c, coalesce(sum(shares), 0) AS s
+      FROM tiktok_videos WHERE account_id = ?`,
+    args: [Number(accountId)]
+  });
+  const t = firstRow(totals) || {};
+  await client.execute({
+    sql: `INSERT INTO tiktok_account_snapshots
+      (account_id, snapshot_date, views, likes, comments, shares, video_count, follower_count, following_count, profile_likes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(account_id, snapshot_date) DO UPDATE SET
+        views = excluded.views,
+        likes = excluded.likes,
+        comments = excluded.comments,
+        shares = excluded.shares,
+        video_count = excluded.video_count,
+        follower_count = coalesce(excluded.follower_count, follower_count),
+        following_count = coalesce(excluded.following_count, following_count),
+        profile_likes = coalesce(excluded.profile_likes, profile_likes)`,
+    args: [
+      Number(accountId), snapshotDate,
+      Number(t.v) || 0, Number(t.l) || 0, Number(t.c) || 0, Number(t.s) || 0, Number(t.n) || 0,
+      follower_count, following_count, profile_likes
+    ]
+  });
+}
+
+// All snapshots on/after `sinceDate` plus, per account, the latest snapshot
+// BEFORE it (the baseline the first in-window delta is measured against).
+export async function getSnapshotSeries(sinceDate) {
+  const client = await getDb();
+  const [inWindow, baseline] = await Promise.all([
+    client.execute({
+      sql: "SELECT * FROM tiktok_account_snapshots WHERE snapshot_date >= ? ORDER BY account_id ASC, snapshot_date ASC",
+      args: [sinceDate]
+    }),
+    client.execute({
+      sql: `SELECT s.* FROM tiktok_account_snapshots s
+        JOIN (
+          SELECT account_id, max(snapshot_date) AS md
+          FROM tiktok_account_snapshots WHERE snapshot_date < ? GROUP BY account_id
+        ) b ON s.account_id = b.account_id AND s.snapshot_date = b.md`,
+      args: [sinceDate]
+    })
+  ]);
+  return { rows: rows(inWindow), baseline: rows(baseline) };
+}
+
+// Videos posted on/after `sinceUnix` across all active accounts — used to
+// build "by post date" series for any window length.
+export async function listVideosSince(sinceUnix) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: `SELECT v.account_id, v.create_time, v.views, v.likes, v.comments, v.shares
+      FROM tiktok_videos v
+      JOIN tiktok_accounts a ON a.id = v.account_id AND a.archived = 0
+      WHERE v.create_time >= ?`,
+    args: [Number(sinceUnix)]
+  });
+  return rows(r);
+}
+
+const VIDEO_SORTS = new Set(["views", "likes", "comments", "shares", "create_time"]);
+
+export async function listAccountVideos(accountId, { sinceUnix = 0, sort = "views", limit = 20 } = {}) {
+  const client = await getDb();
+  const orderBy = VIDEO_SORTS.has(sort) ? sort : "views";
+  const r = await client.execute({
+    sql: `SELECT video_id, create_time, title, cover_url, share_url, duration, views, likes, comments, shares
+      FROM tiktok_videos
+      WHERE account_id = ? AND create_time >= ?
+      ORDER BY ${orderBy} DESC LIMIT ?`,
+    args: [Number(accountId), Number(sinceUnix), Math.min(Number(limit) || 20, 100)]
+  });
+  return rows(r);
+}
+
+export async function listTopVideos({ sinceUnix = 0, sort = "views", limit = 20 } = {}) {
+  const client = await getDb();
+  const orderBy = VIDEO_SORTS.has(sort) ? sort : "views";
+  const r = await client.execute({
+    sql: `SELECT v.video_id, v.account_id, v.create_time, v.title, v.cover_url, v.share_url, v.duration,
+      v.views, v.likes, v.comments, v.shares, a.name AS account_name
+      FROM tiktok_videos v
+      JOIN tiktok_accounts a ON a.id = v.account_id AND a.archived = 0
+      WHERE v.create_time >= ?
+      ORDER BY v.${orderBy} DESC LIMIT ?`,
+    args: [Number(sinceUnix), Math.min(Number(limit) || 20, 100)]
+  });
+  return rows(r);
+}
+
+// --- Storyboard workspace (Notes tab) ----------------------------------------
+
+export async function getStoryboardWorkspace() {
+  const client = await getDb();
+  const r = await client.execute("SELECT data, version, updated_at FROM storyboard_workspace WHERE id = 1");
+  return firstRow(r) || { data: "{}", version: 0, updated_at: null };
+}
+
+export async function saveStoryboardWorkspace(data, clientVersion) {
+  const client = await getDb();
+  const cur = await client.execute("SELECT version FROM storyboard_workspace WHERE id = 1");
+  const currentVersion = cur.rows[0] ? Number(cur.rows[0]["version"]) : 0;
+  if (typeof clientVersion === "number" && clientVersion < currentVersion) {
+    return { conflict: true, serverVersion: currentVersion };
+  }
+  const nextVersion = currentVersion + 1;
+  await client.execute({
+    sql: "UPDATE storyboard_workspace SET data = ?, version = ?, updated_at = datetime('now') WHERE id = 1",
+    args: [data, nextVersion]
+  });
+  return { version: nextVersion, conflict: false };
+}
+
+// --- Chat messages (sidebar messaging) ----------------------------------------
+
+export function dmChannel(user1, user2) {
+  return `dm:${[user1, user2].sort().join(":")}`;
+}
+
+export async function listChatMessages(channel, limit = 200) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT * FROM chat_messages WHERE channel = ? ORDER BY created_at ASC LIMIT ?",
+    args: [channel, limit]
+  });
+  return rows(r);
+}
+
+export async function chatMessageCounts() {
+  const client = await getDb();
+  const r = await client.execute("SELECT channel, count(*) AS count FROM chat_messages GROUP BY channel");
+  const counts = {};
+  for (const row of rows(r)) counts[row.channel] = Number(row.count) || 0;
+  return counts;
+}
+
+export async function createChatMessage({ channel, author, body }) {
+  if (!body || !body.trim()) { const e = new Error("Message body is required."); e.status = 400; throw e; }
+  const client = await getDb();
+  const result = await client.execute({
+    sql: "INSERT INTO chat_messages (channel, author, body) VALUES (?, ?, ?)",
+    args: [channel, author, body.trim()]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM chat_messages WHERE id = ?", args: [Number(result.lastInsertRowid)] });
+  return firstRow(r);
+}
+
+export async function deleteChatMessage(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM chat_messages WHERE id = ?", args: [Number(id)] });
+  return { ok: true };
+}
+
+// --- Imports (xlsx) ----------------------------------------------------------
+
+export async function createImport(filename) {
+  const client = await getDb();
+  const result = await client.execute({ sql: "INSERT INTO imports (filename) VALUES (?)", args: [filename] });
   return Number(result.lastInsertRowid);
 }
 
-export function finishImport(id, summary) {
-  getDb()
-    .prepare(`
-      UPDATE imports
-      SET imported_rows = ?, skipped_rows = ?, task_rows = ?, daily_note_rows = ?
-      WHERE id = ?
-    `)
-    .run(summary.importedRows, summary.skippedRows, summary.taskRows, summary.dailyNoteRows, Number(id));
+export async function finishImport(id, summary) {
+  const client = await getDb();
+  await client.execute({
+    sql: "UPDATE imports SET imported_rows = ?, skipped_rows = ?, task_rows = ?, daily_note_rows = ? WHERE id = ?",
+    args: [summary.importedRows, summary.skippedRows, summary.taskRows, summary.dailyNoteRows, Number(id)]
+  });
 }
 
-export function createDailyNoteFromImport(input, meta = {}) {
-  getDb()
-    .prepare(`
-      INSERT INTO daily_notes (
-        note_date, assignee, category, body, source_filename, source_tab, source_row, import_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    .run(
+export async function createDailyNoteFromImport(input, meta = {}) {
+  const client = await getDb();
+  await client.execute({
+    sql: `INSERT INTO daily_notes (
+      note_date, assignee, category, body, source_filename, source_tab, source_row, import_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
       input.note_date,
       input.assignee || null,
       input.category || "Misc.",
@@ -1002,71 +1305,32 @@ export function createDailyNoteFromImport(input, meta = {}) {
       meta.source_tab || null,
       meta.source_row || null,
       meta.import_id || null
-    );
+    ]
+  });
 }
 
-export function getBootstrap() {
-  const database = getDb();
-  purgeExpiredArchivedTasks(database);
+// --- Bootstrap ---------------------------------------------------------------
+
+export async function getBootstrap() {
+  const client = await getDb();
+  await purgeExpired(client);
+  const [total, open, overdue, archived, latestImport] = await Promise.all([
+    client.execute("SELECT count(*) AS count FROM tasks WHERE archived = 0"),
+    client.execute("SELECT count(*) AS count FROM tasks WHERE archived = 0 AND done = 0"),
+    client.execute("SELECT count(*) AS count FROM tasks WHERE archived = 0 AND done = 0 AND status != 'BRB' AND due_date < date('now', 'localtime')"),
+    client.execute("SELECT count(*) AS count FROM tasks WHERE archived = 1 AND archived_at >= datetime('now', '-30 days')"),
+    client.execute("SELECT * FROM imports ORDER BY imported_at DESC LIMIT 1")
+  ]);
   return {
     assignees: ASSIGNEES,
     dailyCategories: DAILY_CATEGORIES,
     statuses: STATUSES,
     counts: {
-      tasks: database.prepare("SELECT count(*) AS count FROM tasks WHERE archived = 0").get().count,
-      open: database.prepare("SELECT count(*) AS count FROM tasks WHERE archived = 0 AND done = 0").get().count,
-      overdue: database
-        .prepare("SELECT count(*) AS count FROM tasks WHERE archived = 0 AND done = 0 AND status != 'BRB' AND due_date < date('now', 'localtime')")
-        .get().count,
-      archived: database
-        .prepare("SELECT count(*) AS count FROM tasks WHERE archived = 1 AND archived_at >= datetime('now', '-30 days')")
-        .get().count
+      tasks: Number(total.rows[0]?.["count"] ?? 0),
+      open: Number(open.rows[0]?.["count"] ?? 0),
+      overdue: Number(overdue.rows[0]?.["count"] ?? 0),
+      archived: Number(archived.rows[0]?.["count"] ?? 0)
     },
-    latestImport: database
-      .prepare("SELECT * FROM imports ORDER BY imported_at DESC LIMIT 1")
-      .get() || null
+    latestImport: firstRow(latestImport)
   };
-}
-
-function hydrateTask(row) {
-  const database = getDb();
-  return {
-    ...row,
-    done: Boolean(row.done),
-    archived: Boolean(row.archived),
-    links: database.prepare("SELECT * FROM task_links WHERE task_id = ? ORDER BY id ASC").all(row.id),
-    notes: database.prepare("SELECT * FROM task_notes WHERE task_id = ? ORDER BY id ASC").all(row.id),
-    workflow_steps: database.prepare("SELECT * FROM task_workflow_steps WHERE task_id = ? ORDER BY sort_order ASC, id ASC").all(row.id),
-    last_message: database.prepare("SELECT author, created_at FROM task_messages WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT 1").get(row.id) || null,
-    image_count: database.prepare("SELECT count(*) AS count FROM task_images WHERE task_id = ?").get(row.id).count
-  };
-}
-
-export function listTaskImages(taskId) {
-  return getDb()
-    .prepare("SELECT id, task_id, image, created_at FROM task_images WHERE task_id = ? ORDER BY id ASC")
-    .all(Number(taskId));
-}
-
-export function addTaskImage(taskId, image) {
-  if (typeof image !== "string" || !image.startsWith("data:image/")) {
-    const error = new Error("A valid image is required.");
-    error.status = 400;
-    throw error;
-  }
-  const task = getTask(taskId);
-  if (!task) {
-    const error = new Error("Task not found.");
-    error.status = 404;
-    throw error;
-  }
-  getDb().prepare("INSERT INTO task_images (task_id, image) VALUES (?, ?)").run(Number(taskId), image);
-  return listTaskImages(taskId);
-}
-
-export function deleteTaskImage(taskId, imageId) {
-  getDb()
-    .prepare("DELETE FROM task_images WHERE id = ? AND task_id = ?")
-    .run(Number(imageId), Number(taskId));
-  return listTaskImages(taskId);
 }

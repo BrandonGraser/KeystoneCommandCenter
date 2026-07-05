@@ -3161,6 +3161,185 @@ dialog::backdrop {
   font-weight: 500;
 }
 
+/* Window / source selectors on the overall chart */
+
+.overall-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.overall-windows button,
+.overall-sources button {
+  font-size: 11px;
+  padding: 5px 10px;
+}
+
+/* Top-videos leaderboard under the overall chart */
+
+.top-videos {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.top-videos-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.video-card {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex: none;
+  width: 250px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  text-decoration: none;
+  color: var(--ink);
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+
+a.video-card:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+
+.video-card-rank {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 10px;
+  color: var(--muted-2);
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.video-card-cover {
+  flex: none;
+  width: 42px;
+  height: 56px;
+  border-radius: 6px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.video-card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.video-card-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.video-card-title {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.video-card-account {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.video-card-stats {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.video-card-stats strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Per-account top videos inside the expanded panel */
+
+.account-top-videos {
+  margin-top: 12px;
+}
+
+.account-video-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-video-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.account-video-rank {
+  flex: none;
+  color: var(--muted-2);
+  font-size: 10px;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.account-video-title {
+  min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-video-title a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.account-video-title a:hover {
+  text-decoration: underline;
+}
+
+.account-video-title em {
+  font-style: normal;
+  color: var(--muted-2);
+  font-size: 10px;
+  margin-left: 6px;
+}
+
+.account-video-stats {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.account-video-stats strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 @media (max-width: 640px) {
   .account-charts {
     grid-template-columns: 1fr;
