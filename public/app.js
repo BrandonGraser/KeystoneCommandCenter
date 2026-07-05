@@ -1777,9 +1777,10 @@ function showNotice(message, tone = "") {
   els.notice.className = `notice ${tone}`.trim();
   els.notice.hidden = false;
   window.clearTimeout(showNotice.timer);
+  // Errors tend to be long (account names, reasons) — leave them up longer.
   showNotice.timer = window.setTimeout(() => {
     els.notice.hidden = true;
-  }, 6000);
+  }, tone === "bad" ? 12000 : 6000);
 }
 
 function toggleTheme() {
@@ -2949,9 +2950,12 @@ async function syncAccount(id, button = null) {
   }
 }
 
-// Sync All runs client-side, one request per account (3 at a time), so the
-// progress panel can show exactly which accounts are syncing and how far
-// along the run is. Rows light up as their fresh numbers land.
+const RATE_LIMIT_RE = /rate_limit_exceeded|rate limit/i;
+
+// Sync All runs client-side, one account at a time with a short gap, so the
+// progress panel shows exactly where the run is and TikTok's API isn't hit
+// with bursts. Rows light up as their fresh numbers land. The run stops at
+// the first rate-limit error — continuing would only burn more quota.
 async function syncAllAccountsAction() {
   if (accountsState.syncing) return;
   const targets = accountsState.accounts.filter((account) => account.tiktok_connected);
@@ -2966,11 +2970,10 @@ async function syncAllAccountsAction() {
   els.syncAllAccounts.classList.add("syncing");
   const progress = { done: 0, ok: 0, failed: 0, failures: [], active: new Set() };
   renderSyncProgress(progress, targets.length);
+  let rateLimited = false;
 
-  let next = 0;
-  const worker = async () => {
-    while (next < targets.length) {
-      const account = targets[next++];
+  try {
+    for (const account of targets) {
       progress.active.add(account.name);
       renderSyncProgress(progress, targets.length);
       try {
@@ -2982,16 +2985,15 @@ async function syncAllAccountsAction() {
       } catch (error) {
         progress.failed++;
         progress.failures.push(`${account.name}: ${error.message}`);
+        if (RATE_LIMIT_RE.test(error.message)) rateLimited = true;
       }
       progress.done++;
       progress.active.delete(account.name);
       renderSyncProgress(progress, targets.length);
       renderAccounts(); // fresh numbers appear row by row as each sync lands
+      if (rateLimited) break;
+      await sleep(500); // breathing room between accounts for TikTok's limits
     }
-  };
-
-  try {
-    await Promise.all(Array.from({ length: Math.min(3, targets.length) }, worker));
   } finally {
     accountsState.syncing = false;
     els.syncAllAccounts.disabled = false;
@@ -3001,7 +3003,9 @@ async function syncAllAccountsAction() {
 
   await loadAccounts(); // refresh the overall chart + leaderboards once at the end
   const skippedNote = skipped ? ` (${skipped} not connected, skipped)` : "";
-  if (progress.failed) {
+  if (rateLimited) {
+    showNotice(`TikTok's rate limit was hit — synced ${progress.ok} of ${targets.length} before stopping${skippedNote}. Everything synced so far is saved. Wait a while and run Sync All again; if it fails immediately, the app's daily TikTok quota is used up until it resets (midnight UTC).`, "bad");
+  } else if (progress.failed) {
     const detail = progress.failures.slice(0, 3).join(" · ") + (progress.failures.length > 3 ? " · …" : "");
     showNotice(`Synced ${progress.ok} of ${targets.length}${skippedNote} — ${progress.failed} failed: ${detail}`, "bad");
   } else {

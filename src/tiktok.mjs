@@ -97,9 +97,10 @@ export async function getUserInfo(accessToken) {
 }
 
 // Page through the user's videos and return them with their real stats.
-// 10 pages × 20 = up to 200 recent videos per sync; older videos keep their
-// last-known stats in the tiktok_videos table.
-export async function listVideos(accessToken, { maxPages = 10 } = {}) {
+// Callers pick the depth: a deep first sync backfills history, routine syncs
+// stay shallow to conserve the app's TikTok API quota (older videos keep
+// their last-known stats in the tiktok_videos table).
+export async function listVideos(accessToken, { maxPages = 2 } = {}) {
   const videos = [];
   let cursor;
   for (let page = 0; page < maxPages; page++) {
@@ -116,7 +117,9 @@ export async function listVideos(accessToken, { maxPages = 10 } = {}) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.error?.code !== "ok") {
       // Surface TikTok's error so we can see exactly what's wrong.
-      throw new Error(`video.list failed: ${JSON.stringify(data.error || data)}`);
+      const error = new Error(`video.list failed: ${JSON.stringify(data.error || data)}`);
+      error.code = data.error?.code || "";
+      throw error;
     }
     for (const v of data.data?.videos || []) videos.push(v);
     if (!data.data?.has_more) break;

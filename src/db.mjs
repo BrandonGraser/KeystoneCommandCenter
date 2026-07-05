@@ -1181,6 +1181,15 @@ export async function listVideosSince(sinceUnix) {
   return rows(r);
 }
 
+export async function countAccountVideos(accountId) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT count(*) AS c FROM tiktok_videos WHERE account_id = ?",
+    args: [Number(accountId)]
+  });
+  return Number(r.rows[0]?.["c"] ?? 0);
+}
+
 const VIDEO_SORTS = new Set(["views", "likes", "comments", "shares", "create_time"]);
 
 export async function listAccountVideos(accountId, { sinceUnix = 0, sort = "views", limit = 20 } = {}) {

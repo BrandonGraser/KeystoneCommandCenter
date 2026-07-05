@@ -9,6 +9,7 @@
 //   4. refreshes the 14-day summary stats shown on the account row.
 
 import {
+  countAccountVideos,
   getAccountTokens,
   getSnapshotSeries,
   getTikTokAccount,
@@ -42,7 +43,11 @@ export async function syncOneAccount(id) {
   }
 
   const accessToken = await freshAccessToken(id);
-  const videos = await listVideos(accessToken);
+  // Deep fetch (200 videos) only on an account's first sync to backfill
+  // history; after that 40 recent videos per sync keeps TikTok's API quota
+  // happy — that's where the stats actually move.
+  const stored = await countAccountVideos(id);
+  const videos = await listVideos(accessToken, { maxPages: stored > 0 ? 2 : 10 });
   // Profile stats need the user.info.stats scope; tolerate tokens that predate it.
   const userInfo = await getUserInfo(accessToken).catch(() => null);
 
@@ -58,25 +63,31 @@ export async function syncOneAccount(id) {
   return { account: await setAccountSync(id, { metrics, metricsSource: "tiktok" }) };
 }
 
-// Sync all accounts with limited concurrency — parallel enough that 20+
-// accounts fit inside Vercel's 60s function budget, gentle enough for TikTok.
-export async function syncAllAccounts({ concurrency = 4 } = {}) {
+export function isRateLimitError(error) {
+  return /rate_limit/i.test(error?.code || "") || /rate_limit_exceeded/i.test(error?.message || "");
+}
+
+// Sync all accounts sequentially (used by the daily cron). Stops at the first
+// rate-limit error — once TikTok says no, every further call just burns more
+// quota to fail.
+export async function syncAllAccounts() {
   const accounts = await listTikTokAccounts();
-  const results = new Array(accounts.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < accounts.length) {
-      const index = next++;
-      const account = accounts[index];
-      try {
-        const r = await syncOneAccount(account.id);
-        results[index] = { id: account.id, ok: true, through: r.account.runout_date };
-      } catch (error) {
-        results[index] = { id: account.id, ok: false, reason: error.message };
+  const results = [];
+  for (let i = 0; i < accounts.length; i++) {
+    const account = accounts[i];
+    try {
+      const r = await syncOneAccount(account.id);
+      results.push({ id: account.id, ok: true, through: r.account.runout_date });
+    } catch (error) {
+      results.push({ id: account.id, ok: false, reason: error.message });
+      if (isRateLimitError(error)) {
+        for (const rest of accounts.slice(i + 1)) {
+          results.push({ id: rest.id, ok: false, reason: "Skipped: TikTok rate limit hit." });
+        }
+        break;
       }
     }
-  };
-  await Promise.all(Array.from({ length: Math.min(concurrency, accounts.length || 1) }, worker));
+  }
   return { accounts: await listTikTokAccounts(), results };
 }
 
