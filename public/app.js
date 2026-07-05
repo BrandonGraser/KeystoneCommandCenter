@@ -2268,6 +2268,15 @@ const OVERALL_METRICS = {
 const WINDOW_OPTIONS = [14, 30, 90];
 const CHART_SOURCES = [["posted", "By post date"], ["growth", "Daily gained"], ["followers", "Followers"]];
 
+// Follower stats need a TikTok permission that only accounts connected (or
+// reconnected) after July 2026 have. Hide all follower UI until real data
+// exists so nobody is nagged to re-authorize.
+function hasFollowerData() {
+  if (accountsState.accounts.some((a) => a.follower_count != null)) return true;
+  const overview = accountsState.overview;
+  return !!overview && overview.accounts.some((a) => a.growth?.followers?.some((v) => v != null));
+}
+
 function lastNonNull(values) {
   for (let i = values.length - 1; i >= 0; i--) {
     if (values[i] != null) return values[i];
@@ -2312,6 +2321,8 @@ function overallContributors(metric) {
 // diffs), and absolute follower counts.
 function renderAccountOverall() {
   if (!els.accountOverall) return;
+  const followersAvailable = hasFollowerData();
+  if (!followersAvailable && accountsState.chartSource === "followers") accountsState.chartSource = "posted";
   const source = accountsState.chartSource;
   const metric = source === "followers" ? "followers" : accountsState.overallMetric;
   const days = accountsState.overview?.days || accountsState.windowDays;
@@ -2344,7 +2355,8 @@ function renderAccountOverall() {
   const windowTabs = WINDOW_OPTIONS.map((d) =>
     `<button type="button" class="overall-window-btn ${d === accountsState.windowDays ? "active" : ""}" data-days="${d}">${d}d</button>`
   ).join("");
-  const sourceTabs = CHART_SOURCES.map(([k, label]) =>
+  const sources = followersAvailable ? CHART_SOURCES : CHART_SOURCES.filter(([k]) => k !== "followers");
+  const sourceTabs = sources.map(([k, label]) =>
     `<button type="button" class="overall-source-btn ${k === source ? "active" : ""}" data-source="${k}">${label}</button>`
   ).join("");
   const metricTabs = source === "followers" ? "" : OVERALL_METRICS[source].map(([k, label]) =>
