@@ -1961,7 +1961,7 @@ const accountsState = {
   overallMetric: "views",
   overallChartMode: "bar",
   windowDays: 14, // 14 | 30 | 90 — drives the overall chart + leaderboards
-  chartSource: "posted", // posted (by post date) | growth (daily gained) | followers
+  chartSource: "growth", // growth (daily views) | posted (by post date) | followers
   overview: null, // /api/metrics/overview payload for the current window
   topVideos: [], // cross-account leaderboard for the current window
   accountVideos: {}, // accountId -> top videos, fetched on expand
@@ -2273,7 +2273,7 @@ const OVERALL_METRICS = {
   growth: [["views", "Views"], ["likes", "Likes"], ["comments", "Comments"], ["shares", "Shares"]]
 };
 const WINDOW_OPTIONS = [14, 30, 90];
-const CHART_SOURCES = [["posted", "By post date"], ["growth", "Daily gained"], ["followers", "Followers"]];
+const CHART_SOURCES = [["growth", "Daily views"], ["posted", "By post date"], ["followers", "Followers"]];
 
 // Follower stats need a TikTok permission that only accounts connected (or
 // reconnected) after July 2026 have. Hide all follower UI until real data
