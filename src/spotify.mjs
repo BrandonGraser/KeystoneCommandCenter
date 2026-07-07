@@ -229,14 +229,12 @@ export async function syncSpotifyArtist(id) {
     genres: api?.genres?.length ? JSON.stringify(api.genres) : undefined,
     spotify_url: api?.spotify_url,
     followers: api?.followers ?? undefined,
-    popularity: api?.popularity ?? undefined,
     monthly_listeners: monthlyListeners ?? undefined,
     top_tracks: topTracks?.length ? JSON.stringify(topTracks) : undefined,
     sync_error: errors.length ? errors.join(" ") : null
   });
   await saveSpotifySnapshot(id, {
     followers: api?.followers ?? null,
-    popularity: api?.popularity ?? null,
     monthly_listeners: monthlyListeners
   });
   return { artist: updated };
@@ -272,8 +270,7 @@ export async function getSpotifyOverview(days) {
   const seriesByArtist = new Map();
   const emptySeries = () => ({
     followers: new Array(days).fill(null),
-    monthly_listeners: new Array(days).fill(null),
-    popularity: new Array(days).fill(null)
+    monthly_listeners: new Array(days).fill(null)
   });
   for (const row of snapshots.rows) {
     const idx = Math.round((new Date(`${row.snapshot_date}T00:00:00`).getTime() - startMs) / 86400000);
@@ -282,13 +279,11 @@ export async function getSpotifyOverview(days) {
     const s = seriesByArtist.get(row.artist_id);
     if (row.followers != null) s.followers[idx] = Number(row.followers);
     if (row.monthly_listeners != null) s.monthly_listeners[idx] = Number(row.monthly_listeners);
-    if (row.popularity != null) s.popularity[idx] = Number(row.popularity);
   }
 
   const baselineByArtist = new Map(snapshots.baseline.map((row) => [row.artist_id, {
     followers: row.followers != null ? Number(row.followers) : null,
-    monthly_listeners: row.monthly_listeners != null ? Number(row.monthly_listeners) : null,
-    popularity: row.popularity != null ? Number(row.popularity) : null
+    monthly_listeners: row.monthly_listeners != null ? Number(row.monthly_listeners) : null
   }]));
 
   return {

@@ -2123,8 +2123,7 @@ function renderAvatarPreview() {
 const SPOTIFY_GREEN = "#1DB954";
 const SPOTIFY_METRICS = [
   ["monthly_listeners", "Monthly listeners"],
-  ["followers", "Followers"],
-  ["popularity", "Popularity"]
+  ["followers", "Followers"]
 ];
 
 const spotifyState = {
@@ -2276,9 +2275,7 @@ function renderSpotify() {
   refreshIcons();
 }
 
-// Popularity when the API provided it; track length for scraped track lists.
 function trackStatLine(t) {
-  if (t.popularity != null) return `<strong>${t.popularity}</strong> popularity`;
   if (t.duration_ms) {
     const total = Math.round(t.duration_ms / 1000);
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
@@ -2301,7 +2298,7 @@ function renderSpotifyArtist(artist, days) {
   );
   const stats = availableMetrics.map(([key, label]) => {
     const value = spotifyLatest(artist, key);
-    const shown = value == null ? "—" : key === "popularity" ? `${value}/100` : formatCount(value);
+    const shown = value == null ? "—" : formatCount(value);
     return `<div class="spotify-stat">
       <span class="spotify-stat-label">${label}</span>
       <span class="spotify-stat-value">${shown}</span>
