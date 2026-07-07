@@ -318,33 +318,6 @@ async function migrate(client) {
       )`
     },
     {
-      // Song-level streams imported from Spotify for Artists CSV exports
-      // (S4A has no public API). A row can hold either that day's stream
-      // count (timeline exports) or the all-time cumulative total (songs-
-      // table exports) — daily values are derived from totals by diffing.
-      sql: `CREATE TABLE IF NOT EXISTS spotify_tracks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        artist_id INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        spotify_track_id TEXT,
-        image_url TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(artist_id, name),
-        FOREIGN KEY (artist_id) REFERENCES spotify_artists(id) ON DELETE CASCADE
-      )`
-    },
-    {
-      sql: `CREATE TABLE IF NOT EXISTS spotify_track_streams (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        track_id INTEGER NOT NULL,
-        stream_date TEXT NOT NULL,
-        streams INTEGER,
-        total_streams INTEGER,
-        UNIQUE(track_id, stream_date),
-        FOREIGN KEY (track_id) REFERENCES spotify_tracks(id) ON DELETE CASCADE
-      )`
-    },
-    {
       sql: `CREATE TABLE IF NOT EXISTS canvas_notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL DEFAULT '',
@@ -398,8 +371,7 @@ async function migrate(client) {
     { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_videos_account_time ON tiktok_videos (account_id, create_time)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_videos_views ON tiktok_videos (views)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_account_snapshots_date ON tiktok_account_snapshots (account_id, snapshot_date)" },
-    { sql: "CREATE INDEX IF NOT EXISTS idx_spotify_snapshots_date ON spotify_artist_snapshots (artist_id, snapshot_date)" },
-    { sql: "CREATE INDEX IF NOT EXISTS idx_spotify_track_streams_date ON spotify_track_streams (track_id, stream_date)" }
+    { sql: "CREATE INDEX IF NOT EXISTS idx_spotify_snapshots_date ON spotify_artist_snapshots (artist_id, snapshot_date)" }
   ], "write");
 
   const dailyCols = await client.execute("PRAGMA table_info(daily_notes)");
@@ -1372,87 +1344,6 @@ export async function getSpotifySnapshotSeries(sinceDate) {
           FROM spotify_artist_snapshots WHERE snapshot_date < ? GROUP BY artist_id
         ) b ON s.artist_id = b.artist_id AND s.snapshot_date = b.md`,
       args: [sinceDate]
-    })
-  ]);
-  return { rows: rows(inWindow), baseline: rows(baseline) };
-}
-
-// --- Spotify tracks (song streams from S4A imports) ----------------------------
-
-export async function listSpotifyTracks(artistId) {
-  const client = await getDb();
-  const r = await client.execute({
-    sql: "SELECT * FROM spotify_tracks WHERE artist_id = ? ORDER BY name ASC",
-    args: [Number(artistId)]
-  });
-  return rows(r);
-}
-
-// Find-or-create by case-insensitive name so re-imports and differently-cased
-// exports land on the same track row.
-export async function upsertSpotifyTrack(artistId, name) {
-  const client = await getDb();
-  const trimmed = String(name || "").trim();
-  if (!trimmed) return null;
-  const existing = await client.execute({
-    sql: "SELECT * FROM spotify_tracks WHERE artist_id = ? AND lower(name) = lower(?)",
-    args: [Number(artistId), trimmed]
-  });
-  if (existing.rows.length) return firstRow(existing);
-  await client.execute({
-    sql: "INSERT OR IGNORE INTO spotify_tracks (artist_id, name) VALUES (?, ?)",
-    args: [Number(artistId), trimmed]
-  });
-  const r = await client.execute({
-    sql: "SELECT * FROM spotify_tracks WHERE artist_id = ? AND lower(name) = lower(?)",
-    args: [Number(artistId), trimmed]
-  });
-  return firstRow(r);
-}
-
-export async function deleteSpotifyTrack(trackId) {
-  const client = await getDb();
-  await client.execute({ sql: "DELETE FROM spotify_tracks WHERE id = ?", args: [Number(trackId)] });
-  return { deleted: true };
-}
-
-// Batch upsert stream rows; coalesce keeps whichever of daily/cumulative the
-// other import shape already stored for that day.
-export async function saveTrackStreams(trackId, entries) {
-  if (!entries.length) return;
-  const client = await getDb();
-  await client.batch(entries.map((e) => ({
-    sql: `INSERT INTO spotify_track_streams (track_id, stream_date, streams, total_streams)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(track_id, stream_date) DO UPDATE SET
-        streams = coalesce(excluded.streams, streams),
-        total_streams = coalesce(excluded.total_streams, total_streams)`,
-    args: [Number(trackId), e.date, e.streams ?? null, e.total_streams ?? null]
-  })), "write");
-}
-
-// In-window stream rows for all of an artist's tracks, plus per-track the
-// latest cumulative total BEFORE the window (baseline for diffing).
-export async function getTrackStreamSeries(artistId, sinceDate) {
-  const client = await getDb();
-  const [inWindow, baseline] = await Promise.all([
-    client.execute({
-      sql: `SELECT s.* FROM spotify_track_streams s
-        JOIN spotify_tracks t ON t.id = s.track_id
-        WHERE t.artist_id = ? AND s.stream_date >= ?
-        ORDER BY s.track_id ASC, s.stream_date ASC`,
-      args: [Number(artistId), sinceDate]
-    }),
-    client.execute({
-      sql: `SELECT s.* FROM spotify_track_streams s
-        JOIN (
-          SELECT st.track_id, max(st.stream_date) AS md
-          FROM spotify_track_streams st
-          JOIN spotify_tracks t ON t.id = st.track_id
-          WHERE t.artist_id = ? AND st.stream_date < ? AND st.total_streams IS NOT NULL
-          GROUP BY st.track_id
-        ) b ON s.track_id = b.track_id AND s.stream_date = b.md`,
-      args: [Number(artistId), sinceDate]
     })
   ]);
   return { rows: rows(inWindow), baseline: rows(baseline) };

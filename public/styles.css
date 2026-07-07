@@ -4308,31 +4308,3 @@ html[data-theme="light"] .depth-shadow {
 .spotify-chart-head {
   margin-top: 6px;
 }
-
-/* Spotify song streams (S4A imports) */
-.spotify-songs {
-  margin-top: 18px;
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
-}
-
-.spotify-import-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
-.spotify-track-remove {
-  background: none;
-  border: none;
-  color: var(--muted-2);
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 2px;
-  cursor: pointer;
-}
-
-.spotify-track-remove:hover {
-  color: var(--danger);
-}

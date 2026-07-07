@@ -13,13 +13,9 @@
 import {
   getSpotifyArtist,
   getSpotifySnapshotSeries,
-  getTrackStreamSeries,
   listSpotifyArtists,
-  listSpotifyTracks,
   saveSpotifyArtistSync,
-  saveSpotifySnapshot,
-  saveTrackStreams,
-  upsertSpotifyTrack
+  saveSpotifySnapshot
 } from "./db.mjs";
 import { axisStartMs, isoDate } from "./metrics.mjs";
 
@@ -200,170 +196,6 @@ export async function syncAllSpotifyArtists() {
   return { artists: await listSpotifyArtists(), results };
 }
 
-// --- Spotify for Artists CSV import -------------------------------------------
-//
-// S4A has no public API, so song streams arrive as manual CSV exports. Column
-// names aren't documented and may shift, so headers are detected loosely.
-// Supported shapes:
-//   timeline  — a date column + streams column (one song's daily streams;
-//               needs track_name unless a song column is present)
-//   totals    — a song column + streams column, no dates (the Music > Songs
-//               table; values are treated as cumulative totals stamped today,
-//               so daily numbers emerge by diffing successive imports)
-
-// Minimal RFC-4180 parser: quoted fields, embedded commas/newlines/quotes.
-function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let field = "";
-  let inQuotes = false;
-  const src = String(text || "");
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (src[i + 1] === '"') { field += '"'; i++; }
-        else inQuotes = false;
-      } else field += ch;
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ",") {
-      row.push(field); field = "";
-    } else if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && src[i + 1] === "\n") i++;
-      row.push(field); field = "";
-      if (row.some((f) => f.trim() !== "")) rows.push(row);
-      row = [];
-    } else field += ch;
-  }
-  row.push(field);
-  if (row.some((f) => f.trim() !== "")) rows.push(row);
-  return rows;
-}
-
-function findColumn(headers, candidates) {
-  for (const cand of candidates) {
-    const idx = headers.findIndex((h) => h === cand);
-    if (idx >= 0) return idx;
-  }
-  for (const cand of candidates) {
-    const idx = headers.findIndex((h) => h.includes(cand));
-    if (idx >= 0) return idx;
-  }
-  return -1;
-}
-
-// "2026-07-07", "7/7/2026", "Jul 7, 2026" → "2026-07-07" (null if unparseable).
-function normalizeDate(value) {
-  const text = String(value || "").trim();
-  if (!text) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
-  const mdY = text.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-  if (mdY) return `${mdY[3]}-${mdY[1].padStart(2, "0")}-${mdY[2].padStart(2, "0")}`;
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return isoDate(parsed);
-}
-
-function parseCount(value) {
-  const n = Number(String(value || "").replace(/[,\s]/g, ""));
-  return Number.isFinite(n) ? Math.round(n) : null;
-}
-
-export async function importS4ACsv(artistId, csvText, trackName) {
-  const artist = await getSpotifyArtist(artistId);
-  if (!artist) throw Object.assign(new Error("Spotify artist not found."), { status: 404 });
-
-  const parsed = parseCsv(csvText);
-  if (parsed.length < 2) throw Object.assign(new Error("That CSV has no data rows."), { status: 400 });
-  const headers = parsed[0].map((h) => h.trim().toLowerCase());
-  const body = parsed.slice(1);
-
-  const dateCol = findColumn(headers, ["date", "day"]);
-  const songCol = findColumn(headers, ["song title", "song", "title", "track"]);
-  const streamsCol = findColumn(headers, ["streams", "stream count", "plays", "stream"]);
-  if (streamsCol < 0) {
-    throw Object.assign(new Error(`No streams column found. Headers were: ${headers.join(", ")}`), { status: 400 });
-  }
-
-  // Timeline export for a single song: caller must say which song it is.
-  if (dateCol >= 0 && songCol < 0 && !String(trackName || "").trim()) {
-    return { needs_track_name: true };
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
-  const entriesByTrack = new Map(); // track name -> [{date, streams?, total_streams?}]
-  let skipped = 0;
-  for (const row of body) {
-    const name = songCol >= 0 ? String(row[songCol] || "").trim() : String(trackName).trim();
-    const streams = parseCount(row[streamsCol]);
-    const date = dateCol >= 0 ? normalizeDate(row[dateCol]) : today;
-    if (!name || streams == null || !date) { skipped++; continue; }
-    if (!entriesByTrack.has(name)) entriesByTrack.set(name, []);
-    // No date column = the Songs table: totals for the export's timeframe.
-    // Only all-time exports are truly cumulative, but diffing successive
-    // imports is correct either way as long as the user keeps the same
-    // timeframe ("Since 2015" recommended).
-    entriesByTrack.get(name).push(dateCol >= 0 ? { date, streams } : { date, total_streams: streams });
-  }
-  if (!entriesByTrack.size) {
-    throw Object.assign(new Error("No usable rows found in that CSV."), { status: 400 });
-  }
-
-  let rowsImported = 0;
-  for (const [name, entries] of entriesByTrack) {
-    const track = await upsertSpotifyTrack(artistId, name);
-    if (!track) continue;
-    await saveTrackStreams(track.id, entries);
-    rowsImported += entries.length;
-  }
-  return {
-    imported: true,
-    mode: dateCol >= 0 ? "timeline" : "totals",
-    tracks: entriesByTrack.size,
-    rows: rowsImported,
-    skipped
-  };
-}
-
-// Per-track daily-stream series for the songs chart. Daily values come from
-// timeline rows directly; where only cumulative totals exist, the diff between
-// consecutive totals lands on the later date.
-async function buildTrackSeries(artistId, days, startMs) {
-  const startDate = isoDate(new Date(startMs));
-  const [tracks, streams] = await Promise.all([
-    listSpotifyTracks(artistId),
-    getTrackStreamSeries(artistId, startDate)
-  ]);
-  if (!tracks.length) return [];
-
-  const rowsByTrack = new Map();
-  for (const row of streams.rows) {
-    if (!rowsByTrack.has(row.track_id)) rowsByTrack.set(row.track_id, []);
-    rowsByTrack.get(row.track_id).push(row);
-  }
-  const baselineByTrack = new Map(streams.baseline.map((row) => [row.track_id, row]));
-
-  return tracks.map((track) => {
-    const perDay = new Array(days).fill(null);
-    let prevTotal = baselineByTrack.get(track.id)?.total_streams ?? null;
-    for (const row of rowsByTrack.get(track.id) || []) {
-      const idx = Math.round((new Date(`${row.stream_date}T00:00:00`).getTime() - startMs) / 86400000);
-      const inWindow = idx >= 0 && idx < days;
-      if (inWindow && row.streams != null) perDay[idx] = Number(row.streams);
-      if (row.total_streams != null) {
-        const total = Number(row.total_streams);
-        if (inWindow && perDay[idx] == null && prevTotal != null && total >= prevTotal) {
-          perDay[idx] = total - prevTotal;
-        }
-        prevTotal = total;
-      }
-    }
-    const total = perDay.reduce((sum, v) => sum + (v || 0), 0);
-    return { id: track.id, name: track.name, image_url: track.image_url, perDay, total };
-  });
-}
-
 // --- Overview assembly (GET /api/spotify/overview) ---------------------------
 
 // Per-artist daily series of ABSOLUTE values (null = no snapshot that day, so
@@ -399,17 +231,14 @@ export async function getSpotifyOverview(days) {
     popularity: row.popularity != null ? Number(row.popularity) : null
   }]));
 
-  const trackSeries = await Promise.all(artists.map((artist) => buildTrackSeries(artist.id, days, startMs)));
-
   return {
     days,
     start: startDate,
     configured: isSpotifyConfigured(),
-    artists: artists.map((artist, i) => ({
+    artists: artists.map((artist) => ({
       ...artist,
       series: seriesByArtist.get(artist.id) || emptySeries(),
-      baseline: baselineByArtist.get(artist.id) || null,
-      tracks: trackSeries[i]
+      baseline: baselineByArtist.get(artist.id) || null
     }))
   };
 }
