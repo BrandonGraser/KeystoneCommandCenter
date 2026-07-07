@@ -55,7 +55,7 @@ import { axisStartMs } from "./metrics.mjs";
 import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } from "./tiktok.mjs";
 import { parseArtistId, scrapeArtistPage } from "./spotify.mjs";
 import { getChartexOverview, syncAllChartexArtists, syncChartexArtist } from "./chartex.mjs";
-import { createChartexArtist, deleteChartexArtist } from "./db.mjs";
+import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 
 export async function handleApi(request, response, url, currentUser) {
@@ -74,6 +74,10 @@ export async function handleApi(request, response, url, currentUser) {
   // Combined polling endpoint: one request replaces the old bootstrap +
   // tasks + resources + per-channel chat fetches the client fired every tick.
   if (method === "GET" && url.pathname === "/api/sync") {
+    // Roll yesterday's unfinished tasks forward to "due today" before
+    // listing. The client sends its local date so the rollover happens at
+    // the user's midnight, not the server's.
+    await carryOverdueTasks(url.searchParams.get("today"));
     const [bootstrap, tasks, resources, chatCounts] = await Promise.all([
       getBootstrap(),
       listTasks(Object.fromEntries(url.searchParams.entries())),
@@ -227,6 +231,7 @@ export async function handleApi(request, response, url, currentUser) {
       sendJson(response, 401, { error: "Unauthorized." });
       return;
     }
+    await carryOverdueTasks();
     const result = await syncAllAccounts();
     // Chartex piggybacks on the same daily cron; its failure never blocks TikTok.
     let chartex = null;
@@ -353,6 +358,18 @@ export async function handleApi(request, response, url, currentUser) {
   }
   if (accountMatch && method === "DELETE") {
     sendJson(response, 200, await deleteTikTokAccount(Number(accountMatch[1])));
+    return;
+  }
+
+  // --- Categories (task/daily-note "Who is this for?" list) ------------------
+  if (url.pathname === "/api/categories" && method === "POST") {
+    const body = await readJson(request);
+    sendJson(response, 201, await createCategory(body.name));
+    return;
+  }
+  const categoryMatch = url.pathname.match(/^\/api\/categories\/([^/]+)$/);
+  if (categoryMatch && method === "DELETE") {
+    sendJson(response, 200, await deleteCategory(decodeURIComponent(categoryMatch[1])));
     return;
   }
 

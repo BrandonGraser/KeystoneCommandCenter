@@ -315,8 +315,15 @@ function getAllChannels() {
 
 // First page load: one /api/sync call seeds tasks, counts, resources, and
 // per-channel chat counts (everything the recurring sync also refreshes).
+// Local YYYY-MM-DD — sent with /api/sync so overdue tasks roll over to
+// "due today" at the user's midnight, not the server's.
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 async function initialLoad() {
-  const data = await api(`/api/sync?${taskQueryParams()}`);
+  const data = await api(`/api/sync?${taskQueryParams()}&today=${localToday()}`);
   state.tasks = data.tasks || [];
   renderTasks();
   updateMetricCounts(data.counts);
@@ -360,7 +367,7 @@ async function syncNow() {
 
   syncInFlight = true;
   try {
-    const data = await api(`/api/sync?${taskQueryParams()}`);
+    const data = await api(`/api/sync?${taskQueryParams()}&today=${localToday()}`);
     if (JSON.stringify(data.tasks) !== JSON.stringify(state.tasks)) {
       state.tasks = data.tasks;
       if (state.expandedTaskId) {
@@ -544,12 +551,25 @@ function bindEvents() {
   });
   els.taskCategory.addEventListener("change", () => applyCategoryTone(els.taskCategory, els.taskCategory.value));
   document.querySelector("#categoryPillPicker")?.addEventListener("click", (event) => {
+    const removeTarget = event.target.closest("[data-remove-category]");
+    if (removeTarget) {
+      removeCategory(removeTarget.dataset.removeCategory);
+      return;
+    }
+    if (event.target.closest("[data-add-category]")) {
+      addCategory();
+      return;
+    }
     const pill = event.target.closest(".category-pill-option");
-    if (!pill) return;
+    if (!pill || state.manageCategories) return;
     const category = pill.dataset.category;
     els.taskCategory.value = category;
     applyCategoryTone(els.taskCategory, category);
     renderCategoryPillPicker(category);
+  });
+  document.querySelector("#manageCategories")?.addEventListener("click", () => {
+    state.manageCategories = !state.manageCategories;
+    renderCategoryPillPicker(els.taskCategory.value || "Misc.");
   });
   els.taskAssignee.addEventListener("change", () => ensureNoteLinkPerson(els.taskAssignee.value));
   els.taskBoard.addEventListener("change", async (event) => {
@@ -1641,7 +1661,19 @@ function categoryToneStyle(category) {
 }
 
 function categoryTone(category = "Misc.") {
-  return CATEGORY_TONES[category] || CATEGORY_TONES["Misc."];
+  return CATEGORY_TONES[category] || generatedCategoryTone(category);
+}
+
+// User-added categories aren't in the hardcoded tone map — derive a stable
+// pastel from the name so each new category still gets its own color.
+function generatedCategoryTone(name) {
+  let hash = 0;
+  for (const ch of String(name)) hash = (hash * 31 + ch.charCodeAt(0)) % 360;
+  return {
+    accent: `hsl(${hash} 55% 40%)`,
+    background: `hsl(${hash} 45% 92%)`,
+    border: `hsl(${hash} 40% 75%)`
+  };
 }
 
 function groupBy(items, keyFn) {
@@ -1913,16 +1945,56 @@ function renderCategoryPillPicker(selectedCategory = "Misc.") {
   const container = document.querySelector("#categoryPillPicker");
   if (!container) return;
   const categories = state.dailyCategories.length ? state.dailyCategories : Object.keys(CATEGORY_TONES);
+  const manage = Boolean(state.manageCategories);
   container.innerHTML = categories.map((category) => {
     const tone = categoryTone(category);
     const isActive = category === selectedCategory;
+    const removable = manage && category !== "Misc.";
     return `<button
       type="button"
-      class="category-pill-option${isActive ? " active" : ""}"
+      class="category-pill-option${isActive ? " active" : ""}${manage ? " managing" : ""}"
       data-category="${escapeHtml(category)}"
       style="--pill-accent: ${tone.accent}; --pill-bg: ${tone.background}; --pill-border: ${tone.border};"
-    >${escapeHtml(category)}</button>`;
-  }).join("");
+    >${escapeHtml(category)}${removable ? `<span class="category-pill-x" data-remove-category="${escapeHtml(category)}" title="Remove category">×</span>` : ""}</button>`;
+  }).join("") + (manage
+    ? `<button type="button" class="category-pill-option category-pill-add" data-add-category>+ New</button>`
+    : "");
+  const manageBtn = document.querySelector("#manageCategories");
+  if (manageBtn) {
+    manageBtn.textContent = manage ? "Done" : "Edit";
+    manageBtn.classList.toggle("active", manage);
+  }
+}
+
+// Refresh every UI spot that lists categories after an add/remove.
+function applyCategories(categories, selectedCategory) {
+  state.dailyCategories = categories || [];
+  els.taskCategory.innerHTML = state.dailyCategories.map(renderCategoryOption).join("");
+  const selected = state.dailyCategories.includes(selectedCategory) ? selectedCategory : "Misc.";
+  els.taskCategory.value = selected;
+  applyCategoryTone(els.taskCategory, selected);
+  renderCategoryPillPicker(selected);
+}
+
+async function removeCategory(category) {
+  if (!window.confirm(`Remove the "${category}" category? Existing tasks keep it, but it disappears from the picker.`)) return;
+  try {
+    const result = await api(`/api/categories/${encodeURIComponent(category)}`, { method: "DELETE" });
+    applyCategories(result.categories, els.taskCategory.value);
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
+}
+
+async function addCategory() {
+  const name = window.prompt("New category name:");
+  if (!name || !name.trim()) return;
+  try {
+    const result = await api("/api/categories", { method: "POST", body: { name: name.trim() } });
+    applyCategories(result.categories, name.trim());
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
 }
 
 function urgencyTier(value) {
@@ -2223,7 +2295,7 @@ async function addChartexArtist(input) {
   const value = (input || "").trim();
   if (!value) return;
   try {
-    await api("/api/chartex/artists", { method: "POST", body: JSON.stringify({ input: value }) });
+    await api("/api/chartex/artists", { method: "POST", body: { input: value } });
     showNotice("Artist added — first Chartex sync is running.", "good");
   } catch (error) {
     showNotice(error.message, "bad");

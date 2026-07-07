@@ -99,6 +99,15 @@ html[data-theme="light"] .full-task-text {
   box-sizing: border-box;
 }
 
+/* Native widgets (date-picker calendar, checkboxes, radios, range sliders)
+   default to the browser's blue — recolor them to the app's ember red. */
+:root,
+input,
+select,
+textarea {
+  accent-color: var(--ember);
+}
+
 [data-lucide] {
   display: inline-block;
   vertical-align: middle;
@@ -4416,5 +4425,61 @@ html[data-theme="light"] .depth-shadow {
 }
 
 .chartex-sounds {
+  color: var(--muted);
+}
+
+/* Category management (task dialog) */
+.who-for-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.manage-categories-btn {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.manage-categories-btn:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.manage-categories-btn.active {
+  color: var(--invert-ink);
+  background: var(--ember);
+  border-color: var(--ember);
+}
+
+.category-pill-option.managing {
+  padding-right: 6px;
+}
+
+.category-pill-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.15);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.category-pill-x:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.category-pill-add {
+  border-style: dashed !important;
   color: var(--muted);
 }

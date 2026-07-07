@@ -70,10 +70,10 @@ export function normalizeStatus(value) {
   return exact || null;
 }
 
+// Categories live in the DB now (user-editable), so any non-empty name is
+// accepted as-is; the UI constrains choices to the current list.
 export function normalizeDailyCategory(value) {
-  const text = cleanText(value);
-  if (!text) return "Misc.";
-  return DAILY_CATEGORIES.find((category) => category.toLowerCase() === text.toLowerCase()) || "Misc.";
+  return cleanText(value) || "Misc.";
 }
 
 export function isDoneValue(value) {

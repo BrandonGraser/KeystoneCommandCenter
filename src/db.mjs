@@ -371,6 +371,15 @@ async function migrate(client) {
       )`
     },
     {
+      // Task/daily-note categories, editable from the task dialog. Seeded
+      // from the old hardcoded list only when empty so deletions stick.
+      sql: `CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )`
+    },
+    {
       sql: `CREATE TABLE IF NOT EXISTS storyboard_workspace (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         data TEXT NOT NULL DEFAULT '{}',
@@ -462,6 +471,18 @@ async function migrate(client) {
   ], "write");
 
   await client.execute("INSERT OR IGNORE INTO storyboard_workspace (id, data, version) VALUES (1, '{}', 0)");
+
+  // Seed categories from the legacy hardcoded list ONLY when the table is
+  // empty — reseeding on every boot would resurrect deleted categories.
+  const catCount = await client.execute("SELECT count(*) AS c FROM categories");
+  if (!Number(catCount.rows[0]?.["c"] ?? 0)) {
+    for (let i = 0; i < DAILY_CATEGORIES.length; i++) {
+      await client.execute({
+        sql: "INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)",
+        args: [DAILY_CATEGORIES[i], i + 1]
+      });
+    }
+  }
 
   // Chartex tab seed — the name must match Chartex's artist search results
   // (lowercase there), since artist stats are matched by search + spotify_id.
@@ -1540,6 +1561,58 @@ export async function createDailyNoteFromImport(input, meta = {}) {
   });
 }
 
+// --- Categories ---------------------------------------------------------------
+
+export async function listCategories() {
+  const client = await getDb();
+  const r = await client.execute("SELECT name FROM categories ORDER BY sort_order ASC, id ASC");
+  return rows(r).map((row) => row.name);
+}
+
+export async function createCategory(name) {
+  const trimmed = String(name || "").replace(/\s+/g, " ").trim().slice(0, 40);
+  if (!trimmed) { const e = new Error("Category name is required."); e.status = 400; throw e; }
+  const client = await getDb();
+  const max = await client.execute("SELECT coalesce(max(sort_order), 0) AS m FROM categories");
+  await client.execute({
+    sql: "INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)",
+    args: [trimmed, Number(max.rows[0]?.["m"] ?? 0) + 1]
+  });
+  return { categories: await listCategories() };
+}
+
+// "Misc." stays: it's the fallback every unknown/blank category lands on.
+export async function deleteCategory(name) {
+  const trimmed = String(name || "").trim();
+  if (trimmed.toLowerCase() === "misc.") {
+    const e = new Error("Misc. can't be removed — it's the fallback category.");
+    e.status = 400;
+    throw e;
+  }
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM categories WHERE name = ?", args: [trimmed] });
+  return { categories: await listCategories() };
+}
+
+// --- Overdue carry-over --------------------------------------------------------
+
+// Roll every un-done, un-archived task with a past due date forward to today,
+// so yesterday's leftovers show up as due today automatically. BRB tasks are
+// skipped (they intentionally have no meaningful due date). `today` is the
+// client's local date when provided; the server's date otherwise (cron).
+export async function carryOverdueTasks(today) {
+  const target = /^\d{4}-\d{2}-\d{2}$/.test(String(today || "")) ? String(today) : null;
+  const client = await getDb();
+  const r = await client.execute({
+    sql: `UPDATE tasks SET due_date = coalesce(?, date('now', 'localtime')), updated_at = datetime('now')
+      WHERE archived = 0 AND done = 0 AND status != 'BRB'
+        AND due_date IS NOT NULL AND due_date != ''
+        AND due_date < coalesce(?, date('now', 'localtime'))`,
+    args: [target, target]
+  });
+  return Number(r.rowsAffected || 0);
+}
+
 // --- Bootstrap ---------------------------------------------------------------
 
 export async function getBootstrap() {
@@ -1554,7 +1627,7 @@ export async function getBootstrap() {
   ]);
   return {
     assignees: ASSIGNEES,
-    dailyCategories: DAILY_CATEGORIES,
+    dailyCategories: await listCategories(),
     statuses: STATUSES,
     counts: {
       tasks: Number(total.rows[0]?.["count"] ?? 0),
