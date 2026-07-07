@@ -152,7 +152,7 @@ export async function scrapeTopTracks(spotifyId) {
     if (!match) return null;
     const list = JSON.parse(match[1])?.props?.pageProps?.state?.data?.entity?.trackList;
     if (!Array.isArray(list) || !list.length) return null;
-    return list.map((t) => {
+    const tracks = list.map((t) => {
       const id = String(t.uri || "").split(":").pop() || null;
       return {
         id,
@@ -166,6 +166,22 @@ export async function scrapeTopTracks(spotifyId) {
         spotify_url: id ? `https://open.spotify.com/track/${id}` : null
       };
     });
+    // The trackList carries no artwork; the public oEmbed endpoint hands out
+    // each track's album art without credentials.
+    await Promise.all(tracks.map(async (t) => {
+      if (t.id) t.image_url = await fetchTrackThumbnail(t.id);
+    }));
+    return tracks;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchTrackThumbnail(trackId) {
+  try {
+    const response = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(`https://open.spotify.com/track/${trackId}`)}`);
+    if (!response.ok) return null;
+    return (await response.json()).thumbnail_url || null;
   } catch {
     return null;
   }
