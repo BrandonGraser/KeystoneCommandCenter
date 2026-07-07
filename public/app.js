@@ -153,7 +153,9 @@ const els = {
   chatBadge: document.querySelector("#chatBadge"),
   notesView: document.querySelector("#notesView"),
   spotifyView: document.querySelector("#spotifyView"),
-  spotifyBoard: document.querySelector("#spotifyBoard")
+  spotifyBoard: document.querySelector("#spotifyBoard"),
+  chartexView: document.querySelector("#chartexView"),
+  chartexBoard: document.querySelector("#chartexBoard")
 };
 
 function refreshIcons() {
@@ -506,6 +508,7 @@ function bindEvents() {
   });
   bindAccountEvents();
   bindSpotifyEvents();
+  bindChartexEvents();
   els.taskImages.addEventListener("click", (event) => {
     if (event.target.closest(".task-image-browse")) {
       els.taskImages.querySelector(".task-image-input")?.click();
@@ -2394,17 +2397,283 @@ function renderSpotifyArtist(artist, days) {
   `;
 }
 
+// --- Chartex tab -----------------------------------------------------------
+// TikTok creates + cross-platform stats for tracked artists and every one of
+// their songs, from the Chartex API. Rolling 24h/7d numbers come straight
+// from Chartex; daily charts accrue from our own snapshots.
+
+const CHARTEX_TILES = [
+  { label: "TikTok Creates", total: "tiktok_total_video_count", d7: "tiktok_last_7_days_video_count", d24: "tiktok_last_24_hours_video_count" },
+  { label: "Spotify Streams", total: "spotify_total_streams", d7: "spotify_last_7_days_streams", d24: "spotify_last_24_hours_streams" },
+  { label: "YouTube Views", total: "youtube_total_views", d7: "youtube_last_7_days_views", d24: "youtube_last_24_hours_views" },
+  { label: "Shazams", total: "shazam_total_count", d7: "shazam_last_7_days_count", d24: "shazam_last_24_hours_count" },
+  { label: "TikTok Followers", total: "tiktok_total_followers", d7: "tiktok_last_7_days_followers", d24: "tiktok_last_24_hours_followers" },
+  { label: "Instagram Followers", total: "instagram_total_followers", d7: "instagram_last_7_days_followers", d24: "instagram_last_24_hours_followers" }
+];
+
+const CHARTEX_METRICS = [
+  ["tiktok_creates", "Creates"],
+  ["spotify_streams", "Streams"],
+  ["youtube_views", "YouTube views"],
+  ["shazam_count", "Shazams"]
+];
+
+const chartexState = {
+  loaded: false,
+  loading: false,
+  windowDays: 30,
+  metric: "tiktok_creates",
+  data: null
+};
+
+async function loadChartex() {
+  if (chartexState.loading) return;
+  chartexState.loading = true;
+  try {
+    chartexState.data = await api(`/api/chartex/overview?days=${chartexState.windowDays}`);
+    chartexState.loaded = true;
+  } catch (error) {
+    els.chartexBoard.innerHTML = `<p class="detail-empty">${escapeHtml(error.message)}</p>`;
+    chartexState.loading = false;
+    return;
+  }
+  chartexState.loading = false;
+  renderChartex();
+}
+
+function bindChartexEvents() {
+  els.chartexBoard.addEventListener("click", onChartexBoardClick);
+  els.chartexBoard.addEventListener("submit", (event) => {
+    const form = event.target.closest("#chartexAddForm");
+    if (!form) return;
+    event.preventDefault();
+    addChartexArtist(form.querySelector("input").value);
+  });
+  els.chartexBoard.addEventListener("mousemove", (event) => {
+    const seg = event.target.closest("[data-tip]");
+    if (seg) showOverallTip(seg.dataset.tip, event.clientX, event.clientY);
+    else hideOverallTip();
+  });
+  els.chartexBoard.addEventListener("mouseleave", hideOverallTip);
+}
+
+async function onChartexBoardClick(event) {
+  const windowBtn = event.target.closest(".chartex-window-btn");
+  if (windowBtn) {
+    chartexState.windowDays = Number(windowBtn.dataset.days) || 30;
+    loadChartex();
+    return;
+  }
+  const metricBtn = event.target.closest(".chartex-metric-btn");
+  if (metricBtn) {
+    chartexState.metric = metricBtn.dataset.metric;
+    renderChartex();
+    return;
+  }
+  const syncBtn = event.target.closest("[data-chartex-sync]");
+  if (syncBtn) {
+    syncBtn.disabled = true;
+    syncBtn.textContent = "Syncing…";
+    try {
+      await api(`/api/chartex/artists/${syncBtn.dataset.chartexSync}/sync`, { method: "POST" });
+      showNotice("Chartex stats updated.", "good");
+    } catch (error) {
+      showNotice(error.message, "bad");
+    }
+    loadChartex();
+    return;
+  }
+  const removeBtn = event.target.closest("[data-chartex-remove]");
+  if (removeBtn) {
+    const name = removeBtn.dataset.chartexName || "this artist";
+    if (!window.confirm(`Stop tracking ${name} on Chartex? Its snapshot history will be deleted.`)) return;
+    try {
+      await api(`/api/chartex/artists/${removeBtn.dataset.chartexRemove}`, { method: "DELETE" });
+    } catch (error) {
+      showNotice(error.message, "bad");
+    }
+    loadChartex();
+  }
+}
+
+async function addChartexArtist(input) {
+  const value = (input || "").trim();
+  if (!value) return;
+  try {
+    await api("/api/chartex/artists", { method: "POST", body: JSON.stringify({ input: value }) });
+    showNotice("Artist added — first Chartex sync is running.", "good");
+  } catch (error) {
+    showNotice(error.message, "bad");
+    return;
+  }
+  loadChartex();
+}
+
+function chartexDeltaText(stats, d24Key, d7Key) {
+  const parts = [];
+  const d24 = stats?.[d24Key];
+  const d7 = stats?.[d7Key];
+  if (d24 != null) parts.push(`<span class="spotify-delta ${d24 > 0 ? "up" : d24 < 0 ? "down" : "flat"}">${d24 > 0 ? "+" : ""}${formatCount(d24)} · 24h</span>`);
+  if (d7 != null) parts.push(`<span class="spotify-delta ${d7 > 0 ? "up" : d7 < 0 ? "down" : "flat"}">${d7 > 0 ? "+" : ""}${formatCount(d7)} · 7d</span>`);
+  return parts.join(" ");
+}
+
+function renderChartex() {
+  const data = chartexState.data;
+  if (!data) return;
+  const days = data.days || chartexState.windowDays;
+
+  const windowTabs = WINDOW_OPTIONS.map((d) =>
+    `<button type="button" class="overall-window-btn chartex-window-btn ${d === chartexState.windowDays ? "active" : ""}" data-days="${d}">${d}d</button>`
+  ).join("");
+
+  const configuredNote = data.configured ? "" : `
+    <p class="spotify-config-note">Chartex is not configured — set <code>CHARTEX_APP_ID</code> and <code>CHARTEX_APP_TOKEN</code>
+    (from chartex.com/apidocs/dashboard) in the environment to enable syncing.</p>`;
+
+  const cards = data.artists.map((artist) => renderChartexArtist(artist, days)).join("");
+
+  els.chartexBoard.innerHTML = `
+    <section class="controls spotify-controls">
+      <div>
+        <span class="control-label">Chartex</span>
+        <p class="accounts-subhead">TikTok creates &amp; cross-platform stats · last ${days} days</p>
+      </div>
+      <div class="overall-windows segmented">${windowTabs}</div>
+      <form id="chartexAddForm" class="spotify-add-form">
+        <input type="text" placeholder="Spotify artist link or ID" autocomplete="off">
+        <button type="submit" class="secondary"><i data-lucide="plus" style="width:14px;height:14px"></i> Track artist</button>
+      </form>
+    </section>
+    ${configuredNote}
+    ${cards || `<p class="detail-empty">No artists tracked yet — paste a Spotify artist link above.</p>`}
+  `;
+  refreshIcons();
+}
+
+function renderChartexArtist(artist, days) {
+  const stats = artist.stats || {};
+  const avatar = artist.image_url
+    ? `<img src="${escapeHtml(artist.image_url)}" alt="" loading="lazy">`
+    : `<span class="spotify-avatar-empty">♪</span>`;
+
+  const tiles = CHARTEX_TILES.filter((t) => stats[t.total] != null).map((t) => `
+    <div class="spotify-stat">
+      <span class="spotify-stat-label">${t.label}</span>
+      <span class="spotify-stat-value">${formatCount(stats[t.total])}</span>
+      <span class="chartex-deltas">${chartexDeltaText(stats, t.d24, t.d7)}</span>
+    </div>`).join("");
+
+  // Daily-gains chart from our snapshots (needs two synced days to start).
+  const metric = chartexState.metric;
+  const metricLabel = (CHARTEX_METRICS.find(([k]) => k === metric) || [])[1] || metric;
+  const perDay = artist.series?.[metric] || [];
+  const hasPoints = perDay.some((v) => v != null);
+  let chart;
+  if (hasPoints) {
+    let maxTotal = 1;
+    for (const v of perDay) if (v != null) maxTotal = Math.max(maxTotal, Number(v) || 0);
+    const contributors = [{ id: `cx${artist.id}`, name: artist.name || "Artist", color: "#25c4ec", perDay, total: perDay.reduce((s, v) => s + (v || 0), 0) }];
+    const chartW = (els.chartexBoard?.offsetWidth || 800) - 44;
+    const yAxis = [1, 0.75, 0.5, 0.25, 0].map((f) =>
+      `<span style="top:${((1 - f) * 100).toFixed(1)}%">${formatCount(Math.round(maxTotal * f))}</span>`
+    ).join("");
+    const labelStep = Math.max(1, Math.ceil(days / 14));
+    const axis0 = Date.now() - (days - 1) * 86400000;
+    const labels = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(axis0 + i * 86400000);
+      labels.push(i % labelStep === 0 || i === days - 1 ? `${d.getMonth() + 1}/${d.getDate()}` : "");
+    }
+    chart = `
+      <div class="overall-chart has-axis">
+        <div class="overall-yaxis">${yAxis}</div>
+        ${lineChartSvg(contributors, maxTotal, days, chartW)}
+      </div>
+      <div class="overall-axis">${labels.map((l) => `<span>${l}</span>`).join("")}</div>`;
+  } else {
+    chart = `<p class="detail-empty overall-empty">No daily ${escapeHtml(metricLabel.toLowerCase())} history yet — gains appear once two days of snapshots exist (daily cron + manual syncs).</p>`;
+  }
+  const metricTabs = CHARTEX_METRICS.map(([k, label]) =>
+    `<button type="button" class="overall-tab chartex-metric-btn ${k === metric ? "active" : ""}" data-metric="${k}">${label}</button>`
+  ).join("");
+
+  // Songs table sorted by all-time TikTok creates.
+  const songs = [...(artist.songs || [])].sort((a, b) =>
+    (b.stats?.tiktok_total_video_count || 0) - (a.stats?.tiktok_total_video_count || 0)
+  );
+  const songRows = songs.map((song, i) => {
+    const s = song.stats || {};
+    const cover = song.image_url ? `<img src="${escapeHtml(song.image_url)}" alt="" loading="lazy" onerror="this.remove()">` : "";
+    const cell = (total, d7) => total == null ? "—" :
+      `<strong>${formatCount(total)}</strong>${d7 != null ? ` <span class="chartex-cell-delta ${d7 > 0 ? "up" : "flat"}">${d7 > 0 ? "+" : ""}${formatCount(d7)}</span>` : ""}`;
+    return `<tr>
+      <td class="chartex-rank">${i + 1}</td>
+      <td class="chartex-song"><span class="chartex-song-cover">${cover}</span><span>
+        <span class="chartex-song-name">${escapeHtml(song.name)}</span>
+        <span class="chartex-song-sub">${escapeHtml(song.artists || "")}${song.release_date ? ` · ${escapeHtml(song.release_date.slice(0, 4))}` : ""}</span>
+      </span></td>
+      <td>${cell(s.tiktok_total_video_count, s.tiktok_last_7_days_video_count)}</td>
+      <td>${cell(s.spotify_total_streams, s.spotify_last_7_days_streams)}</td>
+      <td>${cell(s.youtube_total_views, s.youtube_last_7_days_views)}</td>
+      <td>${cell(s.shazam_total_count, s.shazam_last_7_days_count)}</td>
+      <td class="chartex-sounds">${s.tiktok_total_sound_count ?? "—"}</td>
+    </tr>`;
+  }).join("");
+  const songsTable = songs.length ? `
+    <div class="chartex-songs">
+      <span class="control-label">Songs · ${songs.length} · all-time totals with 7-day gains</span>
+      <div class="chartex-table-wrap">
+        <table class="chartex-table">
+          <thead><tr><th></th><th>Song</th><th>TikTok creates</th><th>Spotify streams</th><th>YouTube views</th><th>Shazams</th><th>Sounds</th></tr></thead>
+          <tbody>${songRows}</tbody>
+        </table>
+      </div>
+    </div>` : "";
+
+  const syncedAt = artist.synced_at ? `Last synced ${new Date(`${artist.synced_at}Z`).toLocaleString()}` : "Never synced";
+  const syncError = artist.sync_error ? `<p class="spotify-sync-error">${escapeHtml(artist.sync_error)}</p>` : "";
+
+  return `
+    <section class="account-overall spotify-artist" data-chartex-artist="${artist.id}">
+      <div class="spotify-artist-head">
+        <div class="spotify-artist-id">
+          <div class="spotify-avatar">${avatar}</div>
+          <div>
+            <span class="spotify-artist-name">${escapeHtml(artist.name || artist.spotify_id)}</span>
+            <div><span class="spotify-synced">${escapeHtml(syncedAt)}</span></div>
+          </div>
+        </div>
+        <div class="spotify-artist-actions">
+          <button type="button" class="secondary" data-chartex-sync="${artist.id}"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Sync</button>
+          <button type="button" class="secondary" data-chartex-remove="${artist.id}" data-chartex-name="${escapeHtml(artist.name || "this artist")}">Remove</button>
+        </div>
+      </div>
+      ${syncError}
+      <div class="spotify-stats chartex-stats">${tiles}</div>
+      <div class="overall-head spotify-chart-head">
+        <span class="control-label">Daily ${escapeHtml(metricLabel.toLowerCase())} · last ${days} days</span>
+        <div class="overall-tabs segmented">${metricTabs}</div>
+      </div>
+      ${chart}
+      ${songsTable}
+    </section>
+  `;
+}
+
 function switchTab(tab) {
   els.tasksView.hidden = tab !== "tasks";
   els.accountsView.hidden = tab !== "accounts";
   els.notesView.hidden = tab !== "notes";
   els.spotifyView.hidden = tab !== "spotify";
+  els.chartexView.hidden = tab !== "chartex";
   els.mainTabs.querySelectorAll(".main-tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tab);
   });
   setStoredTab(tab);
   if (tab === "accounts" && !accountsState.loaded) loadAccounts();
   if (tab === "spotify" && !spotifyState.loaded) loadSpotify();
+  if (tab === "chartex" && !chartexState.loaded) loadChartex();
   const sbFrame = document.getElementById("storyboardFrame");
   if (tab === "notes" && sbFrame && !sbFrame.src.includes("storyboard")) {
     sbFrame.src = "/storyboard/index.html";

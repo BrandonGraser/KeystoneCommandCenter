@@ -4308,3 +4308,113 @@ html[data-theme="light"] .depth-shadow {
 .spotify-chart-head {
   margin-top: 6px;
 }
+
+/* Chartex tab */
+.chartex-stats {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.chartex-deltas {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chartex-songs {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.chartex-table-wrap {
+  overflow-x: auto;
+  margin-top: 10px;
+}
+
+.chartex-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.chartex-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.chartex-table td {
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.chartex-rank {
+  color: var(--muted-2);
+  font-size: 12px;
+  width: 26px;
+}
+
+.chartex-song {
+  min-width: 220px;
+  max-width: 300px;
+  overflow: hidden;
+}
+
+.chartex-song > span:last-child {
+  display: inline-grid;
+  vertical-align: middle;
+  max-width: 240px;
+}
+
+.chartex-song-cover {
+  display: inline-block;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--panel-2);
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.chartex-song-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chartex-song-name {
+  display: block;
+  font-weight: 600;
+  color: var(--ink);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartex-song-sub {
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+.chartex-cell-delta {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.chartex-cell-delta.up {
+  color: var(--good);
+}
+
+.chartex-sounds {
+  color: var(--muted);
+}

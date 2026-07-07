@@ -53,8 +53,9 @@ import { sendRingNotification, sendTaskDoneNotification } from "./notifications.
 import { cleanText, validateLinkPayload } from "./validators.mjs";
 import { axisStartMs } from "./metrics.mjs";
 import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } from "./tiktok.mjs";
-import { fetchArtist, getSpotifyOverview, isSpotifyConfigured, parseArtistId, syncAllSpotifyArtists, syncSpotifyArtist } from "./spotify.mjs";
-import { createSpotifyArtist, deleteSpotifyArtist } from "./db.mjs";
+import { fetchArtist, getSpotifyOverview, isSpotifyConfigured, parseArtistId, scrapeArtistPage, syncAllSpotifyArtists, syncSpotifyArtist } from "./spotify.mjs";
+import { getChartexOverview, syncAllChartexArtists, syncChartexArtist } from "./chartex.mjs";
+import { createChartexArtist, createSpotifyArtist, deleteChartexArtist, deleteSpotifyArtist } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 
 export async function handleApi(request, response, url, currentUser) {
@@ -227,14 +228,21 @@ export async function handleApi(request, response, url, currentUser) {
       return;
     }
     const result = await syncAllAccounts();
-    // Spotify piggybacks on the same daily cron; its failure never blocks TikTok.
+    // Spotify + Chartex piggyback on the same daily cron; their failures
+    // never block the TikTok sync (or each other).
     let spotify = null;
     try {
       spotify = (await syncAllSpotifyArtists()).results;
     } catch (error) {
       spotify = [{ ok: false, reason: error.message }];
     }
-    sendJson(response, 200, { ok: true, synced: result.results.length, results: result.results, spotify });
+    let chartex = null;
+    try {
+      chartex = (await syncAllChartexArtists()).results;
+    } catch (error) {
+      chartex = [{ ok: false, reason: error.message }];
+    }
+    sendJson(response, 200, { ok: true, synced: result.results.length, results: result.results, spotify, chartex });
     return;
   }
 
@@ -386,6 +394,40 @@ export async function handleApi(request, response, url, currentUser) {
   }
   if (url.pathname === "/api/spotify/sync" && method === "POST") {
     sendJson(response, 200, await syncAllSpotifyArtists());
+    return;
+  }
+
+  // --- Chartex artist/song stats --------------------------------------------
+  if (url.pathname === "/api/chartex/overview" && method === "GET") {
+    sendJson(response, 200, await getChartexOverview(normalizeWindow(url.searchParams.get("days"))));
+    return;
+  }
+  if (url.pathname === "/api/chartex/artists" && method === "POST") {
+    const body = await readJson(request);
+    const spotifyId = parseArtistId(body.input || body.spotify_id || body.url);
+    if (!spotifyId) throw badRequest("Paste a Spotify artist link, URI, or ID.");
+    // Chartex matches artists by name search + Spotify id, so grab the name
+    // from the public artist page up front.
+    let name = cleanText(body.name);
+    if (!name) name = (await scrapeArtistPage(spotifyId)).name || "";
+    if (!name) throw badRequest("Could not resolve the artist's name — add it in the `name` field.");
+    const artist = await createChartexArtist({ spotify_id: spotifyId, name });
+    try { await syncChartexArtist(artist.id); } catch { /* stats fill on next sync */ }
+    sendJson(response, 201, { artist });
+    return;
+  }
+  const chartexArtistMatch = url.pathname.match(/^\/api\/chartex\/artists\/(\d+)$/);
+  if (chartexArtistMatch && method === "DELETE") {
+    sendJson(response, 200, await deleteChartexArtist(Number(chartexArtistMatch[1])));
+    return;
+  }
+  const chartexSyncMatch = url.pathname.match(/^\/api\/chartex\/artists\/(\d+)\/sync$/);
+  if (chartexSyncMatch && method === "POST") {
+    sendJson(response, 200, await syncChartexArtist(Number(chartexSyncMatch[1])));
+    return;
+  }
+  if (url.pathname === "/api/chartex/sync" && method === "POST") {
+    sendJson(response, 200, await syncAllChartexArtists());
     return;
   }
 

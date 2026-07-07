@@ -318,6 +318,65 @@ async function migrate(client) {
       )`
     },
     {
+      // Chartex tab: tracked artists. `stats` holds the latest raw Chartex
+      // artist item (totals + rolling 24h/7d numbers) as JSON for display.
+      sql: `CREATE TABLE IF NOT EXISTS chartex_artists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        spotify_id TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL DEFAULT '',
+        image_url TEXT,
+        stats TEXT,
+        sync_error TEXT,
+        synced_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS chartex_songs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        artist_id INTEGER NOT NULL,
+        spotify_track_id TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        artists TEXT,
+        image_url TEXT,
+        release_date TEXT,
+        stats TEXT,
+        synced_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(artist_id, spotify_track_id),
+        FOREIGN KEY (artist_id) REFERENCES chartex_artists(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      // Raw cumulative daily snapshots (query-time diffs), Chartex flavor.
+      sql: `CREATE TABLE IF NOT EXISTS chartex_artist_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        artist_id INTEGER NOT NULL,
+        snapshot_date TEXT NOT NULL,
+        tiktok_creates INTEGER,
+        spotify_streams INTEGER,
+        youtube_views INTEGER,
+        shazam_count INTEGER,
+        tiktok_followers INTEGER,
+        instagram_followers INTEGER,
+        UNIQUE(artist_id, snapshot_date),
+        FOREIGN KEY (artist_id) REFERENCES chartex_artists(id) ON DELETE CASCADE
+      )`
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS chartex_song_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        song_id INTEGER NOT NULL,
+        snapshot_date TEXT NOT NULL,
+        tiktok_creates INTEGER,
+        spotify_streams INTEGER,
+        youtube_views INTEGER,
+        shazam_count INTEGER,
+        UNIQUE(song_id, snapshot_date),
+        FOREIGN KEY (song_id) REFERENCES chartex_songs(id) ON DELETE CASCADE
+      )`
+    },
+    {
       sql: `CREATE TABLE IF NOT EXISTS canvas_notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL DEFAULT '',
@@ -371,7 +430,10 @@ async function migrate(client) {
     { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_videos_account_time ON tiktok_videos (account_id, create_time)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_videos_views ON tiktok_videos (views)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_account_snapshots_date ON tiktok_account_snapshots (account_id, snapshot_date)" },
-    { sql: "CREATE INDEX IF NOT EXISTS idx_spotify_snapshots_date ON spotify_artist_snapshots (artist_id, snapshot_date)" }
+    { sql: "CREATE INDEX IF NOT EXISTS idx_spotify_snapshots_date ON spotify_artist_snapshots (artist_id, snapshot_date)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_chartex_artist_snapshots_date ON chartex_artist_snapshots (artist_id, snapshot_date)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_chartex_song_snapshots_date ON chartex_song_snapshots (song_id, snapshot_date)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_chartex_songs_artist ON chartex_songs (artist_id)" }
   ], "write");
 
   const dailyCols = await client.execute("PRAGMA table_info(daily_notes)");
@@ -436,6 +498,11 @@ async function migrate(client) {
   // Seed the tracked Spotify artist (Drezzdon) so the tab works out of the box.
   await client.execute(
     "INSERT OR IGNORE INTO spotify_artists (spotify_id, name) VALUES ('4a10dwuUNwm8ae6aSnQLUH', 'Drezzdon')"
+  );
+  // Chartex tab seed — the name must match Chartex's artist search results
+  // (lowercase there), since artist stats are matched by search + spotify_id.
+  await client.execute(
+    "INSERT OR IGNORE INTO chartex_artists (spotify_id, name) VALUES ('4a10dwuUNwm8ae6aSnQLUH', 'drezzdon')"
   );
 
   const canvasCols = await client.execute("PRAGMA table_info(canvas_notes)");
@@ -1342,6 +1409,160 @@ export async function getSpotifySnapshotSeries(sinceDate) {
         JOIN (
           SELECT artist_id, max(snapshot_date) AS md
           FROM spotify_artist_snapshots WHERE snapshot_date < ? GROUP BY artist_id
+        ) b ON s.artist_id = b.artist_id AND s.snapshot_date = b.md`,
+      args: [sinceDate]
+    })
+  ]);
+  return { rows: rows(inWindow), baseline: rows(baseline) };
+}
+
+// --- Chartex artists + songs (Chartex tab) -------------------------------------
+
+function hydrateChartex(row) {
+  if (!row) return null;
+  let stats = null;
+  try { stats = JSON.parse(row.stats); } catch { /* none stored */ }
+  return { ...row, stats };
+}
+
+export async function listChartexArtists() {
+  const client = await getDb();
+  const r = await client.execute("SELECT * FROM chartex_artists ORDER BY id ASC");
+  return rows(r).map(hydrateChartex);
+}
+
+export async function getChartexArtist(id) {
+  const client = await getDb();
+  const r = await client.execute({ sql: "SELECT * FROM chartex_artists WHERE id = ?", args: [Number(id)] });
+  return hydrateChartex(firstRow(r));
+}
+
+export async function createChartexArtist({ spotify_id, name = "" }) {
+  const client = await getDb();
+  await client.execute({
+    sql: "INSERT OR IGNORE INTO chartex_artists (spotify_id, name) VALUES (?, ?)",
+    args: [String(spotify_id), String(name)]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM chartex_artists WHERE spotify_id = ?", args: [String(spotify_id)] });
+  return hydrateChartex(firstRow(r));
+}
+
+export async function deleteChartexArtist(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM chartex_artists WHERE id = ?", args: [Number(id)] });
+  return { deleted: true };
+}
+
+// Partial update; undefined fields keep their last-known values.
+export async function saveChartexArtistSync(id, data) {
+  const client = await getDb();
+  const sets = [];
+  const args = [];
+  for (const col of ["name", "image_url", "stats", "sync_error"]) {
+    if (data[col] !== undefined) {
+      sets.push(`${col} = ?`);
+      args.push(data[col]);
+    }
+  }
+  sets.push("synced_at = datetime('now')");
+  await client.execute({ sql: `UPDATE chartex_artists SET ${sets.join(", ")} WHERE id = ?`, args: [...args, Number(id)] });
+  return getChartexArtist(id);
+}
+
+export async function listChartexSongs(artistId) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT * FROM chartex_songs WHERE artist_id = ? ORDER BY id ASC",
+    args: [Number(artistId)]
+  });
+  return rows(r).map(hydrateChartex);
+}
+
+// Find-or-create by Spotify track id, refreshing metadata + latest stats.
+export async function upsertChartexSong(artistId, item) {
+  const client = await getDb();
+  await client.execute({
+    sql: `INSERT INTO chartex_songs (artist_id, spotify_track_id, name, artists, image_url, release_date, stats, synced_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(artist_id, spotify_track_id) DO UPDATE SET
+        name = excluded.name,
+        artists = excluded.artists,
+        image_url = coalesce(excluded.image_url, image_url),
+        release_date = coalesce(excluded.release_date, release_date),
+        stats = excluded.stats,
+        synced_at = excluded.synced_at`,
+    args: [
+      Number(artistId),
+      String(item.spotify_id),
+      item.song_name || "",
+      item.artists || null,
+      item.song_image_url || null,
+      item.release_date || null,
+      JSON.stringify(item)
+    ]
+  });
+  const r = await client.execute({
+    sql: "SELECT * FROM chartex_songs WHERE artist_id = ? AND spotify_track_id = ?",
+    args: [Number(artistId), String(item.spotify_id)]
+  });
+  return hydrateChartex(firstRow(r));
+}
+
+export async function saveChartexArtistSnapshot(artistId, values) {
+  const client = await getDb();
+  const snapshotDate = values.date || new Date().toISOString().slice(0, 10);
+  await client.execute({
+    sql: `INSERT INTO chartex_artist_snapshots
+      (artist_id, snapshot_date, tiktok_creates, spotify_streams, youtube_views, shazam_count, tiktok_followers, instagram_followers)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(artist_id, snapshot_date) DO UPDATE SET
+        tiktok_creates = coalesce(excluded.tiktok_creates, tiktok_creates),
+        spotify_streams = coalesce(excluded.spotify_streams, spotify_streams),
+        youtube_views = coalesce(excluded.youtube_views, youtube_views),
+        shazam_count = coalesce(excluded.shazam_count, shazam_count),
+        tiktok_followers = coalesce(excluded.tiktok_followers, tiktok_followers),
+        instagram_followers = coalesce(excluded.instagram_followers, instagram_followers)`,
+    args: [
+      Number(artistId), snapshotDate,
+      values.tiktok_creates ?? null, values.spotify_streams ?? null, values.youtube_views ?? null,
+      values.shazam_count ?? null, values.tiktok_followers ?? null, values.instagram_followers ?? null
+    ]
+  });
+}
+
+export async function saveChartexSongSnapshot(songId, values) {
+  const client = await getDb();
+  const snapshotDate = values.date || new Date().toISOString().slice(0, 10);
+  await client.execute({
+    sql: `INSERT INTO chartex_song_snapshots
+      (song_id, snapshot_date, tiktok_creates, spotify_streams, youtube_views, shazam_count)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(song_id, snapshot_date) DO UPDATE SET
+        tiktok_creates = coalesce(excluded.tiktok_creates, tiktok_creates),
+        spotify_streams = coalesce(excluded.spotify_streams, spotify_streams),
+        youtube_views = coalesce(excluded.youtube_views, youtube_views),
+        shazam_count = coalesce(excluded.shazam_count, shazam_count)`,
+    args: [
+      Number(songId), snapshotDate,
+      values.tiktok_creates ?? null, values.spotify_streams ?? null,
+      values.youtube_views ?? null, values.shazam_count ?? null
+    ]
+  });
+}
+
+// In-window snapshots plus per-artist latest-before-window baseline rows.
+export async function getChartexArtistSnapshotSeries(sinceDate) {
+  const client = await getDb();
+  const [inWindow, baseline] = await Promise.all([
+    client.execute({
+      sql: "SELECT * FROM chartex_artist_snapshots WHERE snapshot_date >= ? ORDER BY artist_id ASC, snapshot_date ASC",
+      args: [sinceDate]
+    }),
+    client.execute({
+      sql: `SELECT s.* FROM chartex_artist_snapshots s
+        JOIN (
+          SELECT artist_id, max(snapshot_date) AS md
+          FROM chartex_artist_snapshots WHERE snapshot_date < ? GROUP BY artist_id
         ) b ON s.artist_id = b.artist_id AND s.snapshot_date = b.md`,
       args: [sinceDate]
     })
