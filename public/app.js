@@ -151,7 +151,9 @@ const els = {
   chatSidebarClose: document.querySelector("#chatSidebarClose"),
   chatSidebarResize: document.querySelector("#chatSidebarResize"),
   chatBadge: document.querySelector("#chatBadge"),
-  notesView: document.querySelector("#notesView")
+  notesView: document.querySelector("#notesView"),
+  spotifyView: document.querySelector("#spotifyView"),
+  spotifyBoard: document.querySelector("#spotifyBoard")
 };
 
 function refreshIcons() {
@@ -503,6 +505,7 @@ function bindEvents() {
     await loadChatMessages();
   });
   bindAccountEvents();
+  bindSpotifyEvents();
   els.taskImages.addEventListener("click", (event) => {
     if (event.target.closest(".task-image-browse")) {
       els.taskImages.querySelector(".task-image-input")?.click();
@@ -2115,15 +2118,284 @@ function renderAvatarPreview() {
 }
 
 
+// --- Spotify tab ---------------------------------------------------------
+
+const SPOTIFY_GREEN = "#1DB954";
+const SPOTIFY_METRICS = [
+  ["monthly_listeners", "Monthly listeners"],
+  ["followers", "Followers"],
+  ["popularity", "Popularity"]
+];
+
+const spotifyState = {
+  loaded: false,
+  loading: false,
+  windowDays: 30,
+  metric: "monthly_listeners",
+  data: null
+};
+
+async function loadSpotify() {
+  if (spotifyState.loading) return;
+  spotifyState.loading = true;
+  try {
+    spotifyState.data = await api(`/api/spotify/overview?days=${spotifyState.windowDays}`);
+    spotifyState.loaded = true;
+  } catch (error) {
+    els.spotifyBoard.innerHTML = `<p class="detail-empty">${escapeHtml(error.message)}</p>`;
+    spotifyState.loading = false;
+    return;
+  }
+  spotifyState.loading = false;
+  renderSpotify();
+}
+
+function bindSpotifyEvents() {
+  els.spotifyBoard.addEventListener("click", onSpotifyBoardClick);
+  els.spotifyBoard.addEventListener("submit", (event) => {
+    const form = event.target.closest("#spotifyAddForm");
+    if (!form) return;
+    event.preventDefault();
+    addSpotifyArtist(form.querySelector("input").value);
+  });
+  // Reuse the accounts chart tooltip for the Spotify line chart.
+  els.spotifyBoard.addEventListener("mousemove", (event) => {
+    const seg = event.target.closest("[data-tip]");
+    if (seg) showOverallTip(seg.dataset.tip, event.clientX, event.clientY);
+    else hideOverallTip();
+  });
+  els.spotifyBoard.addEventListener("mouseleave", hideOverallTip);
+}
+
+async function onSpotifyBoardClick(event) {
+  const windowBtn = event.target.closest(".spotify-window-btn");
+  if (windowBtn) {
+    spotifyState.windowDays = Number(windowBtn.dataset.days) || 30;
+    loadSpotify();
+    return;
+  }
+  const metricBtn = event.target.closest(".spotify-metric-btn");
+  if (metricBtn) {
+    spotifyState.metric = metricBtn.dataset.metric;
+    renderSpotify();
+    return;
+  }
+  const syncBtn = event.target.closest("[data-spotify-sync]");
+  if (syncBtn) {
+    syncBtn.disabled = true;
+    syncBtn.textContent = "Syncing…";
+    try {
+      await api(`/api/spotify/artists/${syncBtn.dataset.spotifySync}/sync`, { method: "POST" });
+      showNotice("Spotify stats updated.", "good");
+    } catch (error) {
+      showNotice(error.message, "bad");
+    }
+    loadSpotify();
+    return;
+  }
+  const removeBtn = event.target.closest("[data-spotify-remove]");
+  if (removeBtn) {
+    const name = removeBtn.dataset.spotifyName || "this artist";
+    if (!window.confirm(`Stop tracking ${name}? Its snapshot history will be deleted.`)) return;
+    try {
+      await api(`/api/spotify/artists/${removeBtn.dataset.spotifyRemove}`, { method: "DELETE" });
+    } catch (error) {
+      showNotice(error.message, "bad");
+    }
+    loadSpotify();
+  }
+}
+
+async function addSpotifyArtist(input) {
+  const value = (input || "").trim();
+  if (!value) return;
+  try {
+    await api("/api/spotify/artists", { method: "POST", body: JSON.stringify({ input: value }) });
+    showNotice("Artist added — first sync is running.", "good");
+  } catch (error) {
+    showNotice(error.message, "bad");
+    return;
+  }
+  loadSpotify();
+}
+
+// Latest known value: the artist row is freshest, series/baseline fill gaps.
+function spotifyLatest(artist, metric) {
+  if (artist[metric] != null) return Number(artist[metric]);
+  const series = artist.series?.[metric] || [];
+  for (let i = series.length - 1; i >= 0; i--) if (series[i] != null) return series[i];
+  return artist.baseline?.[metric] ?? null;
+}
+
+// Delta over the window: last known minus the value entering the window
+// (baseline snapshot, else the first in-window snapshot).
+function spotifyDelta(artist, metric) {
+  const latest = spotifyLatest(artist, metric);
+  if (latest == null) return null;
+  let start = artist.baseline?.[metric] ?? null;
+  if (start == null) {
+    const series = artist.series?.[metric] || [];
+    for (const v of series) if (v != null) { start = v; break; }
+  }
+  if (start == null) return null;
+  return latest - start;
+}
+
+function spotifyDeltaBadge(delta) {
+  if (delta == null) return "";
+  const cls = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+  const sign = delta > 0 ? "+" : "";
+  return `<span class="spotify-delta ${cls}">${sign}${formatCount(delta)} · ${spotifyState.windowDays}d</span>`;
+}
+
+function renderSpotify() {
+  const data = spotifyState.data;
+  if (!data) return;
+  const days = data.days || spotifyState.windowDays;
+
+  const windowTabs = WINDOW_OPTIONS.map((d) =>
+    `<button type="button" class="overall-window-btn spotify-window-btn ${d === spotifyState.windowDays ? "active" : ""}" data-days="${d}">${d}d</button>`
+  ).join("");
+
+  const configuredNote = data.configured ? "" : `
+    <p class="spotify-config-note">Spotify API credentials are missing — only monthly listeners (scraped from the public page) can update.
+    Create a free app at developer.spotify.com and set <code>SPOTIFY_CLIENT_ID</code> + <code>SPOTIFY_CLIENT_SECRET</code> to get followers, popularity and top tracks.</p>`;
+
+  const cards = data.artists.map((artist) => renderSpotifyArtist(artist, days)).join("");
+
+  els.spotifyBoard.innerHTML = `
+    <section class="controls spotify-controls">
+      <div>
+        <span class="control-label">Spotify</span>
+        <p class="accounts-subhead">Artist stats · last ${days} days</p>
+      </div>
+      <div class="overall-windows segmented">${windowTabs}</div>
+      <form id="spotifyAddForm" class="spotify-add-form">
+        <input type="text" placeholder="Spotify artist link or ID" autocomplete="off">
+        <button type="submit" class="secondary"><i data-lucide="plus" style="width:14px;height:14px"></i> Track artist</button>
+      </form>
+    </section>
+    ${configuredNote}
+    ${cards || `<p class="detail-empty">No artists tracked yet — paste a Spotify artist link above.</p>`}
+  `;
+  refreshIcons();
+}
+
+function renderSpotifyArtist(artist, days) {
+  const spotifyUrl = artist.spotify_url || `https://open.spotify.com/artist/${artist.spotify_id}`;
+  const avatar = artist.image_url
+    ? `<img src="${escapeHtml(artist.image_url)}" alt="" loading="lazy">`
+    : `<span class="spotify-avatar-empty">♪</span>`;
+  const genres = (artist.genres || []).slice(0, 3).map((g) => `<span class="spotify-genre">${escapeHtml(g)}</span>`).join("");
+
+  const stats = SPOTIFY_METRICS.map(([key, label]) => {
+    const value = spotifyLatest(artist, key);
+    const shown = value == null ? "—" : key === "popularity" ? `${value}/100` : formatCount(value);
+    return `<div class="spotify-stat">
+      <span class="spotify-stat-label">${label}</span>
+      <span class="spotify-stat-value">${shown}</span>
+      ${spotifyDeltaBadge(spotifyDelta(artist, key))}
+    </div>`;
+  }).join("");
+
+  // Chart: single artist line on the shared SVG helper.
+  const metric = spotifyState.metric;
+  const metricLabel = (SPOTIFY_METRICS.find(([k]) => k === metric) || [])[1] || metric;
+  const perDay = artist.series?.[metric] || [];
+  const hasPoints = perDay.some((v) => v != null);
+  let chart;
+  if (hasPoints) {
+    let maxTotal = 1;
+    for (const v of perDay) if (v != null) maxTotal = Math.max(maxTotal, Number(v) || 0);
+    const contributors = [{ id: `sp${artist.id}`, name: artist.name || "Artist", color: SPOTIFY_GREEN, perDay, total: spotifyLatest(artist, metric) || 0 }];
+    const chartW = (els.spotifyBoard?.offsetWidth || 800) - 44;
+    const fracs = [1, 0.75, 0.5, 0.25, 0];
+    const yAxis = fracs.map((f) =>
+      `<span style="top:${((1 - f) * 100).toFixed(1)}%">${formatCount(Math.round(maxTotal * f))}</span>`
+    ).join("");
+    const labelStep = Math.max(1, Math.ceil(days / 14));
+    const axis0 = Date.now() - (days - 1) * 86400000;
+    const labels = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(axis0 + i * 86400000);
+      labels.push(i % labelStep === 0 || i === days - 1 ? `${d.getMonth() + 1}/${d.getDate()}` : "");
+    }
+    chart = `
+      <div class="overall-chart has-axis">
+        <div class="overall-yaxis">${yAxis}</div>
+        ${lineChartSvg(contributors, maxTotal, days, chartW)}
+      </div>
+      <div class="overall-axis">${labels.map((l) => `<span>${l}</span>`).join("")}</div>`;
+  } else {
+    chart = `<p class="detail-empty overall-empty">No ${escapeHtml(metricLabel.toLowerCase())} history yet — a snapshot is stored on every sync (daily cron + manual), so the chart fills in from today.</p>`;
+  }
+
+  const metricTabs = SPOTIFY_METRICS.map(([k, label]) =>
+    `<button type="button" class="overall-tab spotify-metric-btn ${k === metric ? "active" : ""}" data-metric="${k}">${label}</button>`
+  ).join("");
+
+  const tracks = (artist.top_tracks || []).slice(0, 10).map((t, i) => {
+    const cover = t.image_url ? `<img src="${escapeHtml(t.image_url)}" alt="" loading="lazy" onerror="this.remove()">` : "";
+    const inner = `
+      <span class="video-card-rank">#${i + 1}</span>
+      <div class="video-card-cover">${cover}</div>
+      <div class="video-card-body">
+        <span class="video-card-title">${escapeHtml(t.name)}</span>
+        <span class="video-card-account">${escapeHtml(t.album || "")}${t.release_date ? ` · ${escapeHtml(t.release_date.slice(0, 4))}` : ""}</span>
+        <span class="video-card-stats"><strong>${t.popularity ?? "—"}</strong> popularity</span>
+      </div>`;
+    return t.spotify_url
+      ? `<a class="video-card" href="${escapeHtml(t.spotify_url)}" target="_blank" rel="noreferrer">${inner}</a>`
+      : `<div class="video-card">${inner}</div>`;
+  }).join("");
+  const topTracks = tracks ? `
+    <div class="top-videos">
+      <span class="control-label">Top tracks</span>
+      <div class="top-videos-row">${tracks}</div>
+    </div>` : "";
+
+  const syncedAt = artist.synced_at ? `Last synced ${new Date(`${artist.synced_at}Z`).toLocaleString()}` : "Never synced";
+  const syncError = artist.sync_error ? `<p class="spotify-sync-error">${escapeHtml(artist.sync_error)}</p>` : "";
+
+  return `
+    <section class="account-overall spotify-artist" data-artist="${artist.id}">
+      <div class="spotify-artist-head">
+        <div class="spotify-artist-id">
+          <div class="spotify-avatar">${avatar}</div>
+          <div>
+            <a class="spotify-artist-name" href="${escapeHtml(spotifyUrl)}" target="_blank" rel="noreferrer">${escapeHtml(artist.name || artist.spotify_id)}</a>
+            <div class="spotify-genres">${genres}</div>
+            <span class="spotify-synced">${escapeHtml(syncedAt)}</span>
+          </div>
+        </div>
+        <div class="spotify-artist-actions">
+          <button type="button" class="secondary" data-spotify-sync="${artist.id}"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Sync</button>
+          <button type="button" class="secondary" data-spotify-remove="${artist.id}" data-spotify-name="${escapeHtml(artist.name || "this artist")}">Remove</button>
+        </div>
+      </div>
+      ${syncError}
+      <div class="spotify-stats">${stats}</div>
+      <div class="overall-head spotify-chart-head">
+        <span class="control-label">${escapeHtml(metricLabel)} · last ${days} days</span>
+        <div class="overall-tabs segmented">${metricTabs}</div>
+      </div>
+      ${chart}
+      ${topTracks}
+    </section>
+  `;
+}
+
 function switchTab(tab) {
   els.tasksView.hidden = tab !== "tasks";
   els.accountsView.hidden = tab !== "accounts";
   els.notesView.hidden = tab !== "notes";
+  els.spotifyView.hidden = tab !== "spotify";
   els.mainTabs.querySelectorAll(".main-tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tab);
   });
   setStoredTab(tab);
   if (tab === "accounts" && !accountsState.loaded) loadAccounts();
+  if (tab === "spotify" && !spotifyState.loaded) loadSpotify();
   const sbFrame = document.getElementById("storyboardFrame");
   if (tab === "notes" && sbFrame && !sbFrame.src.includes("storyboard")) {
     sbFrame.src = "/storyboard/index.html";

@@ -4149,3 +4149,162 @@ html[data-theme="light"] .depth-shadow {
   letter-spacing: 0.06em;
   user-select: none;
 }
+
+/* Spotify tab */
+.spotify-board {
+  display: grid;
+  gap: 18px;
+}
+
+.spotify-controls {
+  align-items: center;
+}
+
+.spotify-add-form {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  align-items: center;
+}
+
+.spotify-add-form input {
+  min-width: 260px;
+}
+
+.spotify-config-note {
+  border: 1px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--ink);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin: 0;
+}
+
+.spotify-config-note code {
+  color: var(--warning);
+}
+
+.spotify-artist-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.spotify-artist-id {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.spotify-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.spotify-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.spotify-avatar-empty {
+  font-size: 24px;
+  color: var(--muted-2);
+}
+
+.spotify-artist-name {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.spotify-artist-name:hover {
+  color: #1DB954;
+}
+
+.spotify-genres {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+}
+
+.spotify-genre {
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.spotify-synced {
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+.spotify-artist-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.spotify-sync-error {
+  font-size: 12px;
+  color: var(--warning);
+  margin: 0 0 10px;
+}
+
+.spotify-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.spotify-stat {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 2px;
+}
+
+.spotify-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.spotify-stat-value {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.spotify-delta {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.spotify-delta.up { color: var(--good); }
+.spotify-delta.down { color: var(--danger); }
+.spotify-delta.flat { color: var(--muted); }
+
+.spotify-chart-head {
+  margin-top: 6px;
+}

@@ -287,6 +287,37 @@ async function migrate(client) {
       )`
     },
     {
+      sql: `CREATE TABLE IF NOT EXISTS spotify_artists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        spotify_id TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL DEFAULT '',
+        image_url TEXT,
+        genres TEXT,
+        spotify_url TEXT,
+        followers INTEGER,
+        popularity INTEGER,
+        monthly_listeners INTEGER,
+        top_tracks TEXT,
+        sync_error TEXT,
+        synced_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    },
+    {
+      // One row per artist per day with RAW ABSOLUTE values (same philosophy
+      // as tiktok_account_snapshots): growth is a query-time diff.
+      sql: `CREATE TABLE IF NOT EXISTS spotify_artist_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        artist_id INTEGER NOT NULL,
+        snapshot_date TEXT NOT NULL,
+        followers INTEGER,
+        popularity INTEGER,
+        monthly_listeners INTEGER,
+        UNIQUE(artist_id, snapshot_date),
+        FOREIGN KEY (artist_id) REFERENCES spotify_artists(id) ON DELETE CASCADE
+      )`
+    },
+    {
       sql: `CREATE TABLE IF NOT EXISTS canvas_notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL DEFAULT '',
@@ -339,7 +370,8 @@ async function migrate(client) {
     { sql: "CREATE INDEX IF NOT EXISTS idx_chat_messages_channel ON chat_messages (channel, created_at)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_videos_account_time ON tiktok_videos (account_id, create_time)" },
     { sql: "CREATE INDEX IF NOT EXISTS idx_tiktok_videos_views ON tiktok_videos (views)" },
-    { sql: "CREATE INDEX IF NOT EXISTS idx_account_snapshots_date ON tiktok_account_snapshots (account_id, snapshot_date)" }
+    { sql: "CREATE INDEX IF NOT EXISTS idx_account_snapshots_date ON tiktok_account_snapshots (account_id, snapshot_date)" },
+    { sql: "CREATE INDEX IF NOT EXISTS idx_spotify_snapshots_date ON spotify_artist_snapshots (artist_id, snapshot_date)" }
   ], "write");
 
   const dailyCols = await client.execute("PRAGMA table_info(daily_notes)");
@@ -400,6 +432,11 @@ async function migrate(client) {
   ], "write");
 
   await client.execute("INSERT OR IGNORE INTO storyboard_workspace (id, data, version) VALUES (1, '{}', 0)");
+
+  // Seed the tracked Spotify artist (Drezzdon) so the tab works out of the box.
+  await client.execute(
+    "INSERT OR IGNORE INTO spotify_artists (spotify_id, name) VALUES ('4a10dwuUNwm8ae6aSnQLUH', 'Drezzdon')"
+  );
 
   const canvasCols = await client.execute("PRAGMA table_info(canvas_notes)");
   const canvasColNames = canvasCols.rows.map((r) => r["name"]);
@@ -1218,6 +1255,98 @@ export async function listTopVideos({ sinceUnix = 0, sort = "views", limit = 20 
     args: [Number(sinceUnix), Math.min(Number(limit) || 20, 100)]
   });
   return rows(r);
+}
+
+// --- Spotify artists (Spotify tab) --------------------------------------------
+
+function hydrateSpotifyArtist(row) {
+  if (!row) return null;
+  let genres = [];
+  let topTracks = [];
+  try { genres = JSON.parse(row.genres) || []; } catch { /* none stored */ }
+  try { topTracks = JSON.parse(row.top_tracks) || []; } catch { /* none stored */ }
+  const { top_tracks, ...rest } = row;
+  return { ...rest, genres, top_tracks: topTracks };
+}
+
+export async function listSpotifyArtists() {
+  const client = await getDb();
+  const r = await client.execute("SELECT * FROM spotify_artists ORDER BY id ASC");
+  return rows(r).map(hydrateSpotifyArtist);
+}
+
+export async function getSpotifyArtist(id) {
+  const client = await getDb();
+  const r = await client.execute({ sql: "SELECT * FROM spotify_artists WHERE id = ?", args: [Number(id)] });
+  return hydrateSpotifyArtist(firstRow(r));
+}
+
+export async function createSpotifyArtist({ spotify_id, name = "" }) {
+  const client = await getDb();
+  await client.execute({
+    sql: "INSERT OR IGNORE INTO spotify_artists (spotify_id, name) VALUES (?, ?)",
+    args: [String(spotify_id), String(name)]
+  });
+  const r = await client.execute({ sql: "SELECT * FROM spotify_artists WHERE spotify_id = ?", args: [String(spotify_id)] });
+  return hydrateSpotifyArtist(firstRow(r));
+}
+
+export async function deleteSpotifyArtist(id) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM spotify_artists WHERE id = ?", args: [Number(id)] });
+  return { deleted: true };
+}
+
+// Partial update: only fields explicitly present overwrite; undefined fields
+// keep their last-known values (e.g. the scrape failed today).
+export async function saveSpotifyArtistSync(id, data) {
+  const client = await getDb();
+  const sets = [];
+  const args = [];
+  for (const col of ["name", "image_url", "genres", "spotify_url", "followers", "popularity", "monthly_listeners", "top_tracks", "sync_error"]) {
+    if (data[col] !== undefined) {
+      sets.push(`${col} = ?`);
+      args.push(data[col]);
+    }
+  }
+  sets.push("synced_at = datetime('now')");
+  await client.execute({ sql: `UPDATE spotify_artists SET ${sets.join(", ")} WHERE id = ?`, args: [...args, Number(id)] });
+  return getSpotifyArtist(id);
+}
+
+export async function saveSpotifySnapshot(artistId, { date, followers = null, popularity = null, monthly_listeners = null } = {}) {
+  const client = await getDb();
+  const snapshotDate = date || new Date().toISOString().slice(0, 10);
+  await client.execute({
+    sql: `INSERT INTO spotify_artist_snapshots (artist_id, snapshot_date, followers, popularity, monthly_listeners)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(artist_id, snapshot_date) DO UPDATE SET
+        followers = coalesce(excluded.followers, followers),
+        popularity = coalesce(excluded.popularity, popularity),
+        monthly_listeners = coalesce(excluded.monthly_listeners, monthly_listeners)`,
+    args: [Number(artistId), snapshotDate, followers, popularity, monthly_listeners]
+  });
+}
+
+// All snapshots on/after `sinceDate` plus, per artist, the latest snapshot
+// BEFORE it (the baseline window deltas are measured against).
+export async function getSpotifySnapshotSeries(sinceDate) {
+  const client = await getDb();
+  const [inWindow, baseline] = await Promise.all([
+    client.execute({
+      sql: "SELECT * FROM spotify_artist_snapshots WHERE snapshot_date >= ? ORDER BY artist_id ASC, snapshot_date ASC",
+      args: [sinceDate]
+    }),
+    client.execute({
+      sql: `SELECT s.* FROM spotify_artist_snapshots s
+        JOIN (
+          SELECT artist_id, max(snapshot_date) AS md
+          FROM spotify_artist_snapshots WHERE snapshot_date < ? GROUP BY artist_id
+        ) b ON s.artist_id = b.artist_id AND s.snapshot_date = b.md`,
+      args: [sinceDate]
+    })
+  ]);
+  return { rows: rows(inWindow), baseline: rows(baseline) };
 }
 
 // --- Storyboard workspace (Notes tab) ----------------------------------------

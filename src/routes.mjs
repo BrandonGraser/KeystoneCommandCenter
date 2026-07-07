@@ -53,6 +53,8 @@ import { sendRingNotification, sendTaskDoneNotification } from "./notifications.
 import { cleanText, validateLinkPayload } from "./validators.mjs";
 import { axisStartMs } from "./metrics.mjs";
 import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } from "./tiktok.mjs";
+import { fetchArtist, getSpotifyOverview, isSpotifyConfigured, parseArtistId, syncAllSpotifyArtists, syncSpotifyArtist } from "./spotify.mjs";
+import { createSpotifyArtist, deleteSpotifyArtist } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 
 export async function handleApi(request, response, url, currentUser) {
@@ -225,7 +227,14 @@ export async function handleApi(request, response, url, currentUser) {
       return;
     }
     const result = await syncAllAccounts();
-    sendJson(response, 200, { ok: true, synced: result.results.length, results: result.results });
+    // Spotify piggybacks on the same daily cron; its failure never blocks TikTok.
+    let spotify = null;
+    try {
+      spotify = (await syncAllSpotifyArtists()).results;
+    } catch (error) {
+      spotify = [{ ok: false, reason: error.message }];
+    }
+    sendJson(response, 200, { ok: true, synced: result.results.length, results: result.results, spotify });
     return;
   }
 
@@ -343,6 +352,40 @@ export async function handleApi(request, response, url, currentUser) {
   }
   if (accountMatch && method === "DELETE") {
     sendJson(response, 200, await deleteTikTokAccount(Number(accountMatch[1])));
+    return;
+  }
+
+  // --- Spotify artist stats ------------------------------------------------
+  if (url.pathname === "/api/spotify/overview" && method === "GET") {
+    sendJson(response, 200, await getSpotifyOverview(normalizeWindow(url.searchParams.get("days"))));
+    return;
+  }
+  if (url.pathname === "/api/spotify/artists" && method === "POST") {
+    const body = await readJson(request);
+    const spotifyId = parseArtistId(body.input || body.spotify_id || body.url);
+    if (!spotifyId) throw badRequest("Paste a Spotify artist link, URI, or ID.");
+    // Grab the real name up front when the API is available so the card isn't blank.
+    let name = cleanText(body.name);
+    if (!name && isSpotifyConfigured()) {
+      name = (await fetchArtist(spotifyId).catch(() => null))?.name || "";
+    }
+    const artist = await createSpotifyArtist({ spotify_id: spotifyId, name });
+    try { await syncSpotifyArtist(artist.id); } catch { /* stats fill on next sync */ }
+    sendJson(response, 201, { artist });
+    return;
+  }
+  const spotifyArtistMatch = url.pathname.match(/^\/api\/spotify\/artists\/(\d+)$/);
+  if (spotifyArtistMatch && method === "DELETE") {
+    sendJson(response, 200, await deleteSpotifyArtist(Number(spotifyArtistMatch[1])));
+    return;
+  }
+  const spotifySyncMatch = url.pathname.match(/^\/api\/spotify\/artists\/(\d+)\/sync$/);
+  if (spotifySyncMatch && method === "POST") {
+    sendJson(response, 200, await syncSpotifyArtist(Number(spotifySyncMatch[1])));
+    return;
+  }
+  if (url.pathname === "/api/spotify/sync" && method === "POST") {
+    sendJson(response, 200, await syncAllSpotifyArtists());
     return;
   }
 
