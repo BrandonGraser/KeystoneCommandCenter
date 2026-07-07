@@ -356,41 +356,6 @@ export async function handleApi(request, response, url, currentUser) {
   }
 
   // --- Spotify artist stats ------------------------------------------------
-  // TEMPORARY debug endpoint: raw Spotify API responses as production sees
-  // them, to diagnose null followers / empty top tracks. Remove once solved.
-  if (url.pathname === "/api/spotify/debug" && method === "GET") {
-    const out = { configured: isSpotifyConfigured(), idLength: (process.env.SPOTIFY_CLIENT_ID || "").length, secretLength: (process.env.SPOTIFY_CLIENT_SECRET || "").length };
-    try {
-      const token = await fetch("https://accounts.spotify.com/api/token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Authorization: `Basic ${Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString("base64")}`
-        },
-        body: new URLSearchParams({ grant_type: "client_credentials" })
-      });
-      const tokenData = await token.json().catch(() => ({}));
-      out.tokenStatus = token.status;
-      out.tokenOk = Boolean(tokenData.access_token);
-      if (tokenData.access_token) {
-        const headers = { Authorization: `Bearer ${tokenData.access_token}` };
-        const [artistRes, topRes] = await Promise.all([
-          fetch("https://api.spotify.com/v1/artists/4a10dwuUNwm8ae6aSnQLUH", { headers }),
-          fetch("https://api.spotify.com/v1/artists/4a10dwuUNwm8ae6aSnQLUH/top-tracks?market=US", { headers })
-        ]);
-        out.artistStatus = artistRes.status;
-        out.artistBody = (await artistRes.text()).slice(0, 1200);
-        out.topStatus = topRes.status;
-        out.topBody = (await topRes.text()).slice(0, 600);
-      } else {
-        out.tokenBody = JSON.stringify(tokenData).slice(0, 400);
-      }
-    } catch (error) {
-      out.error = error.message;
-    }
-    sendJson(response, 200, out);
-    return;
-  }
   if (url.pathname === "/api/spotify/overview" && method === "GET") {
     sendJson(response, 200, await getSpotifyOverview(normalizeWindow(url.searchParams.get("days"))));
     return;

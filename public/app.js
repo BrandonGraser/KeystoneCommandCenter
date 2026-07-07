@@ -2257,10 +2257,6 @@ function renderSpotify() {
     `<button type="button" class="overall-window-btn spotify-window-btn ${d === spotifyState.windowDays ? "active" : ""}" data-days="${d}">${d}d</button>`
   ).join("");
 
-  const configuredNote = data.configured ? "" : `
-    <p class="spotify-config-note">Spotify API credentials are missing — only monthly listeners (scraped from the public page) can update.
-    Create a free app at developer.spotify.com and set <code>SPOTIFY_CLIENT_ID</code> + <code>SPOTIFY_CLIENT_SECRET</code> to get followers, popularity and top tracks.</p>`;
-
   const cards = data.artists.map((artist) => renderSpotifyArtist(artist, days)).join("");
 
   els.spotifyBoard.innerHTML = `
@@ -2275,10 +2271,19 @@ function renderSpotify() {
         <button type="submit" class="secondary"><i data-lucide="plus" style="width:14px;height:14px"></i> Track artist</button>
       </form>
     </section>
-    ${configuredNote}
     ${cards || `<p class="detail-empty">No artists tracked yet — paste a Spotify artist link above.</p>`}
   `;
   refreshIcons();
+}
+
+// Popularity when the API provided it; track length for scraped track lists.
+function trackStatLine(t) {
+  if (t.popularity != null) return `<strong>${t.popularity}</strong> popularity`;
+  if (t.duration_ms) {
+    const total = Math.round(t.duration_ms / 1000);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+  }
+  return "";
 }
 
 function renderSpotifyArtist(artist, days) {
@@ -2288,7 +2293,13 @@ function renderSpotifyArtist(artist, days) {
     : `<span class="spotify-avatar-empty">♪</span>`;
   const genres = (artist.genres || []).slice(0, 3).map((g) => `<span class="spotify-genre">${escapeHtml(g)}</span>`).join("");
 
-  const stats = SPOTIFY_METRICS.map(([key, label]) => {
+  // Spotify's API only exposes followers/popularity to apps with Extended
+  // Access — hide metrics that have never produced data instead of showing
+  // dead "—" tiles.
+  const availableMetrics = SPOTIFY_METRICS.filter(([key]) =>
+    key === "monthly_listeners" || spotifyLatest(artist, key) != null
+  );
+  const stats = availableMetrics.map(([key, label]) => {
     const value = spotifyLatest(artist, key);
     const shown = value == null ? "—" : key === "popularity" ? `${value}/100` : formatCount(value);
     return `<div class="spotify-stat">
@@ -2299,6 +2310,7 @@ function renderSpotifyArtist(artist, days) {
   }).join("");
 
   // Chart: single artist line on the shared SVG helper.
+  if (!availableMetrics.some(([k]) => k === spotifyState.metric)) spotifyState.metric = "monthly_listeners";
   const metric = spotifyState.metric;
   const metricLabel = (SPOTIFY_METRICS.find(([k]) => k === metric) || [])[1] || metric;
   const perDay = artist.series?.[metric] || [];
@@ -2330,7 +2342,7 @@ function renderSpotifyArtist(artist, days) {
     chart = `<p class="detail-empty overall-empty">No ${escapeHtml(metricLabel.toLowerCase())} history yet — a snapshot is stored on every sync (daily cron + manual), so the chart fills in from today.</p>`;
   }
 
-  const metricTabs = SPOTIFY_METRICS.map(([k, label]) =>
+  const metricTabs = availableMetrics.map(([k, label]) =>
     `<button type="button" class="overall-tab spotify-metric-btn ${k === metric ? "active" : ""}" data-metric="${k}">${label}</button>`
   ).join("");
 
@@ -2341,8 +2353,8 @@ function renderSpotifyArtist(artist, days) {
       <div class="video-card-cover">${cover}</div>
       <div class="video-card-body">
         <span class="video-card-title">${escapeHtml(t.name)}</span>
-        <span class="video-card-account">${escapeHtml(t.album || "")}${t.release_date ? ` · ${escapeHtml(t.release_date.slice(0, 4))}` : ""}</span>
-        <span class="video-card-stats"><strong>${t.popularity ?? "—"}</strong> popularity</span>
+        <span class="video-card-account">${escapeHtml(t.album || t.artists || "")}${t.release_date ? ` · ${escapeHtml(t.release_date.slice(0, 4))}` : ""}</span>
+        <span class="video-card-stats">${trackStatLine(t)}</span>
       </div>`;
     return t.spotify_url
       ? `<a class="video-card" href="${escapeHtml(t.spotify_url)}" target="_blank" rel="noreferrer">${inner}</a>`

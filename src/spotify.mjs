@@ -133,26 +133,63 @@ export async function scrapeArtistPage(spotifyId) {
   }
 }
 
+// The artist EMBED page (open.spotify.com/embed/artist/<id>) server-renders a
+// __NEXT_DATA__ blob containing the artist's "popular tracks" list — the same
+// ranking the API's top-tracks endpoint returns, which is 403-blocked for
+// Development-Mode apps. No playcounts or popularity scores, but the ordered
+// list itself. Best-effort, like the monthly-listeners scrape.
+export async function scrapeTopTracks(spotifyId) {
+  try {
+    const response = await fetch(`https://open.spotify.com/embed/artist/${encodeURIComponent(spotifyId)}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+        "Accept-Language": "en"
+      }
+    });
+    if (!response.ok) return null;
+    const html = await response.text();
+    const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+    if (!match) return null;
+    const list = JSON.parse(match[1])?.props?.pageProps?.state?.data?.entity?.trackList;
+    if (!Array.isArray(list) || !list.length) return null;
+    return list.map((t) => {
+      const id = String(t.uri || "").split(":").pop() || null;
+      return {
+        id,
+        name: t.title || "",
+        artists: t.subtitle || "",
+        duration_ms: Number(t.duration) || null,
+        popularity: null,
+        album: "",
+        release_date: null,
+        image_url: null,
+        spotify_url: id ? `https://open.spotify.com/track/${id}` : null
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
 // --- Sync --------------------------------------------------------------------
 
 export async function syncSpotifyArtist(id) {
   const artist = await getSpotifyArtist(id);
   if (!artist) throw Object.assign(new Error("Spotify artist not found."), { status: 404 });
 
+  // The official API adds followers/popularity/genres — but only for apps
+  // with Extended Access; Development-Mode apps get those fields stripped
+  // (200s without the data) and 403s on top-tracks. Everything the tab needs
+  // day-to-day comes from the page scrapes below, so API problems are not
+  // sync errors.
   const errors = [];
   let api = null;
   let topTracks = null;
   if (isSpotifyConfigured()) {
-    try {
-      [api, topTracks] = await Promise.all([
-        fetchArtist(artist.spotify_id),
-        fetchTopTracks(artist.spotify_id).catch(() => null)
-      ]);
-    } catch (error) {
-      errors.push(error.message);
-    }
-  } else {
-    errors.push("Spotify API not configured — set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET for followers, popularity and top tracks.");
+    [api, topTracks] = await Promise.all([
+      fetchArtist(artist.spotify_id).catch(() => null),
+      fetchTopTracks(artist.spotify_id).catch(() => null)
+    ]);
   }
 
   const page = await scrapeArtistPage(artist.spotify_id);
@@ -163,15 +200,22 @@ export async function syncSpotifyArtist(id) {
     throw Object.assign(new Error(errors.join(" ")), { status: 502 });
   }
 
+  // Development-Mode API apps get artist objects with the stats fields
+  // stripped (200s, no followers/popularity) and 403s on top-tracks — fall
+  // back to the embed-page scrape for the tracks list in that case.
+  if (!topTracks?.length) topTracks = await scrapeTopTracks(artist.spotify_id);
+
+  // `?? undefined` throughout: a stripped or failed source must never
+  // overwrite previously captured values with nulls.
   const updated = await saveSpotifyArtistSync(id, {
     name: api?.name || page.name || undefined,
     image_url: api?.image_url || page.image_url || undefined,
-    genres: api ? JSON.stringify(api.genres) : undefined,
+    genres: api?.genres?.length ? JSON.stringify(api.genres) : undefined,
     spotify_url: api?.spotify_url,
-    followers: api?.followers,
-    popularity: api?.popularity,
+    followers: api?.followers ?? undefined,
+    popularity: api?.popularity ?? undefined,
     monthly_listeners: monthlyListeners ?? undefined,
-    top_tracks: topTracks ? JSON.stringify(topTracks) : undefined,
+    top_tracks: topTracks?.length ? JSON.stringify(topTracks) : undefined,
     sync_error: errors.length ? errors.join(" ") : null
   });
   await saveSpotifySnapshot(id, {
