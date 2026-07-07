@@ -2158,6 +2158,13 @@ function bindSpotifyEvents() {
     event.preventDefault();
     addSpotifyArtist(form.querySelector("input").value);
   });
+  els.spotifyBoard.addEventListener("change", (event) => {
+    const input = event.target.closest("input[data-spotify-import]");
+    if (!input) return;
+    const file = input.files?.[0];
+    input.value = "";
+    if (file) importSpotifyCsv(input.dataset.spotifyImport, file);
+  });
   // Reuse the accounts chart tooltip for the Spotify line chart.
   els.spotifyBoard.addEventListener("mousemove", (event) => {
     const seg = event.target.closest("[data-tip]");
@@ -2187,6 +2194,18 @@ async function onSpotifyBoardClick(event) {
     try {
       await api(`/api/spotify/artists/${syncBtn.dataset.spotifySync}/sync`, { method: "POST" });
       showNotice("Spotify stats updated.", "good");
+    } catch (error) {
+      showNotice(error.message, "bad");
+    }
+    loadSpotify();
+    return;
+  }
+  const trackRemoveBtn = event.target.closest("[data-spotify-track-remove]");
+  if (trackRemoveBtn) {
+    const name = trackRemoveBtn.dataset.spotifyTrackName || "this song";
+    if (!window.confirm(`Stop tracking "${name}"? Its imported stream history will be deleted.`)) return;
+    try {
+      await api(`/api/spotify/tracks/${trackRemoveBtn.dataset.spotifyTrackRemove}`, { method: "DELETE" });
     } catch (error) {
       showNotice(error.message, "bad");
     }
@@ -2380,9 +2399,95 @@ function renderSpotifyArtist(artist, days) {
         <div class="overall-tabs segmented">${metricTabs}</div>
       </div>
       ${chart}
+      ${renderSpotifySongs(artist, days)}
       ${topTracks}
     </section>
   `;
+}
+
+// Song-level daily streams, fed by manual Spotify for Artists CSV imports
+// (S4A has no public API). Rendered under the artist's main chart.
+function renderSpotifySongs(artist, days) {
+  const tracks = artist.tracks || [];
+  const importControls = `
+    <label class="secondary spotify-import-btn">
+      <i data-lucide="upload" style="width:14px;height:14px"></i> Import S4A CSV
+      <input type="file" accept=".csv,text/csv" data-spotify-import="${artist.id}" hidden>
+    </label>`;
+
+  if (!tracks.length) {
+    return `
+      <div class="spotify-songs">
+        <div class="overall-head spotify-chart-head">
+          <span class="control-label">Song streams</span>
+          ${importControls}
+        </div>
+        <p class="detail-empty overall-empty">No song data yet. In Spotify for Artists, open a song's stats and download its timeline CSV (daily streams), or export the Music → Songs table — then import it here. Re-import any time; days just update in place.</p>
+      </div>`;
+  }
+
+  const contributors = tracks
+    .map((t, i) => ({ id: `tr${t.id}`, name: t.name, color: accountColor(i), perDay: t.perDay, total: t.total }))
+    .filter((c) => c.perDay.some((v) => v != null));
+
+  let chart;
+  if (contributors.length) {
+    let maxTotal = 1;
+    for (const c of contributors) {
+      for (const v of c.perDay) if (v != null) maxTotal = Math.max(maxTotal, Number(v) || 0);
+    }
+    const chartW = (els.spotifyBoard?.offsetWidth || 800) - 44;
+    const yAxis = [1, 0.75, 0.5, 0.25, 0].map((f) =>
+      `<span style="top:${((1 - f) * 100).toFixed(1)}%">${formatCount(Math.round(maxTotal * f))}</span>`
+    ).join("");
+    chart = `
+      <div class="overall-chart has-axis">
+        <div class="overall-yaxis">${yAxis}</div>
+        ${lineChartSvg(contributors, maxTotal, days, chartW)}
+      </div>`;
+  } else {
+    chart = `<p class="detail-empty overall-empty">No song streams recorded in this window — import a fresh S4A CSV to fill it in.</p>`;
+  }
+
+  const legend = tracks.map((t, i) =>
+    `<span class="overall-legend-item" data-acct="tr${t.id}"><i style="background:${accountColor(i)}"></i>${escapeHtml(t.name)} <strong>${formatCount(t.total)}</strong>
+      <button type="button" class="spotify-track-remove" data-spotify-track-remove="${t.id}" data-spotify-track-name="${escapeHtml(t.name)}" title="Stop tracking this song">×</button></span>`
+  ).join("");
+
+  return `
+    <div class="spotify-songs">
+      <div class="overall-head spotify-chart-head">
+        <span class="control-label">Song streams · daily · last ${days} days</span>
+        ${importControls}
+      </div>
+      ${chart}
+      <div class="overall-legend">${legend}</div>
+    </div>`;
+}
+
+async function importSpotifyCsv(artistId, file) {
+  let csv;
+  try {
+    csv = await file.text();
+  } catch {
+    showNotice("Could not read that file.", "bad");
+    return;
+  }
+  try {
+    let result = await api(`/api/spotify/artists/${artistId}/import`, { method: "POST", body: JSON.stringify({ csv }) });
+    if (result.needs_track_name) {
+      // Timeline exports don't say which song they belong to; the filename
+      // usually does, so offer it as the default.
+      const guess = (file.name || "").replace(/\.csv$/i, "").replace(/[_-]+/g, " ").trim();
+      const trackName = window.prompt("Which song is this timeline for?", guess);
+      if (!trackName || !trackName.trim()) return;
+      result = await api(`/api/spotify/artists/${artistId}/import`, { method: "POST", body: JSON.stringify({ csv, track_name: trackName.trim() }) });
+    }
+    showNotice(`Imported ${result.rows} day${result.rows === 1 ? "" : "s"} across ${result.tracks} song${result.tracks === 1 ? "" : "s"}.`, "good");
+    loadSpotify();
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
 }
 
 function switchTab(tab) {

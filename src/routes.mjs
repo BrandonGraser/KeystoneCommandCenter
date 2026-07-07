@@ -53,8 +53,8 @@ import { sendRingNotification, sendTaskDoneNotification } from "./notifications.
 import { cleanText, validateLinkPayload } from "./validators.mjs";
 import { axisStartMs } from "./metrics.mjs";
 import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } from "./tiktok.mjs";
-import { fetchArtist, getSpotifyOverview, isSpotifyConfigured, parseArtistId, syncAllSpotifyArtists, syncSpotifyArtist } from "./spotify.mjs";
-import { createSpotifyArtist, deleteSpotifyArtist } from "./db.mjs";
+import { fetchArtist, getSpotifyOverview, importS4ACsv, isSpotifyConfigured, parseArtistId, syncAllSpotifyArtists, syncSpotifyArtist } from "./spotify.mjs";
+import { createSpotifyArtist, deleteSpotifyArtist, deleteSpotifyTrack } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 
 export async function handleApi(request, response, url, currentUser) {
@@ -382,6 +382,18 @@ export async function handleApi(request, response, url, currentUser) {
   const spotifySyncMatch = url.pathname.match(/^\/api\/spotify\/artists\/(\d+)\/sync$/);
   if (spotifySyncMatch && method === "POST") {
     sendJson(response, 200, await syncSpotifyArtist(Number(spotifySyncMatch[1])));
+    return;
+  }
+  const spotifyImportMatch = url.pathname.match(/^\/api\/spotify\/artists\/(\d+)\/import$/);
+  if (spotifyImportMatch && method === "POST") {
+    const body = await readJson(request);
+    if (!body.csv || typeof body.csv !== "string") throw badRequest("Upload a CSV export from Spotify for Artists.");
+    sendJson(response, 200, await importS4ACsv(Number(spotifyImportMatch[1]), body.csv, cleanText(body.track_name)));
+    return;
+  }
+  const spotifyTrackMatch = url.pathname.match(/^\/api\/spotify\/tracks\/(\d+)$/);
+  if (spotifyTrackMatch && method === "DELETE") {
+    sendJson(response, 200, await deleteSpotifyTrack(Number(spotifyTrackMatch[1])));
     return;
   }
   if (url.pathname === "/api/spotify/sync" && method === "POST") {
