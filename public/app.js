@@ -167,6 +167,8 @@ init();
 async function init() {
   applyTheme();
   bindEvents();
+  initDatePicker(els.taskDue);
+  initDatePicker(els.accountScheduledThrough);
   const bootstrap = await api("/api/bootstrap");
   state.assignees = bootstrap.assignees;
   state.activeAssignee = state.assignees[0] || "";
@@ -1003,7 +1005,7 @@ function openTaskDialog(task = null) {
   els.taskCategory.value = task?.category || "Misc.";
   applyCategoryTone(els.taskCategory, els.taskCategory.value);
   renderCategoryPillPicker(els.taskCategory.value);
-  els.taskDue.value = task ? (task.due_date || "") : today();
+  dpSet(els.taskDue, task ? (task.due_date || "") : today());
   els.taskDone.checked = Boolean(task?.done);
   els.taskUrgency.value = task?.urgency ?? 3;
   els.taskUrgencyValue.textContent = els.taskUrgency.value;
@@ -1042,7 +1044,7 @@ async function saveTask(event) {
     details: els.taskTitle.value,
     assignee: els.taskAssignee.value,
     category: els.taskCategory.value,
-    due_date: els.taskDue.value || null,
+    due_date: dpGet(els.taskDue) || null,
     done: els.taskDone.checked,
     urgency: Number(els.taskUrgency.value) || 3,
     workflow_steps: collectWorkflowInputs(),
@@ -2456,6 +2458,125 @@ function renderChartexArtist(artist, days) {
   `;
 }
 
+// --- Custom date picker ------------------------------------------------------
+// Chrome refuses to theme its native date-picker popup (ignores accent-color),
+// so date fields use this app-styled calendar instead. The input keeps its
+// pretty MM/DD/YYYY display; the ISO value lives in data-iso and is read and
+// written through dpGet/dpSet.
+
+const DP_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function dpFormat(iso) {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : "";
+}
+
+function dpIsoOf(y, m, d) {
+  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function dpSet(input, iso) {
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(String(iso || ""));
+  input.dataset.iso = valid ? iso : "";
+  input.value = valid ? dpFormat(iso) : "";
+}
+
+function dpGet(input) {
+  return input.dataset.iso || "";
+}
+
+function initDatePicker(input) {
+  if (!input || input.dataset.dpInit) return;
+  input.dataset.dpInit = "1";
+  input.type = "text";
+  input.readOnly = true;
+  input.placeholder = "mm/dd/yyyy";
+  input.autocomplete = "off";
+  input.classList.add("dp-input");
+
+  const wrap = document.createElement("div");
+  wrap.className = "dp-wrap";
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const pop = document.createElement("div");
+  pop.className = "dp-pop";
+  pop.hidden = true;
+  wrap.appendChild(pop);
+
+  let view = { y: 0, m: 0 }; // displayed month
+
+  function render() {
+    const todayIso = localToday();
+    const selected = dpGet(input);
+    const first = new Date(view.y, view.m, 1);
+    const start = new Date(view.y, view.m, 1 - first.getDay()); // back to Sunday
+    let cells = "";
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      const iso = dpIsoOf(d.getFullYear(), d.getMonth(), d.getDate());
+      const classes = ["dp-day"];
+      if (d.getMonth() !== view.m) classes.push("dp-outside");
+      if (iso === todayIso) classes.push("dp-today");
+      if (selected && iso === selected) classes.push("dp-selected");
+      cells += `<button type="button" class="${classes.join(" ")}" data-dp-day="${iso}">${d.getDate()}</button>`;
+    }
+    pop.innerHTML = `
+      <div class="dp-head">
+        <span class="dp-title">${DP_MONTHS[view.m]} ${view.y}</span>
+        <span class="dp-nav">
+          <button type="button" class="dp-nav-btn" data-dp-nav="-1" title="Previous month">‹</button>
+          <button type="button" class="dp-nav-btn" data-dp-nav="1" title="Next month">›</button>
+        </span>
+      </div>
+      <div class="dp-grid">
+        ${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => `<span class="dp-dow">${d}</span>`).join("")}
+        ${cells}
+      </div>
+      <div class="dp-foot">
+        <button type="button" class="dp-link" data-dp-clear>Clear</button>
+        <button type="button" class="dp-link" data-dp-today>Today</button>
+      </div>`;
+  }
+
+  function open() {
+    const selected = dpGet(input) || localToday();
+    const [y, m] = selected.split("-").map(Number);
+    view = { y, m: m - 1 };
+    render();
+    pop.hidden = false;
+  }
+
+  function close() {
+    pop.hidden = true;
+  }
+
+  input.addEventListener("click", () => (pop.hidden ? open() : close()));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); }
+    if (event.key === "Escape") close();
+  });
+  pop.addEventListener("click", (event) => {
+    const nav = event.target.closest("[data-dp-nav]");
+    if (nav) {
+      view.m += Number(nav.dataset.dpNav);
+      if (view.m < 0) { view.m = 11; view.y--; }
+      if (view.m > 11) { view.m = 0; view.y++; }
+      render();
+      return;
+    }
+    const day = event.target.closest("[data-dp-day]");
+    if (day) { dpSet(input, day.dataset.dpDay); close(); return; }
+    if (event.target.closest("[data-dp-clear]")) { dpSet(input, ""); close(); return; }
+    if (event.target.closest("[data-dp-today]")) { dpSet(input, localToday()); close(); }
+  });
+  document.addEventListener("click", (event) => {
+    if (!pop.hidden && !wrap.contains(event.target)) close();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") close();
+  });
+}
+
 function switchTab(tab) {
   // Tolerate a stored tab that no longer exists (e.g. the removed Spotify tab).
   if (!["tasks", "accounts", "chartex", "notes"].includes(tab)) tab = "tasks";
@@ -3225,7 +3346,7 @@ function openAccountDialog(account = null) {
   els.accountUsername.value = account?.username || "";
   els.accountEmail.value = account?.email || "";
   els.accountPassword.value = account?.password || "";
-  els.accountScheduledThrough.value = account?.scheduled_through || "";
+  dpSet(els.accountScheduledThrough, account?.scheduled_through || "");
   els.accountGroup.value = account?.group_name || "";
   populateGroupOptions();
   accountsState.avatar = account?.avatar || "";
@@ -3257,7 +3378,7 @@ async function saveAccount(event) {
     username: els.accountUsername.value.trim(),
     email: els.accountEmail.value.trim(),
     password: els.accountPassword.value,
-    scheduled_through: els.accountScheduledThrough.value || "",
+    scheduled_through: dpGet(els.accountScheduledThrough) || "",
     group_name: els.accountGroup.value.trim(),
     avatar: accountsState.avatar || ""
   };

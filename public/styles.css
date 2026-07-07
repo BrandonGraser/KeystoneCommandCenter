@@ -4483,3 +4483,130 @@ html[data-theme="light"] .depth-shadow {
   border-style: dashed !important;
   color: var(--muted);
 }
+
+/* Custom date picker */
+.dp-wrap {
+  position: relative;
+}
+
+.dp-input {
+  cursor: pointer;
+  width: 100%;
+}
+
+.dp-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  width: 264px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  padding: 12px;
+}
+
+.dp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.dp-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.dp-nav {
+  display: flex;
+  gap: 4px;
+}
+
+.dp-nav-btn {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  width: 26px;
+  height: 26px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dp-nav-btn:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.dp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.dp-dow {
+  text-align: center;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-2);
+  padding: 4px 0;
+}
+
+.dp-day {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 12px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.dp-day:hover {
+  background: var(--panel);
+  border-color: var(--line);
+}
+
+.dp-outside {
+  color: var(--muted-2);
+}
+
+.dp-today {
+  border-color: var(--line-strong);
+}
+
+.dp-selected,
+.dp-selected:hover {
+  background: var(--ember);
+  border-color: var(--ember);
+  color: var(--invert-ink);
+  font-weight: 700;
+}
+
+.dp-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.dp-link {
+  background: none;
+  border: none;
+  color: var(--ember);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.dp-link:hover {
+  text-decoration: underline;
+}
