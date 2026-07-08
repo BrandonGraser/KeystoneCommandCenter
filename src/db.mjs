@@ -830,7 +830,14 @@ export async function listTaskMessages(taskId) {
 export async function createTaskMessage(taskId, input) {
   const author = String(input.author || "Me").trim() || "Me";
   const body = cleanMultiline(input.body);
-  const image = typeof input.image === "string" && input.image.startsWith("data:image/") ? input.image : null;
+  // One or many photos per message. The single `image` column stays: one
+  // photo is stored as the plain data URL (back-compat with old messages),
+  // several as a JSON array the client unpacks.
+  const rawImages = Array.isArray(input.images) ? input.images : (input.image ? [input.image] : []);
+  const images = rawImages
+    .filter((i) => typeof i === "string" && i.startsWith("data:image/"))
+    .slice(0, 8);
+  const image = images.length === 0 ? null : images.length === 1 ? images[0] : JSON.stringify(images);
   if (!body && !image) { const e = new Error("Message body is required."); e.status = 400; throw e; }
   const task = await getTask(taskId);
   if (!task) { const e = new Error("Task not found."); e.status = 404; throw e; }

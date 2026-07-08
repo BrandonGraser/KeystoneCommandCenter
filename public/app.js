@@ -613,25 +613,42 @@ function bindEvents() {
 }
 
 async function handleChatPhoto(input) {
-  const file = input.files && input.files[0];
+  const files = [...(input.files || [])];
   const expanded = input.closest("[data-task-id]");
   input.value = "";
-  await attachChatImage(expanded, file);
+  for (const file of files) await attachChatImage(expanded, file);
 }
+
+const MAX_MESSAGE_PHOTOS = 8;
 
 async function attachChatImage(expanded, file) {
   const taskId = Number(expanded?.dataset.taskId);
   if (!file || !taskId) return;
+  const queue = pendingImages[taskId] || (pendingImages[taskId] = []);
+  if (queue.length >= MAX_MESSAGE_PHOTOS) {
+    showNotice(`Max ${MAX_MESSAGE_PHOTOS} photos per message.`, "bad");
+    return;
+  }
   try {
-    pendingImages[taskId] = await readImageAsDataUrl(file);
-    const preview = expanded.querySelector(".chat-photo-preview");
-    if (preview) {
-      preview.hidden = false;
-      preview.innerHTML = `<img src="${escapeHtml(pendingImages[taskId])}" alt="Attachment preview"><button type="button" class="chat-photo-remove" title="Remove photo">Remove</button>`;
-    }
+    queue.push(await readImageAsDataUrl(file));
+    renderChatPhotoPreview(expanded, taskId);
   } catch (error) {
     showNotice(error.message, "bad");
   }
+}
+
+function chatPhotoChips(taskId) {
+  return (pendingImages[taskId] || []).map((src, index) =>
+    `<span class="chat-photo-chip"><img src="${escapeHtml(src)}" alt="Attachment preview"><button type="button" class="chat-photo-remove" data-image-index="${index}" title="Remove photo">×</button></span>`
+  ).join("");
+}
+
+function renderChatPhotoPreview(expanded, taskId) {
+  const preview = expanded?.querySelector(".chat-photo-preview");
+  if (!preview) return;
+  const count = (pendingImages[taskId] || []).length;
+  preview.hidden = !count;
+  preview.innerHTML = chatPhotoChips(taskId);
 }
 
 function renderChrome(bootstrap) {
@@ -843,13 +860,13 @@ function renderTaskExpanded(task) {
           <span class="chat-author-label author-name author-${authorSlug(state.currentUser)}">${escapeHtml(state.currentUser || "Me")}</span>
           <textarea class="chat-body" rows="2" placeholder="Message — Enter to send, Shift+Enter for a new line, Ctrl+V to paste a screenshot"></textarea>
           <div class="chat-actions">
-            <label class="chat-photo-button" title="Attach a photo">Photo
-              <input type="file" accept="image/*" class="chat-photo-input" hidden>
+            <label class="chat-photo-button" title="Attach photos">Photo
+              <input type="file" accept="image/*" class="chat-photo-input" multiple hidden>
             </label>
             <button type="button" class="primary chat-send">Send</button>
           </div>
-          <div class="chat-photo-preview"${pendingImages[task.id] ? "" : " hidden"}>
-            ${pendingImages[task.id] ? `<img src="${escapeHtml(pendingImages[task.id])}" alt="Attachment preview"><button type="button" class="chat-photo-remove" title="Remove photo">Remove</button>` : ""}
+          <div class="chat-photo-preview"${(pendingImages[task.id] || []).length ? "" : " hidden"}>
+            ${chatPhotoChips(task.id)}
           </div>
         </div>
       </div>
@@ -870,7 +887,24 @@ function renderExpandedImages(task) {
   `;
 }
 
+// A message's photos: legacy rows hold one plain data URL in `image`,
+// multi-photo rows hold a JSON array in the same column.
+function messageImages(message) {
+  const raw = message.image;
+  if (!raw) return [];
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [raw];
+}
+
 function renderMessage(message) {
+  const images = messageImages(message);
   return `
     <article class="chat-message ${state.focusedMessageId === message.id ? "focused" : ""}" data-message-id="${message.id}" tabindex="0" title="Click to revisit this message">
       <div class="chat-message-head">
@@ -878,7 +912,7 @@ function renderMessage(message) {
         <button type="button" class="delete-chat-message" data-action="delete-message" title="Delete discussion text">Delete</button>
       </div>
       ${message.body ? `<p>${escapeHtml(message.body)}</p>` : ""}
-      ${message.image ? `<img class="chat-image" src="${escapeHtml(message.image)}" alt="Shared photo" loading="lazy">` : ""}
+      ${images.map((src) => `<img class="chat-image" src="${escapeHtml(src)}" alt="Shared photo" loading="lazy">`).join("")}
       <time>${escapeHtml(shortDateTime(message.created_at))}</time>
     </article>
 `;
@@ -943,12 +977,11 @@ els.taskBoard.addEventListener("click", async (event) => {
   }
 
   if (expanded && event.target.closest(".chat-photo-remove")) {
-    delete pendingImages[Number(expanded.dataset.taskId)];
-    const preview = expanded.querySelector(".chat-photo-preview");
-    if (preview) {
-      preview.hidden = true;
-      preview.innerHTML = "";
-    }
+    const taskId = Number(expanded.dataset.taskId);
+    const index = Number(event.target.closest(".chat-photo-remove").dataset.imageIndex);
+    if (pendingImages[taskId] && Number.isFinite(index)) pendingImages[taskId].splice(index, 1);
+    else delete pendingImages[taskId];
+    renderChatPhotoPreview(expanded, taskId);
     return;
   }
 
@@ -1263,12 +1296,12 @@ async function applyFormImages(taskId) {
 async function sendTaskMessage(container) {
   const taskId = Number(container.dataset.taskId);
   const rawBody = container.querySelector(".chat-body").value;
-  const image = pendingImages[taskId] || null;
-  if (!rawBody.trim() && !image) return;
+  const images = pendingImages[taskId] || [];
+  if (!rawBody.trim() && !images.length) return;
   const author = state.currentUser || state.assignees[0] || "Me";
   const data = await api(`/api/tasks/${taskId}/messages`, {
     method: "POST",
-    body: { author, body: rawBody, image }
+    body: { author, body: rawBody, images }
   });
   delete pendingImages[taskId];
   state.taskMessages[taskId] = data.messages;

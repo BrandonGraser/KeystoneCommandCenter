@@ -158,7 +158,8 @@ export async function handleApi(request, response, url, currentUser) {
     const message = await createTaskMessage(Number(messageMatch[1]), {
       author: cleanText(body.author) || "Me",
       body: body.body,
-      image: body.image
+      image: body.image,
+      images: body.images
     });
     sendJson(response, 201, { message, messages: await listTaskMessages(Number(messageMatch[1])) });
     return;
@@ -574,7 +575,9 @@ export async function readJson(request) {
   return text ? JSON.parse(text) : {};
 }
 
-export async function readBody(request, limit = 2 * 1024 * 1024) {
+// Default 4MB: multi-photo messages need headroom, and Vercel serverless
+// caps request bodies at ~4.5MB anyway.
+export async function readBody(request, limit = 4 * 1024 * 1024) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
