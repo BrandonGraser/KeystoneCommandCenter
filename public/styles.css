@@ -4631,3 +4631,45 @@ html[data-theme="light"] .depth-shadow {
 .dp-link:hover {
   text-decoration: underline;
 }
+
+/* Chartex platform-grouped stat tiles */
+.chartex-tile {
+  border-left: 3px solid var(--plat);
+}
+
+.chartex-tile-plat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--plat);
+}
+
+.chartex-tile-plat svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.chartex-tile .spotify-stat-label {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 12px;
+}
+
+/* Sortable songs-table headers */
+.chartex-th-sort {
+  cursor: pointer;
+  user-select: none;
+}
+
+.chartex-th-sort:hover {
+  color: var(--ink);
+}
+
+.chartex-th-sort.active {
+  color: var(--ember);
+}

@@ -2230,15 +2230,44 @@ function renderAvatarPreview() {
 // their songs, from the Chartex API. Rolling 24h/7d numbers come straight
 // from Chartex; daily charts accrue from our own snapshots.
 
+// Tiles grouped by platform; each platform gets its brand color and logo.
+const CHARTEX_PLATFORMS = {
+  tiktok: {
+    name: "TikTok",
+    color: "#25c4ec",
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.53.02C13.84 0 15.14.01 16.44 0c.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>`
+  },
+  spotify: {
+    name: "Spotify",
+    color: "#1DB954",
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.42 1.56-.299.421-1.02.599-1.56.3z"/></svg>`
+  },
+  youtube: {
+    name: "YouTube",
+    color: "#ff4d4d",
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>`
+  },
+  shazam: {
+    name: "Shazam",
+    color: "#2f8bff",
+    icon: `<i data-lucide="zap" style="width:13px;height:13px"></i>`
+  },
+  instagram: {
+    name: "Instagram",
+    color: "#e4405f",
+    icon: `<i data-lucide="instagram" style="width:13px;height:13px"></i>`
+  }
+};
+
 const CHARTEX_TILES = [
-  { label: "TikTok Creates", total: "tiktok_total_video_count", d7: "tiktok_last_7_days_video_count", d24: "tiktok_last_24_hours_video_count" },
-  { label: "Spotify Streams", total: "spotify_total_streams", d7: "spotify_last_7_days_streams", d24: "spotify_last_24_hours_streams" },
-  { label: "Monthly Listeners", total: "spotify_total_monthly_listeners", d7: "spotify_last_7_days_monthly_listeners", d24: "spotify_last_24_hours_monthly_listeners" },
-  { label: "Spotify Followers", total: "spotify_total_followers", d7: "spotify_last_7_days_followers", d24: "spotify_last_24_hours_followers" },
-  { label: "YouTube Views", total: "youtube_total_views", d7: "youtube_last_7_days_views", d24: "youtube_last_24_hours_views" },
-  { label: "Shazams", total: "shazam_total_count", d7: "shazam_last_7_days_count", d24: "shazam_last_24_hours_count" },
-  { label: "TikTok Followers", total: "tiktok_total_followers", d7: "tiktok_last_7_days_followers", d24: "tiktok_last_24_hours_followers" },
-  { label: "Instagram Followers", total: "instagram_total_followers", d7: "instagram_last_7_days_followers", d24: "instagram_last_24_hours_followers" }
+  { platform: "tiktok", label: "Creates", total: "tiktok_total_video_count", d7: "tiktok_last_7_days_video_count", d24: "tiktok_last_24_hours_video_count" },
+  { platform: "tiktok", label: "Followers", total: "tiktok_total_followers", d7: "tiktok_last_7_days_followers", d24: "tiktok_last_24_hours_followers" },
+  { platform: "spotify", label: "Streams", total: "spotify_total_streams", d7: "spotify_last_7_days_streams", d24: "spotify_last_24_hours_streams" },
+  { platform: "spotify", label: "Monthly Listeners", total: "spotify_total_monthly_listeners", d7: "spotify_last_7_days_monthly_listeners", d24: "spotify_last_24_hours_monthly_listeners" },
+  { platform: "spotify", label: "Followers", total: "spotify_total_followers", d7: "spotify_last_7_days_followers", d24: "spotify_last_24_hours_followers" },
+  { platform: "youtube", label: "Views", total: "youtube_total_views", d7: "youtube_last_7_days_views", d24: "youtube_last_24_hours_views" },
+  { platform: "shazam", label: "Shazams", total: "shazam_total_count", d7: "shazam_last_7_days_count", d24: "shazam_last_24_hours_count" },
+  { platform: "instagram", label: "Followers", total: "instagram_total_followers", d7: "instagram_last_7_days_followers", d24: "instagram_last_24_hours_followers" }
 ];
 
 const CHARTEX_METRICS = [
@@ -2248,11 +2277,22 @@ const CHARTEX_METRICS = [
   ["shazam_count", "Shazams"]
 ];
 
+// Songs-table sort columns → the stats field they rank by ("song" sorts by name).
+const CHARTEX_SONG_SORTS = {
+  song: null,
+  creates: "tiktok_total_video_count",
+  streams: "spotify_total_streams",
+  youtube: "youtube_total_views",
+  shazams: "shazam_total_count",
+  sounds: "tiktok_total_sound_count"
+};
+
 const chartexState = {
   loaded: false,
   loading: false,
   windowDays: 30,
   metric: "tiktok_creates",
+  songSort: { key: "creates", dir: "desc" },
   data: null
 };
 
@@ -2297,6 +2337,18 @@ async function onChartexBoardClick(event) {
   const metricBtn = event.target.closest(".chartex-metric-btn");
   if (metricBtn) {
     chartexState.metric = metricBtn.dataset.metric;
+    renderChartex();
+    return;
+  }
+  const sortTh = event.target.closest("[data-song-sort]");
+  if (sortTh) {
+    const key = sortTh.dataset.songSort;
+    const current = chartexState.songSort;
+    // Same column toggles direction; a new column starts ascending
+    // (least → greatest), names start A→Z.
+    chartexState.songSort = current.key === key
+      ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
+      : { key, dir: "asc" };
     renderChartex();
     return;
   }
@@ -2387,12 +2439,16 @@ function renderChartexArtist(artist, days) {
     ? `<img src="${escapeHtml(artist.image_url)}" alt="" loading="lazy">`
     : `<span class="spotify-avatar-empty">♪</span>`;
 
-  const tiles = CHARTEX_TILES.filter((t) => stats[t.total] != null).map((t) => `
-    <div class="spotify-stat">
+  const tiles = CHARTEX_TILES.filter((t) => stats[t.total] != null).map((t) => {
+    const plat = CHARTEX_PLATFORMS[t.platform];
+    return `
+    <div class="spotify-stat chartex-tile" style="--plat: ${plat.color}">
+      <span class="chartex-tile-plat">${plat.icon}${plat.name}</span>
       <span class="spotify-stat-label">${t.label}</span>
       <span class="spotify-stat-value">${formatCount(stats[t.total])}</span>
       <span class="chartex-deltas">${chartexDeltaText(stats, t.d24, t.d7)}</span>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 
   // Daily-gains chart from our snapshots (needs two synced days to start).
   const metric = chartexState.metric;
@@ -2428,10 +2484,14 @@ function renderChartexArtist(artist, days) {
     `<button type="button" class="overall-tab chartex-metric-btn ${k === metric ? "active" : ""}" data-metric="${k}">${label}</button>`
   ).join("");
 
-  // Songs table sorted by all-time TikTok creates.
-  const songs = [...(artist.songs || [])].sort((a, b) =>
-    (b.stats?.tiktok_total_video_count || 0) - (a.stats?.tiktok_total_video_count || 0)
-  );
+  // Songs table, sorted by whichever column header was clicked last.
+  const sort = chartexState.songSort;
+  const sortStat = CHARTEX_SONG_SORTS[sort.key] || CHARTEX_SONG_SORTS.creates;
+  const dir = sort.dir === "asc" ? 1 : -1;
+  const songs = [...(artist.songs || [])].sort((a, b) => {
+    if (sort.key === "song") return dir * String(a.name || "").localeCompare(String(b.name || ""));
+    return dir * ((a.stats?.[sortStat] || 0) - (b.stats?.[sortStat] || 0));
+  });
   const songRows = songs.map((song, i) => {
     const s = song.stats || {};
     const cover = song.image_url ? `<img src="${escapeHtml(song.image_url)}" alt="" loading="lazy" onerror="this.remove()">` : "";
@@ -2450,12 +2510,17 @@ function renderChartexArtist(artist, days) {
       <td class="chartex-sounds">${s.tiktok_total_sound_count ?? "—"}</td>
     </tr>`;
   }).join("");
+  const th = (key, label) => {
+    const active = sort.key === key;
+    const arrow = active ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
+    return `<th class="chartex-th-sort ${active ? "active" : ""}" data-song-sort="${key}" title="Sort by ${label}">${label}${arrow}</th>`;
+  };
   const songsTable = songs.length ? `
     <div class="chartex-songs">
-      <span class="control-label">Songs · ${songs.length} · all-time totals with 7-day gains</span>
+      <span class="control-label">Songs · ${songs.length} · all-time totals with 7-day gains · click a column to sort</span>
       <div class="chartex-table-wrap">
         <table class="chartex-table">
-          <thead><tr><th></th><th>Song</th><th>TikTok creates</th><th>Spotify streams</th><th>YouTube views</th><th>Shazams</th><th>Sounds</th></tr></thead>
+          <thead><tr><th></th>${th("song", "Song")}${th("creates", "TikTok creates")}${th("streams", "Spotify streams")}${th("youtube", "YouTube views")}${th("shazams", "Shazams")}${th("sounds", "Sounds")}</tr></thead>
           <tbody>${songRows}</tbody>
         </table>
       </div>
