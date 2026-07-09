@@ -777,11 +777,12 @@ function renderTaskRow(task) {
         ${state.statuses.map((s) => `<option value="${escapeHtml(s)}"${s === task.status ? " selected" : ""}>${escapeHtml(s)}</option>`).join("")}
        </select>`;
   return `
-    <article class="task-row ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} status-row-${statusMeta.className}" data-task-id="${task.id}">
+    <article class="task-row ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} ${task.auto_key ? "auto-task" : ""} status-row-${statusMeta.className}" data-task-id="${task.id}">
       <input class="task-check" type="checkbox" ${task.done ? "checked" : ""} ${state.showArchive ? "disabled" : ""} title="Mark done">
       <div class="task-main">
         <div class="task-title" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</div>
         <div class="task-tags">
+          ${task.auto_key ? `<span class="auto-task-badge" title="Created automatically from the content schedule">Auto</span>` : ""}
           <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
           ${statusSelect}
           <span class="urgency-badge urgency-${urgencyTier(task.urgency)}" title="Urgency ${task.urgency ?? 3}/5">${task.urgency ?? 3}</span>
@@ -2261,6 +2262,7 @@ const CHARTEX_PLATFORMS = {
 
 const CHARTEX_TILES = [
   { platform: "tiktok", label: "Creates", total: "tiktok_total_video_count", d7: "tiktok_last_7_days_video_count", d24: "tiktok_last_24_hours_video_count" },
+  { platform: "tiktok", label: "Daily Creates (24h)", total: "tiktok_last_24_hours_video_count" },
   { platform: "tiktok", label: "Followers", total: "tiktok_total_followers", d7: "tiktok_last_7_days_followers", d24: "tiktok_last_24_hours_followers" },
   { platform: "spotify", label: "Streams", total: "spotify_total_streams", d7: "spotify_last_7_days_streams", d24: "spotify_last_24_hours_streams" },
   { platform: "spotify", label: "Monthly Listeners", total: "spotify_total_monthly_listeners", d7: "spotify_last_7_days_monthly_listeners", d24: "spotify_last_24_hours_monthly_listeners" },

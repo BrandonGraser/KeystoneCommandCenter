@@ -429,6 +429,9 @@ async function migrate(client) {
   if (!taskColNames.includes("urgency")) {
     await client.execute("ALTER TABLE tasks ADD COLUMN urgency INTEGER NOT NULL DEFAULT 5");
   }
+  if (!taskColNames.includes("auto_key")) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN auto_key TEXT");
+  }
 
   const resourceCols = await client.execute("PRAGMA table_info(resource_items)");
   const resourceColNames = resourceCols.rows.map((r) => r["name"]);
@@ -1618,6 +1621,69 @@ export async function carryOverdueTasks(today) {
     args: [target, target]
   });
   return Number(r.rowsAffected || 0);
+}
+
+// --- Auto re-up task -----------------------------------------------------------
+
+// Keep exactly one low-key auto task listing every account whose scheduled
+// content runs out within 7 days (or already ran out). The task's due date is
+// the soonest runout (never in the past — carry-over would just churn it).
+// Marking it done parks it until the account list actually changes; when no
+// account is low anymore, the auto task retires itself to the archive.
+export async function ensureReupTask(today) {
+  const client = await getDb();
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(String(today || "")) ? String(today) : null;
+  const low = await client.execute({
+    sql: `SELECT name, scheduled_through FROM tiktok_accounts
+      WHERE archived = 0 AND coalesce(scheduled_through, '') != ''
+        AND scheduled_through <= date(coalesce(?, date('now', 'localtime')), '+7 days')
+      ORDER BY scheduled_through ASC, name ASC`,
+    args: [t]
+  });
+  const accounts = rows(low);
+  const existing = await client.execute(
+    "SELECT id, title, done, due_date FROM tasks WHERE auto_key = 'reup' AND archived = 0 ORDER BY id DESC LIMIT 1"
+  );
+  const task = firstRow(existing);
+
+  if (!accounts.length) {
+    if (task && !Number(task.done)) {
+      await client.execute({
+        sql: "UPDATE tasks SET archived = 1, archived_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+        args: [task.id]
+      });
+    }
+    return;
+  }
+
+  const todayIso = t || new Date().toISOString().slice(0, 10);
+  const title = `Re-up ${accounts.map((a) => a.name).join(", ")}`;
+  const earliest = accounts[0].scheduled_through;
+  const dueDate = earliest < todayIso ? todayIso : earliest;
+
+  if (task && !Number(task.done)) {
+    if (task.title !== title || task.due_date !== dueDate) {
+      await client.execute({
+        sql: "UPDATE tasks SET title = ?, due_date = ?, updated_at = datetime('now') WHERE id = ?",
+        args: [title, dueDate, task.id]
+      });
+    }
+    return;
+  }
+  // A completed auto task for the SAME account list means it's handled and
+  // just waiting for the next schedule sync — don't nag with a duplicate.
+  if (task && Number(task.done)) {
+    if (task.title === title) return;
+    await client.execute({
+      sql: "UPDATE tasks SET archived = 1, archived_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+      args: [task.id]
+    });
+  }
+  await client.execute({
+    sql: `INSERT INTO tasks (assignee, title, details, category, status, due_date, urgency, auto_key)
+      VALUES ('Brandon', ?, 'Auto-created: these accounts have 7 days or less of scheduled content left.', 'Keystone', 'Not Started', ?, 2, 'reup')`,
+    args: [title, dueDate]
+  });
 }
 
 // --- Bootstrap ---------------------------------------------------------------

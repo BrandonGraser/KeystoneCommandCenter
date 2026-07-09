@@ -4673,3 +4673,78 @@ html[data-theme="light"] .depth-shadow {
 .chartex-th-sort.active {
   color: var(--ember);
 }
+
+/* Chartex tiles: one compact row, never wraps (scrolls if truly cramped) */
+.chartex-stats {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.chartex-stats .spotify-stat {
+  flex: 1 1 0;
+  min-width: 104px;
+  padding: 8px 10px;
+  gap: 1px;
+}
+
+.chartex-stats .spotify-stat-value {
+  font-size: 17px;
+}
+
+.chartex-stats .chartex-tile .spotify-stat-label {
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chartex-stats .chartex-tile-plat {
+  font-size: 9px;
+}
+
+.chartex-stats .chartex-tile-plat svg,
+.chartex-stats .chartex-tile-plat [data-lucide] {
+  width: 11px !important;
+  height: 11px !important;
+}
+
+.chartex-stats .chartex-deltas {
+  gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.chartex-stats .spotify-delta {
+  font-size: 10px;
+}
+
+/* Low-key auto-created tasks (content re-up reminders) */
+.task-row.auto-task {
+  border-style: dashed;
+  background: transparent;
+  opacity: 0.78;
+}
+
+.task-row.auto-task:hover {
+  opacity: 1;
+}
+
+.task-row.auto-task .task-title {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.auto-task-badge {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  padding: 1px 8px;
+}

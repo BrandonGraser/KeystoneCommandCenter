@@ -55,7 +55,7 @@ import { axisStartMs } from "./metrics.mjs";
 import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } from "./tiktok.mjs";
 import { parseArtistId, scrapeArtistPage } from "./spotify.mjs";
 import { getChartexOverview, syncAllChartexArtists, syncChartexArtist } from "./chartex.mjs";
-import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist } from "./db.mjs";
+import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, ensureReupTask } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 
 export async function handleApi(request, response, url, currentUser) {
@@ -76,8 +76,10 @@ export async function handleApi(request, response, url, currentUser) {
   if (method === "GET" && url.pathname === "/api/sync") {
     // Roll yesterday's unfinished tasks forward to "due today" before
     // listing. The client sends its local date so the rollover happens at
-    // the user's midnight, not the server's.
+    // the user's midnight, not the server's. The auto re-up task refreshes
+    // on the same tick.
     await carryOverdueTasks(url.searchParams.get("today"));
+    await ensureReupTask(url.searchParams.get("today"));
     const [bootstrap, tasks, resources, chatCounts] = await Promise.all([
       getBootstrap(),
       listTasks(Object.fromEntries(url.searchParams.entries())),
@@ -234,6 +236,8 @@ export async function handleApi(request, response, url, currentUser) {
     }
     await carryOverdueTasks();
     const result = await syncAllAccounts();
+    // After schedules refresh, recheck which accounts are within 7 days.
+    try { await ensureReupTask(); } catch { /* never block the cron */ }
     // Chartex piggybacks on the same daily cron; its failure never blocks TikTok.
     let chartex = null;
     try {
