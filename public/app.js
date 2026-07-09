@@ -503,16 +503,56 @@ function bindEvents() {
     if (!btn) return;
     state.chatChannel = btn.dataset.channel;
     renderChatChannels();
+    renderChatComposerPreview();
     loadChatMessages();
+    els.chatSidebarInput.focus();
   });
   els.chatSidebarMessages.addEventListener("click", async (e) => {
+    const image = e.target.closest(".chat-sidebar-image");
+    if (image) {
+      openImageLightbox(image.src);
+      return;
+    }
     const del = e.target.closest(".chat-sidebar-msg-delete");
     if (!del) return;
     const msg = del.closest("[data-msg-id]");
-    if (!msg) return;
+    if (!msg || String(msg.dataset.msgId).startsWith("pending")) return;
     await api(`/api/chat/messages/${msg.dataset.msgId}`, { method: "DELETE" });
     await loadChatMessages();
   });
+  document.querySelector("#chatSidebarPhoto")?.addEventListener("change", async (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = "";
+    for (const file of files) await attachChatSidebarImage(file);
+  });
+  els.chatSidebarInput.addEventListener("paste", async (e) => {
+    const items = [...(e.clipboardData?.items || [])].filter((item) => item.type.startsWith("image/"));
+    if (!items.length) return;
+    e.preventDefault();
+    for (const item of items) {
+      const file = item.getAsFile();
+      if (file) await attachChatSidebarImage(file);
+    }
+  });
+  // Discord-style auto-growing composer.
+  els.chatSidebarInput.addEventListener("input", () => {
+    els.chatSidebarInput.style.height = "";
+    els.chatSidebarInput.style.height = `${Math.min(140, els.chatSidebarInput.scrollHeight)}px`;
+  });
+  document.querySelector("#chatComposerPreview")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".chat-composer-photo-remove");
+    if (!btn) return;
+    (chatPendingImages[state.chatChannel] || []).splice(Number(btn.dataset.imageIndex), 1);
+    renderChatComposerPreview();
+  });
+  // Snappy chat: while the sidebar is open, refresh the active channel every
+  // 4s (the render is skipped when nothing changed, and reading position is
+  // preserved unless you're already at the bottom).
+  window.setInterval(() => {
+    if (els.chatSidebar.classList.contains("collapsed")) return;
+    if (document.visibilityState !== "visible") return;
+    loadChatMessages({ quiet: true }).catch(() => { /* next tick retries */ });
+  }, 4000);
   bindAccountEvents();
   bindChartexEvents();
   els.taskImages.addEventListener("click", (event) => {
@@ -3623,78 +3663,171 @@ function dmChannel(user1, user2) {
   return `dm:${[user1, user2].sort().join(":")}`;
 }
 
-function renderChatChannels() {
+function chatChannelList() {
   const user = state.currentUser;
   const allUsers = ["Tommy", "Brandon", "Mac"];
-  const channels = [
-    { id: "general", label: "General" }
-  ];
+  const channels = [{ id: "general", label: "general", dm: false }];
   if (user) {
     for (const other of allUsers) {
-      if (other !== user) channels.push({ id: dmChannel(user, other), label: other });
+      if (other !== user) channels.push({ id: dmChannel(user, other), label: other, dm: true });
     }
   }
+  return channels;
+}
+
+function renderChatChannels() {
+  const channels = chatChannelList();
   els.chatChannels.innerHTML = channels.map((ch) => {
     const count = state.chatChannelCounts[ch.id] || 0;
     const seen = state.chatSeenCounts[ch.id] ?? 0;
     const unread = count > seen;
-    return `<button type="button" class="chat-channel-btn${ch.id === state.chatChannel ? " active" : ""}" data-channel="${escapeHtml(ch.id)}">${escapeHtml(ch.label)}${unread ? '<span class="chat-channel-unread"></span>' : ""}</button>`;
+    const icon = ch.dm
+      ? `<span class="chat-channel-avatar author-bg-${authorSlug(ch.label)}">${escapeHtml(ch.label[0] || "?")}</span>`
+      : `<span class="chat-channel-hash">#</span>`;
+    return `<button type="button" class="chat-channel-btn${ch.id === state.chatChannel ? " active" : ""}${unread ? " has-unread" : ""}" data-channel="${escapeHtml(ch.id)}">${icon}${escapeHtml(ch.label)}${unread ? '<span class="chat-channel-unread"></span>' : ""}</button>`;
   }).join("");
+  const current = channels.find((ch) => ch.id === state.chatChannel);
+  const title = document.querySelector("#chatChannelTitle");
+  if (title && current) title.textContent = current.dm ? `@ ${current.label}` : `# ${current.label}`;
 }
 
-async function loadChatMessages() {
+// True when the user is reading near the bottom — the only time new
+// messages should yank the scroll position (Discord behavior).
+function chatNearBottom() {
+  const box = els.chatSidebarMessages;
+  return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+}
+
+async function loadChatMessages({ quiet = false } = {}) {
   if (els.chatSidebar.classList.contains("collapsed")) return;
   const data = await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`);
-  state.chatMessages = data.messages || [];
-  state.chatLastSeenCount = state.chatMessages.length;
-  state.chatKnownCount = state.chatMessages.length;
-  state.chatSeenCounts[state.chatChannel] = state.chatMessages.length;
-  state.chatChannelCounts[state.chatChannel] = state.chatMessages.length;
+  const messages = data.messages || [];
+  const changed = JSON.stringify(messages) !== JSON.stringify(state.chatMessages);
+  state.chatMessages = messages;
+  state.chatLastSeenCount = messages.length;
+  state.chatKnownCount = messages.length;
+  state.chatSeenCounts[state.chatChannel] = messages.length;
+  state.chatChannelCounts[state.chatChannel] = messages.length;
   els.chatBadge.classList.remove("visible");
-  renderChatMessages();
-  renderChatChannels();
+  if (changed || !quiet) {
+    renderChatMessages({ keepScroll: quiet && !chatNearBottom() });
+    renderChatChannels();
+  }
 }
 
-function renderChatMessages() {
+function chatDayLabel(createdAt) {
+  const d = new Date(createdAt + "Z");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - day) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: day.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+}
+
+function renderChatMessages({ keepScroll = false } = {}) {
+  const box = els.chatSidebarMessages;
+  const prevScroll = box.scrollTop;
   const msgs = state.chatMessages;
   if (!msgs.length) {
-    els.chatSidebarMessages.innerHTML = `<p class="chat-sidebar-empty">No messages yet.</p>`;
+    box.innerHTML = `<div class="chat-sidebar-empty"><span class="chat-empty-hash">#</span><p>This is the start of ${escapeHtml(state.chatChannel === "general" ? "#general" : "your conversation")}.</p></div>`;
     return;
   }
   let html = "";
+  let lastDay = "";
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i];
     const time = msg.created_at ? new Date(msg.created_at + "Z").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+    const day = msg.created_at ? chatDayLabel(msg.created_at) : "";
     const prev = msgs[i - 1];
-    const next = msgs[i + 1];
-    const sameAsPrev = prev && prev.author === msg.author;
-    const sameAsNext = next && next.author === msg.author;
-    if (!sameAsPrev) {
-      html += `<div class="chat-msg-group">
-        <div class="chat-sidebar-msg-head">
-          <strong class="author-name author-${authorSlug(msg.author)}">${escapeHtml(msg.author || "")}</strong>
-          <span><time>${time}</time></span>
-        </div>`;
+    // New author or >5 minute gap starts a fresh Discord-style group.
+    const gapMs = prev && msg.created_at && prev.created_at ? new Date(msg.created_at + "Z") - new Date(prev.created_at + "Z") : Infinity;
+    let sameGroup = prev && prev.author === msg.author && gapMs < 5 * 60000;
+    if (day && day !== lastDay) {
+      if (lastDay) html += `</div>`;
+      html += `<div class="chat-day-divider"><span>${escapeHtml(day)}</span></div>`;
+      lastDay = day;
+      sameGroup = false;
+      html += `<div class="chat-msg-group" data-open>`;
+    } else if (!sameGroup) {
+      if (i > 0) html += `</div>`;
+      html += `<div class="chat-msg-group" data-open>`;
     }
+    if (!sameGroup) {
+      html += `<div class="chat-sidebar-msg-head">
+        <span class="chat-avatar author-bg-${authorSlug(msg.author)}">${escapeHtml((msg.author || "?")[0])}</span>
+        <strong class="author-name author-${authorSlug(msg.author)}">${escapeHtml(msg.author || "")}</strong>
+        <time>${time}</time>
+      </div>`;
+    }
+    const images = messageImages(msg);
     html += `<div class="chat-sidebar-msg-line" data-msg-id="${msg.id}">
-      <p>${escapeHtml(msg.body)}</p>
-      <span class="chat-sidebar-msg-actions">${sameAsPrev ? `<time>${time}</time>` : ""}<button type="button" class="chat-sidebar-msg-delete" title="Delete">&times;</button></span>
+      ${msg.body ? `<p>${escapeHtml(msg.body)}</p>` : ""}
+      ${images.map((src) => `<img class="chat-image chat-sidebar-image" src="${escapeHtml(src)}" alt="Shared photo" loading="lazy">`).join("")}
+      <span class="chat-sidebar-msg-actions">${sameGroup ? `<time>${time}</time>` : ""}<button type="button" class="chat-sidebar-msg-delete" title="Delete">&times;</button></span>
     </div>`;
-    if (!sameAsNext) html += `</div>`;
   }
-  els.chatSidebarMessages.innerHTML = html;
-  els.chatSidebarMessages.scrollTop = els.chatSidebarMessages.scrollHeight;
+  html += `</div>`;
+  box.innerHTML = html;
+  box.scrollTop = keepScroll ? prevScroll : box.scrollHeight;
+}
+
+// Photos queued for the next chat message, per channel.
+const chatPendingImages = {};
+
+function renderChatComposerPreview() {
+  const preview = document.querySelector("#chatComposerPreview");
+  if (!preview) return;
+  const imgs = chatPendingImages[state.chatChannel] || [];
+  preview.hidden = !imgs.length;
+  preview.innerHTML = imgs.map((src, index) =>
+    `<span class="chat-photo-chip"><img src="${escapeHtml(src)}" alt="Attachment preview"><button type="button" class="chat-composer-photo-remove" data-image-index="${index}" title="Remove photo">×</button></span>`
+  ).join("");
+}
+
+async function attachChatSidebarImage(file) {
+  if (!file) return;
+  const queue = chatPendingImages[state.chatChannel] || (chatPendingImages[state.chatChannel] = []);
+  if (queue.length >= MAX_MESSAGE_PHOTOS) {
+    showNotice(`Max ${MAX_MESSAGE_PHOTOS} photos per message.`, "bad");
+    return;
+  }
+  try {
+    queue.push(await readImageAsDataUrl(file));
+    renderChatComposerPreview();
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
 }
 
 async function postChatMessage(e) {
   e.preventDefault();
   const body = els.chatSidebarInput.value.trim();
-  if (!body) return;
+  const images = chatPendingImages[state.chatChannel] || [];
+  if (!body && !images.length) return;
   els.chatSidebarInput.value = "";
-  await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`, {
-    method: "POST",
-    body: { body }
-  });
+  els.chatSidebarInput.style.height = "";
+  delete chatPendingImages[state.chatChannel];
+  renderChatComposerPreview();
+  // Optimistic echo so the message appears instantly.
+  state.chatMessages = [...state.chatMessages, {
+    id: `pending-${Date.now()}`,
+    author: state.currentUser || "Me",
+    body,
+    image: images.length ? (images.length === 1 ? images[0] : JSON.stringify(images)) : null,
+    created_at: new Date().toISOString().slice(0, 19).replace("T", " ")
+  }];
+  renderChatMessages();
+  try {
+    await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`, {
+      method: "POST",
+      body: { body, images }
+    });
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
   await loadChatMessages();
 }
 

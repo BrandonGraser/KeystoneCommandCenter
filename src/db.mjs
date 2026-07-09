@@ -447,6 +447,11 @@ async function migrate(client) {
     await client.execute("ALTER TABLE task_messages ADD COLUMN image TEXT");
   }
 
+  const chatCols = await client.execute("PRAGMA table_info(chat_messages)");
+  if (!chatCols.rows.some((r) => r["name"] === "image")) {
+    await client.execute("ALTER TABLE chat_messages ADD COLUMN image TEXT");
+  }
+
   const accountCols = await client.execute("PRAGMA table_info(tiktok_accounts)");
   const accountColNames = accountCols.rows.map((r) => r["name"]);
   if (!accountColNames.includes("group_name")) {
@@ -1519,12 +1524,19 @@ export async function chatMessageCounts() {
   return counts;
 }
 
-export async function createChatMessage({ channel, author, body }) {
-  if (!body || !body.trim()) { const e = new Error("Message body is required."); e.status = 400; throw e; }
+export async function createChatMessage({ channel, author, body, images }) {
+  // Same photo storage scheme as task messages: one = plain data URL,
+  // several = JSON array in the same column.
+  const validImages = (Array.isArray(images) ? images : [])
+    .filter((i) => typeof i === "string" && i.startsWith("data:image/"))
+    .slice(0, 8);
+  const image = validImages.length === 0 ? null : validImages.length === 1 ? validImages[0] : JSON.stringify(validImages);
+  const text = (body || "").trim();
+  if (!text && !image) { const e = new Error("Message body is required."); e.status = 400; throw e; }
   const client = await getDb();
   const result = await client.execute({
-    sql: "INSERT INTO chat_messages (channel, author, body) VALUES (?, ?, ?)",
-    args: [channel, author, body.trim()]
+    sql: "INSERT INTO chat_messages (channel, author, body, image) VALUES (?, ?, ?, ?)",
+    args: [channel, author, text, image]
   });
   const r = await client.execute({ sql: "SELECT * FROM chat_messages WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   return firstRow(r);

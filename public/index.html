@@ -119,14 +119,21 @@
         </button>
         <div class="chat-sidebar-inner">
           <div class="chat-sidebar-header">
-            <h3>Chat</h3>
+            <h3 id="chatChannelTitle">Chat</h3>
             <button type="button" class="chat-sidebar-close" id="chatSidebarClose" title="Close chat"><i data-lucide="x" style="width:16px;height:16px"></i></button>
           </div>
           <div class="chat-sidebar-channels" id="chatChannels"></div>
           <div class="chat-sidebar-messages" id="chatSidebarMessages"></div>
           <form class="chat-sidebar-composer" id="chatSidebarForm">
-            <textarea id="chatSidebarInput" rows="2" placeholder="Message — Enter to send"></textarea>
-            <button type="submit" class="primary">Send</button>
+            <div class="chat-composer-preview" id="chatComposerPreview" hidden></div>
+            <div class="chat-composer-row">
+              <label class="chat-composer-photo" title="Attach photos">
+                <i data-lucide="image-plus" style="width:16px;height:16px"></i>
+                <input type="file" accept="image/*" id="chatSidebarPhoto" multiple hidden>
+              </label>
+              <textarea id="chatSidebarInput" rows="1" placeholder="Message — Enter to send, Ctrl+V pastes screenshots"></textarea>
+              <button type="submit" class="chat-composer-send" title="Send"><i data-lucide="send-horizontal" style="width:16px;height:16px"></i></button>
+            </div>
           </form>
         </div>
         <div class="chat-sidebar-resize" id="chatSidebarResize"></div>

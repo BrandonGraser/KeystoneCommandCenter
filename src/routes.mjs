@@ -31,6 +31,7 @@ import {
   getTask,
   listAccountVideos,
   listCanvasNotes,
+  listChatMessages,
   listDailyNotes,
   listResourceItems,
   listTaskImages,
@@ -50,7 +51,7 @@ import {
 import { getMetricsOverview, normalizeWindow, syncAllAccounts, syncOneAccount } from "./sync.mjs";
 import { importWorkbook } from "./importer.mjs";
 import { sendRingNotification, sendTaskDoneNotification } from "./notifications.mjs";
-import { cleanText, validateLinkPayload } from "./validators.mjs";
+import { cleanMultiline, cleanText, validateLinkPayload } from "./validators.mjs";
 import { axisStartMs } from "./metrics.mjs";
 import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } from "./tiktok.mjs";
 import { parseArtistId, scrapeArtistPage } from "./spotify.mjs";
@@ -494,7 +495,7 @@ export async function handleApi(request, response, url, currentUser) {
   if (chatMatch && method === "POST") {
     const channel = decodeURIComponent(chatMatch[1]);
     const body = await readJson(request);
-    const message = await createChatMessage({ channel, author: currentUser, body: cleanText(body.body) });
+    const message = await createChatMessage({ channel, author: currentUser, body: cleanMultiline(body.body), images: body.images });
     sendJson(response, 201, { message, messages: await listChatMessages(channel) });
     return;
   }
