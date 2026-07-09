@@ -11,6 +11,9 @@
   </head>
   <body>
     <main class="shell">
+      <button type="button" id="pfpCorner" class="pfp-corner" title="Update your profile picture"></button>
+      <input type="file" id="pfpInput" accept="image/*" hidden>
+
       <nav class="main-tabs" id="mainTabs">
         <button type="button" class="main-tab active" data-tab="tasks">Tasks</button>
         <button type="button" class="main-tab" data-tab="accounts">Accounts</button>
@@ -125,6 +128,7 @@
           <div class="chat-sidebar-channels" id="chatChannels"></div>
           <div class="chat-sidebar-messages" id="chatSidebarMessages"></div>
           <form class="chat-sidebar-composer" id="chatSidebarForm">
+            <div class="chat-reply-bar" id="chatReplyBar" hidden></div>
             <div class="chat-composer-preview" id="chatComposerPreview" hidden></div>
             <div class="chat-composer-row">
               <label class="chat-composer-photo" title="Attach photos">

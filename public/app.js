@@ -175,6 +175,8 @@ async function init() {
   state.statuses = bootstrap.statuses;
   state.dailyCategories = bootstrap.dailyCategories || [];
   state.currentUser = bootstrap.user || null;
+  state.userAvatars = bootstrap.avatars || {};
+  renderPfpCorner();
   renderChrome(bootstrap);
   renderLinkInputs();
   applyStoredResourceCollapse();
@@ -502,6 +504,7 @@ function bindEvents() {
     const btn = e.target.closest("[data-channel]");
     if (!btn) return;
     state.chatChannel = btn.dataset.channel;
+    setChatReply(null);
     renderChatChannels();
     renderChatComposerPreview();
     loadChatMessages();
@@ -513,12 +516,40 @@ function bindEvents() {
       openImageLightbox(image.src);
       return;
     }
+    const jump = e.target.closest("[data-reply-target]");
+    if (jump) {
+      const target = els.chatSidebarMessages.querySelector(`[data-msg-id="${jump.dataset.replyTarget}"]`);
+      if (target) {
+        target.scrollIntoView({ block: "center", behavior: "smooth" });
+        target.classList.add("chat-msg-flash");
+        window.setTimeout(() => target.classList.remove("chat-msg-flash"), 1500);
+      }
+      return;
+    }
+    const reply = e.target.closest(".chat-sidebar-msg-reply");
+    if (reply) {
+      const line = reply.closest("[data-msg-id]");
+      const original = state.chatMessages.find((m) => String(m.id) === line?.dataset.msgId);
+      if (original && !String(original.id).startsWith("pending")) setChatReply(original);
+      return;
+    }
     const del = e.target.closest(".chat-sidebar-msg-delete");
     if (!del) return;
     const msg = del.closest("[data-msg-id]");
     if (!msg || String(msg.dataset.msgId).startsWith("pending")) return;
     await api(`/api/chat/messages/${msg.dataset.msgId}`, { method: "DELETE" });
     await loadChatMessages();
+  });
+  document.querySelector("#chatReplyBar")?.addEventListener("click", (e) => {
+    if (e.target.closest(".chat-reply-cancel")) setChatReply(null);
+  });
+  document.querySelector("#pfpCorner")?.addEventListener("click", () => {
+    document.querySelector("#pfpInput")?.click();
+  });
+  document.querySelector("#pfpInput")?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    await uploadPfp(file);
   });
   document.querySelector("#chatSidebarPhoto")?.addEventListener("change", async (e) => {
     const files = [...(e.target.files || [])];
@@ -3663,6 +3694,37 @@ function dmChannel(user1, user2) {
   return `dm:${[user1, user2].sort().join(":")}`;
 }
 
+// Avatar circle for a user: their uploaded PFP when set, else a colored
+// initial. `size` is a CSS class hook.
+function userAvatarHtml(name, className) {
+  const avatar = (state.userAvatars || {})[name];
+  if (avatar) return `<span class="${className} has-image"><img src="${escapeHtml(avatar)}" alt=""></span>`;
+  return `<span class="${className} author-bg-${authorSlug(name)}">${escapeHtml((name || "?")[0])}</span>`;
+}
+
+function renderPfpCorner() {
+  const corner = document.querySelector("#pfpCorner");
+  if (!corner) return;
+  const user = state.currentUser || "?";
+  corner.innerHTML = userAvatarHtml(user, "pfp-corner-avatar");
+  corner.title = `${user} — click to update your profile picture`;
+}
+
+async function uploadPfp(file) {
+  if (!file) return;
+  try {
+    const image = await readImageAsDataUrl(file, 256);
+    const result = await api("/api/profile/avatar", { method: "POST", body: { image } });
+    state.userAvatars = { ...(state.userAvatars || {}), [result.username]: result.avatar };
+    renderPfpCorner();
+    renderChatChannels();
+    renderChatMessages({ keepScroll: true });
+    showNotice("Profile picture updated.", "good");
+  } catch (error) {
+    showNotice(error.message, "bad");
+  }
+}
+
 function chatChannelList() {
   const user = state.currentUser;
   const allUsers = ["Tommy", "Brandon", "Mac"];
@@ -3682,7 +3744,7 @@ function renderChatChannels() {
     const seen = state.chatSeenCounts[ch.id] ?? 0;
     const unread = count > seen;
     const icon = ch.dm
-      ? `<span class="chat-channel-avatar author-bg-${authorSlug(ch.label)}">${escapeHtml(ch.label[0] || "?")}</span>`
+      ? userAvatarHtml(ch.label, "chat-channel-avatar")
       : `<span class="chat-channel-hash">#</span>`;
     return `<button type="button" class="chat-channel-btn${ch.id === state.chatChannel ? " active" : ""}${unread ? " has-unread" : ""}" data-channel="${escapeHtml(ch.id)}">${icon}${escapeHtml(ch.label)}${unread ? '<span class="chat-channel-unread"></span>' : ""}</button>`;
   }).join("");
@@ -3731,6 +3793,7 @@ function renderChatMessages({ keepScroll = false } = {}) {
   const box = els.chatSidebarMessages;
   const prevScroll = box.scrollTop;
   const msgs = state.chatMessages;
+  const byId = new Map(msgs.map((m) => [Number(m.id), m]));
   if (!msgs.length) {
     box.innerHTML = `<div class="chat-sidebar-empty"><span class="chat-empty-hash">#</span><p>This is the start of ${escapeHtml(state.chatChannel === "general" ? "#general" : "your conversation")}.</p></div>`;
     return;
@@ -3757,16 +3820,24 @@ function renderChatMessages({ keepScroll = false } = {}) {
     }
     if (!sameGroup) {
       html += `<div class="chat-sidebar-msg-head">
-        <span class="chat-avatar author-bg-${authorSlug(msg.author)}">${escapeHtml((msg.author || "?")[0])}</span>
+        ${userAvatarHtml(msg.author, "chat-avatar")}
         <strong class="author-name author-${authorSlug(msg.author)}">${escapeHtml(msg.author || "")}</strong>
         <time>${time}</time>
       </div>`;
     }
     const images = messageImages(msg);
+    let replyRef = "";
+    if (msg.reply_to_id) {
+      const original = byId.get(Number(msg.reply_to_id));
+      replyRef = original
+        ? `<button type="button" class="chat-reply-ref" data-reply-target="${original.id}" title="Jump to the original message">↩ <strong>${escapeHtml(original.author)}</strong> ${escapeHtml((original.body || "📷 photo").slice(0, 70))}</button>`
+        : `<span class="chat-reply-ref chat-reply-gone">↩ Original message deleted</span>`;
+    }
     html += `<div class="chat-sidebar-msg-line" data-msg-id="${msg.id}">
+      ${replyRef}
       ${msg.body ? `<p>${escapeHtml(msg.body)}</p>` : ""}
       ${images.map((src) => `<img class="chat-image chat-sidebar-image" src="${escapeHtml(src)}" alt="Shared photo" loading="lazy">`).join("")}
-      <span class="chat-sidebar-msg-actions">${sameGroup ? `<time>${time}</time>` : ""}<button type="button" class="chat-sidebar-msg-delete" title="Delete">&times;</button></span>
+      <span class="chat-sidebar-msg-actions">${sameGroup ? `<time>${time}</time>` : ""}<button type="button" class="chat-sidebar-msg-reply" title="Reply">↩</button><button type="button" class="chat-sidebar-msg-delete" title="Delete">&times;</button></span>
     </div>`;
   }
   html += `</div>`;
@@ -3776,6 +3847,21 @@ function renderChatMessages({ keepScroll = false } = {}) {
 
 // Photos queued for the next chat message, per channel.
 const chatPendingImages = {};
+
+// The message currently being replied to (one at a time, like Discord).
+let chatReplyTo = null;
+
+function setChatReply(message) {
+  chatReplyTo = message ? { id: message.id, author: message.author, body: message.body } : null;
+  const bar = document.querySelector("#chatReplyBar");
+  if (!bar) return;
+  bar.hidden = !chatReplyTo;
+  bar.innerHTML = chatReplyTo
+    ? `<span class="chat-reply-bar-text">Replying to <strong>${escapeHtml(chatReplyTo.author)}</strong> — ${escapeHtml((chatReplyTo.body || "📷 photo").slice(0, 60))}</span>
+       <button type="button" class="chat-reply-cancel" title="Cancel reply">×</button>`
+    : "";
+  if (chatReplyTo) els.chatSidebarInput.focus();
+}
 
 function renderChatComposerPreview() {
   const preview = document.querySelector("#chatComposerPreview");
@@ -3807,15 +3893,18 @@ async function postChatMessage(e) {
   const body = els.chatSidebarInput.value.trim();
   const images = chatPendingImages[state.chatChannel] || [];
   if (!body && !images.length) return;
+  const replyToId = chatReplyTo?.id || null;
   els.chatSidebarInput.value = "";
   els.chatSidebarInput.style.height = "";
   delete chatPendingImages[state.chatChannel];
   renderChatComposerPreview();
+  setChatReply(null);
   // Optimistic echo so the message appears instantly.
   state.chatMessages = [...state.chatMessages, {
     id: `pending-${Date.now()}`,
     author: state.currentUser || "Me",
     body,
+    reply_to_id: replyToId,
     image: images.length ? (images.length === 1 ? images[0] : JSON.stringify(images)) : null,
     created_at: new Date().toISOString().slice(0, 19).replace("T", " ")
   }];
@@ -3823,7 +3912,7 @@ async function postChatMessage(e) {
   try {
     await api(`/api/chat/${encodeURIComponent(state.chatChannel)}/messages`, {
       method: "POST",
-      body: { body, images }
+      body: { body, images, reply_to_id: replyToId }
     });
   } catch (error) {
     showNotice(error.message, "bad");

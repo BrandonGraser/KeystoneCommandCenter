@@ -56,7 +56,7 @@ import { axisStartMs } from "./metrics.mjs";
 import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } from "./tiktok.mjs";
 import { parseArtistId, scrapeArtistPage } from "./spotify.mjs";
 import { getChartexOverview, syncAllChartexArtists, syncChartexArtist } from "./chartex.mjs";
-import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, ensureReupTask } from "./db.mjs";
+import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, ensureReupTask, setUserAvatar } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 
 export async function handleApi(request, response, url, currentUser) {
@@ -485,6 +485,13 @@ export async function handleApi(request, response, url, currentUser) {
     return;
   }
 
+  // --- Profile (per-user avatar) --------------------------------------------
+  if (url.pathname === "/api/profile/avatar" && method === "POST") {
+    const body = await readJson(request);
+    sendJson(response, 200, await setUserAvatar(currentUser, body.image));
+    return;
+  }
+
   // --- Chat (sidebar messaging) -------------------------------------------
   const chatMatch = url.pathname.match(/^\/api\/chat\/([^/]+)\/messages$/);
   if (chatMatch && method === "GET") {
@@ -495,7 +502,7 @@ export async function handleApi(request, response, url, currentUser) {
   if (chatMatch && method === "POST") {
     const channel = decodeURIComponent(chatMatch[1]);
     const body = await readJson(request);
-    const message = await createChatMessage({ channel, author: currentUser, body: cleanMultiline(body.body), images: body.images });
+    const message = await createChatMessage({ channel, author: currentUser, body: cleanMultiline(body.body), images: body.images, reply_to_id: body.reply_to_id });
     sendJson(response, 201, { message, messages: await listChatMessages(channel) });
     return;
   }

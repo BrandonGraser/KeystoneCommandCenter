@@ -380,6 +380,15 @@ async function migrate(client) {
       )`
     },
     {
+      // Profile pictures for the three fixed users, shown in the site
+      // header and on chat avatars.
+      sql: `CREATE TABLE IF NOT EXISTS user_profiles (
+        username TEXT PRIMARY KEY,
+        avatar TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
+    },
+    {
       sql: `CREATE TABLE IF NOT EXISTS storyboard_workspace (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         data TEXT NOT NULL DEFAULT '{}',
@@ -448,8 +457,12 @@ async function migrate(client) {
   }
 
   const chatCols = await client.execute("PRAGMA table_info(chat_messages)");
-  if (!chatCols.rows.some((r) => r["name"] === "image")) {
+  const chatColNames = chatCols.rows.map((r) => r["name"]);
+  if (!chatColNames.includes("image")) {
     await client.execute("ALTER TABLE chat_messages ADD COLUMN image TEXT");
+  }
+  if (!chatColNames.includes("reply_to_id")) {
+    await client.execute("ALTER TABLE chat_messages ADD COLUMN reply_to_id INTEGER");
   }
 
   const accountCols = await client.execute("PRAGMA table_info(tiktok_accounts)");
@@ -1524,7 +1537,27 @@ export async function chatMessageCounts() {
   return counts;
 }
 
-export async function createChatMessage({ channel, author, body, images }) {
+export async function getUserAvatars() {
+  const client = await getDb();
+  const r = await client.execute("SELECT username, avatar FROM user_profiles WHERE avatar IS NOT NULL");
+  const avatars = {};
+  for (const row of rows(r)) avatars[row.username] = row.avatar;
+  return avatars;
+}
+
+export async function setUserAvatar(username, image) {
+  const avatar = typeof image === "string" && image.startsWith("data:image/") ? image : null;
+  if (!avatar) { const e = new Error("Upload an image."); e.status = 400; throw e; }
+  const client = await getDb();
+  await client.execute({
+    sql: `INSERT INTO user_profiles (username, avatar, updated_at) VALUES (?, ?, datetime('now'))
+      ON CONFLICT(username) DO UPDATE SET avatar = excluded.avatar, updated_at = excluded.updated_at`,
+    args: [String(username), avatar]
+  });
+  return { username, avatar };
+}
+
+export async function createChatMessage({ channel, author, body, images, reply_to_id }) {
   // Same photo storage scheme as task messages: one = plain data URL,
   // several = JSON array in the same column.
   const validImages = (Array.isArray(images) ? images : [])
@@ -1533,10 +1566,11 @@ export async function createChatMessage({ channel, author, body, images }) {
   const image = validImages.length === 0 ? null : validImages.length === 1 ? validImages[0] : JSON.stringify(validImages);
   const text = (body || "").trim();
   if (!text && !image) { const e = new Error("Message body is required."); e.status = 400; throw e; }
+  const replyTo = Number(reply_to_id) > 0 ? Number(reply_to_id) : null;
   const client = await getDb();
   const result = await client.execute({
-    sql: "INSERT INTO chat_messages (channel, author, body, image) VALUES (?, ?, ?, ?)",
-    args: [channel, author, text, image]
+    sql: "INSERT INTO chat_messages (channel, author, body, image, reply_to_id) VALUES (?, ?, ?, ?, ?)",
+    args: [channel, author, text, image, replyTo]
   });
   const r = await client.execute({ sql: "SELECT * FROM chat_messages WHERE id = ?", args: [Number(result.lastInsertRowid)] });
   return firstRow(r);
@@ -1713,6 +1747,7 @@ export async function getBootstrap() {
   return {
     assignees: ASSIGNEES,
     dailyCategories: await listCategories(),
+    avatars: await getUserAvatars(),
     statuses: STATUSES,
     counts: {
       tasks: Number(total.rows[0]?.["count"] ?? 0),
