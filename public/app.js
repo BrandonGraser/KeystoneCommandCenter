@@ -480,7 +480,10 @@ function bindEvents() {
     document.body.classList.add("chat-resizing");
     els.chatSidebarResize.classList.add("active");
     const onMove = (ev) => {
-      const w = Math.min(600, Math.max(260, ev.clientX));
+      // Hard cap: 600px or 45% of the viewport, whichever is smaller, so the
+      // main content always keeps the majority of the screen.
+      const max = Math.min(600, Math.round(window.innerWidth * 0.45));
+      const w = Math.min(max, Math.max(260, ev.clientX));
       document.documentElement.style.setProperty("--chat-w", w + "px");
     };
     const onUp = () => {
@@ -3800,30 +3803,39 @@ function renderChatMessages({ keepScroll = false } = {}) {
   }
   let html = "";
   let lastDay = "";
+  // Discord layout: the avatar sits in a left gutter spanning the whole
+  // group; name + timestamp and every message line live in a content column
+  // beside it.
+  const closeGroup = `</div></div>`;
+  const openGroup = (msg, timestamp) => `<div class="chat-msg-group">
+    ${userAvatarHtml(msg.author, "chat-avatar")}
+    <div class="chat-group-content">
+      <div class="chat-sidebar-msg-head">
+        <strong class="author-name author-${authorSlug(msg.author)}">${escapeHtml(msg.author || "")}</strong>
+        <time>${timestamp}</time>
+      </div>`;
+  let groupOpen = false;
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i];
     const time = msg.created_at ? new Date(msg.created_at + "Z").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
     const day = msg.created_at ? chatDayLabel(msg.created_at) : "";
+    // Older groups carry the full date like Discord ("7/2/2026 3:44 PM").
+    const stamp = day === "Today" || !msg.created_at ? time : `${new Date(msg.created_at + "Z").toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "numeric" })} ${time}`;
     const prev = msgs[i - 1];
     // New author or >5 minute gap starts a fresh Discord-style group.
     const gapMs = prev && msg.created_at && prev.created_at ? new Date(msg.created_at + "Z") - new Date(prev.created_at + "Z") : Infinity;
     let sameGroup = prev && prev.author === msg.author && gapMs < 5 * 60000;
     if (day && day !== lastDay) {
-      if (lastDay) html += `</div>`;
+      if (groupOpen) html += closeGroup;
       html += `<div class="chat-day-divider"><span>${escapeHtml(day)}</span></div>`;
       lastDay = day;
       sameGroup = false;
-      html += `<div class="chat-msg-group" data-open>`;
+      html += openGroup(msg, stamp);
+      groupOpen = true;
     } else if (!sameGroup) {
-      if (i > 0) html += `</div>`;
-      html += `<div class="chat-msg-group" data-open>`;
-    }
-    if (!sameGroup) {
-      html += `<div class="chat-sidebar-msg-head">
-        ${userAvatarHtml(msg.author, "chat-avatar")}
-        <strong class="author-name author-${authorSlug(msg.author)}">${escapeHtml(msg.author || "")}</strong>
-        <time>${time}</time>
-      </div>`;
+      if (groupOpen) html += closeGroup;
+      html += openGroup(msg, stamp);
+      groupOpen = true;
     }
     const images = messageImages(msg);
     let replyRef = "";
@@ -3840,7 +3852,7 @@ function renderChatMessages({ keepScroll = false } = {}) {
       <span class="chat-sidebar-msg-actions">${sameGroup ? `<time>${time}</time>` : ""}<button type="button" class="chat-sidebar-msg-reply" title="Reply">↩</button><button type="button" class="chat-sidebar-msg-delete" title="Delete">&times;</button></span>
     </div>`;
   }
-  html += `</div>`;
+  if (groupOpen) html += closeGroup;
   box.innerHTML = html;
   box.scrollTop = keepScroll ? prevScroll : box.scrollHeight;
 }

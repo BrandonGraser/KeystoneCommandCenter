@@ -3523,8 +3523,10 @@ a.video-card:hover {
 }
 
 body.chat-open .shell {
+  /* Shrink to whatever space the chat leaves — never push content offscreen. */
   margin-left: calc(var(--chat-w, 340px) + 16px);
-  transition: margin-left 0.2s ease;
+  width: min(1400px, calc(100vw - var(--chat-w, 340px) - 40px));
+  transition: margin-left 0.2s ease, width 0.2s ease;
 }
 
 body.chat-resizing .shell {
@@ -5084,4 +5086,52 @@ html[data-theme="light"] .depth-shadow {
 
 .chat-reply-cancel:hover {
   color: var(--danger);
+}
+
+/* Discord-style gutter layout: avatar column + content column */
+.chat-msg-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 0 2px;
+}
+
+.chat-avatar {
+  width: 38px;
+  height: 38px;
+  font-size: 16px;
+  margin-top: 2px;
+}
+
+.chat-group-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-sidebar-msg-head {
+  margin-top: 0;
+  margin-bottom: 1px;
+  gap: 8px;
+}
+
+.chat-sidebar-msg-head strong {
+  font-size: 14px;
+}
+
+.chat-sidebar-msg-head time {
+  font-size: 11px;
+}
+
+.chat-msg-group .chat-sidebar-msg-line {
+  padding-left: 0;
+  padding-right: 4px;
+  margin-left: -4px;
+  padding-left: 4px;
+}
+
+.chat-sidebar-msg-line p {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 1px 0;
 }
