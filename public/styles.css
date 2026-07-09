@@ -4991,10 +4991,6 @@ html[data-theme="light"] .depth-shadow {
   background: var(--panel-2);
 }
 
-body.chat-open .pfp-corner {
-  right: calc(var(--chat-w) + 18px);
-}
-
 /* Replies */
 .chat-sidebar-msg-reply {
   all: unset;
