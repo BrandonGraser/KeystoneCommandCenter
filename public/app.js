@@ -929,7 +929,7 @@ function renderTaskExpanded(task) {
           <span>${messages.length} message${messages.length === 1 ? "" : "s"}</span>
         </div>
         <div class="chat-messages" data-task-id="${task.id}">
-          ${messages.length ? messages.map(renderMessage).join("") : `<p class="detail-empty">No discussion yet. Start one below.</p>`}
+          ${messages.length ? renderTaskChatMessages(messages) : `<p class="detail-empty">No discussion yet. Start one below.</p>`}
         </div>
         <div class="chat-composer">
           <span class="chat-author-label author-name author-${authorSlug(state.currentUser)}">${escapeHtml(state.currentUser || "Me")}</span>
@@ -978,19 +978,51 @@ function messageImages(message) {
   return [raw];
 }
 
-function renderMessage(message) {
-  const images = messageImages(message);
-  return `
-    <article class="chat-message ${state.focusedMessageId === message.id ? "focused" : ""}" data-message-id="${message.id}" tabindex="0" title="Click to revisit this message">
-      <div class="chat-message-head">
-        <strong class="author-name author-${authorSlug(message.author)}">${escapeHtml(message.author)}</strong>
-        <button type="button" class="delete-chat-message" data-action="delete-message" title="Delete discussion text">Delete</button>
-      </div>
-      ${message.body ? `<p>${escapeHtml(message.body)}</p>` : ""}
-      ${images.map((src) => `<img class="chat-image" src="${escapeHtml(src)}" alt="Shared photo" loading="lazy">`).join("")}
-      <time>${escapeHtml(shortDateTime(message.created_at))}</time>
-    </article>
-`;
+// Task-chat messages, laid out like the sidebar chat: avatar gutter, grouped
+// consecutive messages, day dividers, hover actions. Image thumbnails get a
+// FIXED height so several sit on one line, layout never shifts as they
+// decode, and scroll-to-bottom lands correctly.
+function renderTaskChatMessages(messages) {
+  let html = "";
+  let lastDay = "";
+  let groupOpen = false;
+  const closeGroup = `</div></div>`;
+  const openGroup = (msg, stamp) => `<div class="chat-msg-group">
+    ${userAvatarHtml(msg.author, "chat-avatar")}
+    <div class="chat-group-content">
+      <div class="chat-sidebar-msg-head">
+        <strong class="author-name author-${authorSlug(msg.author)}">${escapeHtml(msg.author || "")}</strong>
+        <time>${stamp}</time>
+      </div>`;
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    const time = msg.created_at ? new Date(msg.created_at + "Z").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+    const day = msg.created_at ? chatDayLabel(msg.created_at) : "";
+    const stamp = day === "Today" || !msg.created_at ? time : `${new Date(msg.created_at + "Z").toLocaleDateString(undefined, { month: "numeric", day: "numeric", year: "numeric" })} ${time}`;
+    const prev = messages[i - 1];
+    const gapMs = prev && msg.created_at && prev.created_at ? new Date(msg.created_at + "Z") - new Date(prev.created_at + "Z") : Infinity;
+    let sameGroup = prev && prev.author === msg.author && gapMs < 5 * 60000;
+    if (day && day !== lastDay) {
+      if (groupOpen) html += closeGroup;
+      html += `<div class="chat-day-divider"><span>${escapeHtml(day)}</span></div>`;
+      lastDay = day;
+      sameGroup = false;
+      html += openGroup(msg, stamp);
+      groupOpen = true;
+    } else if (!sameGroup) {
+      if (groupOpen) html += closeGroup;
+      html += openGroup(msg, stamp);
+      groupOpen = true;
+    }
+    const images = messageImages(msg);
+    html += `<article class="chat-message ${state.focusedMessageId === msg.id ? "focused" : ""}" data-message-id="${msg.id}" tabindex="0" title="Click to revisit this message">
+      ${msg.body ? `<p>${escapeHtml(msg.body)}</p>` : ""}
+      ${images.length ? `<div class="chat-image-row">${images.map((src) => `<img class="chat-image" src="${escapeHtml(src)}" alt="Shared photo" loading="lazy" decoding="async">`).join("")}</div>` : ""}
+      <span class="chat-line-actions">${sameGroup ? `<time>${time}</time>` : ""}<button type="button" class="delete-chat-message" data-action="delete-message" title="Delete discussion text">&times;</button></span>
+    </article>`;
+  }
+  if (groupOpen) html += closeGroup;
+  return html;
 }
 
 els.taskBoard.addEventListener("focusin", (event) => {
@@ -1045,9 +1077,12 @@ els.taskBoard.addEventListener("click", async (event) => {
     return;
   }
   if (expanded && message) {
+    // Toggle the highlight in place — re-rendering the whole board here made
+    // every click re-decode every chat image (the main source of lag).
     state.focusedMessageId = Number(message.dataset.messageId);
-    renderTasks();
-    scrollExpandedChatToEnd(Number(expanded.dataset.taskId));
+    expanded.querySelectorAll(".chat-message").forEach((el) => {
+      el.classList.toggle("focused", Number(el.dataset.messageId) === state.focusedMessageId);
+    });
     return;
   }
 
@@ -1850,10 +1885,15 @@ function shortDateTime(value) {
 }
 
 function scrollExpandedChatToEnd(taskId) {
-  window.requestAnimationFrame(() => {
+  // "instant" beats the container's smooth scroll-behavior so opening a chat
+  // lands at the latest message instead of animating down from the top. The
+  // delayed second pass catches any late layout growth.
+  const jump = () => {
     const scroller = document.querySelector(`.chat-messages[data-task-id="${taskId}"]`);
-    if (scroller) scroller.scrollTop = scroller.scrollHeight;
-  });
+    if (scroller) scroller.scrollTo({ top: scroller.scrollHeight, behavior: "instant" });
+  };
+  window.requestAnimationFrame(jump);
+  window.setTimeout(jump, 120);
 }
 
 function celebrateTaskDone(row) {
