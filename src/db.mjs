@@ -441,6 +441,9 @@ async function migrate(client) {
   if (!taskColNames.includes("auto_key")) {
     await client.execute("ALTER TABLE tasks ADD COLUMN auto_key TEXT");
   }
+  if (!taskColNames.includes("auto_data")) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN auto_data TEXT");
+  }
 
   const resourceCols = await client.execute("PRAGMA table_info(resource_items)");
   const resourceColNames = resourceCols.rows.map((r) => r["name"]);
@@ -1688,7 +1691,7 @@ export async function ensureReupTask(today) {
   });
   const accounts = rows(low);
   const existing = await client.execute(
-    "SELECT id, title, done, due_date FROM tasks WHERE auto_key = 'reup' AND archived = 0 ORDER BY id DESC LIMIT 1"
+    "SELECT id, title, done, due_date, auto_data FROM tasks WHERE auto_key = 'reup' AND archived = 0 ORDER BY id DESC LIMIT 1"
   );
   const task = firstRow(existing);
 
@@ -1706,12 +1709,22 @@ export async function ensureReupTask(today) {
   const title = `Re-up ${accounts.map((a) => a.name).join(", ")}`;
   const earliest = accounts[0].scheduled_through;
   const dueDate = earliest < todayIso ? todayIso : earliest;
+  // Per-account checklist state rides in auto_data. Checked flags carry over
+  // by name whenever the list refreshes; re-upped accounts drop off, new low
+  // accounts arrive unchecked.
+  let prevDone = new Map();
+  try {
+    prevDone = new Map((JSON.parse(task?.auto_data)?.accounts || []).map((a) => [a.name, Boolean(a.done)]));
+  } catch { /* no prior checklist */ }
+  const autoData = JSON.stringify({
+    accounts: accounts.map((a) => ({ name: a.name, runout: a.scheduled_through, done: prevDone.get(a.name) || false }))
+  });
 
   if (task && !Number(task.done)) {
-    if (task.title !== title || task.due_date !== dueDate) {
+    if (task.title !== title || task.due_date !== dueDate || task.auto_data !== autoData) {
       await client.execute({
-        sql: "UPDATE tasks SET title = ?, due_date = ?, updated_at = datetime('now') WHERE id = ?",
-        args: [title, dueDate, task.id]
+        sql: "UPDATE tasks SET title = ?, due_date = ?, auto_data = ?, updated_at = datetime('now') WHERE id = ?",
+        args: [title, dueDate, autoData, task.id]
       });
     }
     return;
@@ -1726,10 +1739,31 @@ export async function ensureReupTask(today) {
     });
   }
   await client.execute({
-    sql: `INSERT INTO tasks (assignee, title, details, category, status, due_date, urgency, auto_key)
-      VALUES ('Brandon', ?, 'Auto-created: these accounts have 7 days or less of scheduled content left.', 'Keystone', 'Not Started', ?, 2, 'reup')`,
-    args: [title, dueDate]
+    sql: `INSERT INTO tasks (assignee, title, details, category, status, due_date, urgency, auto_key, auto_data)
+      VALUES ('Brandon', ?, 'Auto-created: these accounts have 7 days or less of scheduled content left. Check accounts off as you finish making their content — the task clears itself once the new schedules sync.', 'Keystone', 'Not Started', ?, 2, 'reup', ?)`,
+    args: [title, dueDate, autoData]
   });
+}
+
+// Flip one account's checkbox on the re-up task's checklist.
+export async function setReupAccountDone(taskId, name, done) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT auto_data FROM tasks WHERE id = ? AND auto_key = 'reup'",
+    args: [Number(taskId)]
+  });
+  const row = firstRow(r);
+  if (!row) { const e = new Error("Re-up task not found."); e.status = 404; throw e; }
+  let data = { accounts: [] };
+  try { data = JSON.parse(row.auto_data) || data; } catch { /* fresh */ }
+  const entry = (data.accounts || []).find((a) => a.name === String(name));
+  if (!entry) { const e = new Error("That account is not on the checklist."); e.status = 404; throw e; }
+  entry.done = Boolean(done);
+  await client.execute({
+    sql: "UPDATE tasks SET auto_data = ?, updated_at = datetime('now') WHERE id = ?",
+    args: [JSON.stringify(data), Number(taskId)]
+  });
+  return getTask(Number(taskId));
 }
 
 // --- Bootstrap ---------------------------------------------------------------

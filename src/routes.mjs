@@ -56,7 +56,7 @@ import { axisStartMs } from "./metrics.mjs";
 import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } from "./tiktok.mjs";
 import { parseArtistId, scrapeArtistPage } from "./spotify.mjs";
 import { getChartexOverview, syncAllChartexArtists, syncChartexArtist } from "./chartex.mjs";
-import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, ensureReupTask, setUserAvatar } from "./db.mjs";
+import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, ensureReupTask, setReupAccountDone, setUserAvatar } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 
 export async function handleApi(request, response, url, currentUser) {
@@ -189,6 +189,13 @@ export async function handleApi(request, response, url, currentUser) {
   const imageItemMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/images\/(\d+)$/);
   if (imageItemMatch && method === "DELETE") {
     sendJson(response, 200, { images: await deleteTaskImage(Number(imageItemMatch[1]), Number(imageItemMatch[2])) });
+    return;
+  }
+
+  const reupCheckMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/reup-check$/);
+  if (reupCheckMatch && method === "POST") {
+    const body = await readJson(request);
+    sendJson(response, 200, { task: await setReupAccountDone(Number(reupCheckMatch[1]), cleanText(body.name), Boolean(body.done)) });
     return;
   }
 
