@@ -5236,7 +5236,7 @@ html[data-theme="light"] .depth-shadow {
   margin: 8px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
   gap: 4px 18px;
 }
 
@@ -5247,6 +5247,8 @@ html[data-theme="light"] .depth-shadow {
   padding: 5px 6px;
   border-radius: 6px;
   cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .reup-item label:hover {
@@ -5264,6 +5266,11 @@ html[data-theme="light"] .depth-shadow {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .reup-item.done .reup-name {
@@ -5277,6 +5284,9 @@ html[data-theme="light"] .depth-shadow {
   color: var(--muted-2);
   margin-left: auto;
   white-space: nowrap;
+  text-transform: none;
+  letter-spacing: normal;
+  flex-shrink: 0;
 }
 
 .reup-progress-badge {
