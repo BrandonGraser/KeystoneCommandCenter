@@ -1475,21 +1475,38 @@ async function applyFormImages(taskId) {
   }
 }
 
+const sendingTaskChats = new Set();
+
 async function sendTaskMessage(container) {
   const taskId = Number(container.dataset.taskId);
-  const rawBody = container.querySelector(".chat-body").value;
+  if (sendingTaskChats.has(taskId)) return;
+  const composer = container.querySelector(".chat-body");
+  const rawBody = composer.value;
   const images = pendingImages[taskId] || [];
   if (!rawBody.trim() && !images.length) return;
-  const author = state.currentUser || state.assignees[0] || "Me";
-  const data = await api(`/api/tasks/${taskId}/messages`, {
-    method: "POST",
-    body: { author, body: rawBody, images }
-  });
+  // Clear the composer before the request goes out — repeat Enter presses
+  // while the send is in flight must not re-send the same message.
+  sendingTaskChats.add(taskId);
+  composer.value = "";
   delete pendingImages[taskId];
-  state.taskMessages[taskId] = data.messages;
-  state.focusedMessageId = data.message.id;
-  renderTasks();
-  scrollExpandedChatToEnd(taskId);
+  try {
+    const author = state.currentUser || state.assignees[0] || "Me";
+    const data = await api(`/api/tasks/${taskId}/messages`, {
+      method: "POST",
+      body: { author, body: rawBody, images }
+    });
+    state.taskMessages[taskId] = data.messages;
+    state.focusedMessageId = data.message.id;
+    renderTasks();
+    scrollExpandedChatToEnd(taskId);
+  } catch (error) {
+    // Failed send: put the draft back so nothing is lost.
+    composer.value = rawBody;
+    if (images.length) pendingImages[taskId] = images;
+    showNotice(error.message, "bad");
+  } finally {
+    sendingTaskChats.delete(taskId);
+  }
 }
 
 async function deleteTaskMessage(container, messageElement) {
@@ -2643,6 +2660,12 @@ function renderChartexArtist(artist, days) {
   const metricLabel = (CHARTEX_METRICS.find(([k]) => k === metric) || [])[1] || metric;
   const perDay = artist.series?.[metric] || [];
   const hasPoints = perDay.some((v) => v != null);
+  // Day index 0 = local midnight (days - 1) days ago, matching the server's
+  // axisStartMs; shared by the chart labels and the daily tracker below.
+  const axisStartDate = new Date();
+  axisStartDate.setHours(0, 0, 0, 0);
+  axisStartDate.setDate(axisStartDate.getDate() - (days - 1));
+  const axisStart = axisStartDate.getTime();
   let chart;
   if (hasPoints) {
     let maxTotal = 1;
@@ -2653,10 +2676,9 @@ function renderChartexArtist(artist, days) {
       `<span style="top:${((1 - f) * 100).toFixed(1)}%">${formatCount(Math.round(maxTotal * f))}</span>`
     ).join("");
     const labelStep = Math.max(1, Math.ceil(days / 14));
-    const axis0 = Date.now() - (days - 1) * 86400000;
     const labels = [];
     for (let i = 0; i < days; i++) {
-      const d = new Date(axis0 + i * 86400000);
+      const d = new Date(axisStart + i * 86400000);
       labels.push(i % labelStep === 0 || i === days - 1 ? `${d.getMonth() + 1}/${d.getDate()}` : "");
     }
     chart = `
@@ -2671,6 +2693,57 @@ function renderChartexArtist(artist, days) {
   const metricTabs = CHARTEX_METRICS.map(([k, label]) =>
     `<button type="button" class="overall-tab chartex-metric-btn ${k === metric ? "active" : ""}" data-metric="${k}">${label}</button>`
   ).join("");
+
+  // Daily tracker: every synced day's gain (same snapshot-diff series as the
+  // chart) with the change vs the previous synced day, newest first.
+  const trackerDays = [];
+  let prevGain = null;
+  for (let i = 0; i < days; i++) {
+    const value = perDay[i];
+    if (value == null) continue;
+    trackerDays.push({
+      i,
+      value,
+      dod: prevGain == null ? null : value - prevGain,
+      pct: prevGain > 0 ? ((value - prevGain) / prevGain) * 100 : null
+    });
+    prevGain = value;
+  }
+  trackerDays.reverse();
+  let dailyTracker = "";
+  if (trackerDays.length) {
+    const todayIdx = days - 1;
+    const trackerRows = trackerDays.map((row) => {
+      const d = new Date(axisStart + row.i * 86400000);
+      const label = row.i === todayIdx ? "Today"
+        : row.i === todayIdx - 1 ? "Yesterday"
+        : `${d.toLocaleDateString(undefined, { weekday: "short" })} ${d.getMonth() + 1}/${d.getDate()}`;
+      let dod = `<span class="spotify-delta flat">—</span>`;
+      if (row.dod != null) {
+        const cls = row.dod > 0 ? "up" : row.dod < 0 ? "down" : "flat";
+        const sign = row.dod > 0 ? "+" : row.dod < 0 ? "−" : "";
+        const pct = row.pct != null && Number.isFinite(row.pct)
+          ? ` · ${sign}${Math.abs(row.pct).toFixed(1)}%`
+          : "";
+        dod = `<span class="spotify-delta ${cls}">${sign}${formatCount(Math.abs(row.dod))}${pct}</span>`;
+      }
+      return `<tr>
+        <td class="chartex-daily-date${row.i === todayIdx ? " today" : ""}">${label}</td>
+        <td><strong>+${formatCount(row.value)}</strong></td>
+        <td>${dod}</td>
+      </tr>`;
+    }).join("");
+    dailyTracker = `
+    <div class="chartex-daily">
+      <span class="control-label">Daily ${escapeHtml(metricLabel.toLowerCase())} tracker · change vs prior day</span>
+      <div class="chartex-table-wrap chartex-daily-wrap">
+        <table class="chartex-table chartex-daily-table">
+          <thead><tr><th>Day</th><th>Gained</th><th>Day-over-day</th></tr></thead>
+          <tbody>${trackerRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
 
   // Songs table, sorted by whichever column header was clicked last.
   const sort = chartexState.songSort;
@@ -2739,6 +2812,7 @@ function renderChartexArtist(artist, days) {
         <div class="overall-tabs segmented">${metricTabs}</div>
       </div>
       ${chart}
+      ${dailyTracker}
       ${songsTable}
     </section>
   `;

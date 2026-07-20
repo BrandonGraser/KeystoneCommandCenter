@@ -4428,6 +4428,33 @@ html[data-theme="light"] .depth-shadow {
   color: var(--muted);
 }
 
+/* Daily day-over-day tracker under the Chartex chart */
+.chartex-daily {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.chartex-daily-wrap {
+  max-height: 264px;
+  overflow-y: auto;
+}
+
+.chartex-daily-table th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+
+.chartex-daily-date {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.chartex-daily-date.today {
+  color: var(--ink);
+}
+
 /* Category management (task dialog) */
 .who-for-head {
   display: flex;
