@@ -422,7 +422,7 @@ export async function handleApi(request, response, url, currentUser) {
 
   // --- Metrics -------------------------------------------------------------
   if (url.pathname === "/api/metrics/overview" && method === "GET") {
-    sendJson(response, 200, await getMetricsOverview(normalizeWindow(url.searchParams.get("days"))));
+    sendJson(response, 200, await getMetricsOverview(normalizeWindow(url.searchParams.get("days")), tzOffsetParam(url)));
     return;
   }
   if (url.pathname === "/api/videos/top" && method === "GET") {
@@ -522,12 +522,20 @@ export async function handleApi(request, response, url, currentUser) {
   throw notFound("Route not found.");
 }
 
+// `tz` query param → the client's UTC offset in minutes (-840..840), or null.
+function tzOffsetParam(url) {
+  const raw = url.searchParams.get("tz");
+  if (raw == null || raw === "") return null;
+  const minutes = Number(raw);
+  return Number.isFinite(minutes) ? Math.max(-840, Math.min(840, minutes)) : null;
+}
+
 // `days` query param → unix-seconds cutoff. "all" (or 0) means no cutoff.
 function sinceUnixParam(url) {
   const raw = url.searchParams.get("days");
   if (!raw || raw === "all" || raw === "0") return 0;
   const days = Math.max(1, Math.min(365, Number(raw) || 14));
-  return Math.floor(axisStartMs(days) / 1000);
+  return Math.floor(axisStartMs(days, tzOffsetParam(url)) / 1000);
 }
 
 async function handleLogin(request, response) {

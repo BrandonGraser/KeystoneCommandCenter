@@ -9,12 +9,21 @@ export function isoDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-// Start-of-day (local) timestamp for an axis of `days` calendar days ending today.
-export function axisStartMs(days) {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - (days - 1));
-  return start.getTime();
+// Start-of-day timestamp for an axis of `days` calendar days ending today.
+// With no offset, days are server-local (UTC on Vercel). Pass the client's
+// UTC offset in minutes (-new Date().getTimezoneOffset()) to get the axis in
+// the viewer's calendar days instead — otherwise evening posts in the US land
+// on the next UTC day and per-day post counts come out as 1-then-3.
+export function axisStartMs(days, tzOffsetMin = null) {
+  if (tzOffsetMin == null) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (days - 1));
+    return start.getTime();
+  }
+  const offsetMs = tzOffsetMin * 60000;
+  const localMidnight = Math.floor((Date.now() + offsetMs) / 86400000) * 86400000;
+  return localMidnight - offsetMs - (days - 1) * 86400000;
 }
 
 // --- Legacy per-sync daily blob (metrics_daily on the account row) ----------
@@ -68,9 +77,9 @@ function dayIndex(ms, startMs, days) {
 
 // "By post date": each stored video's current totals land on the day it was
 // posted. Works for any window because video rows accumulate forever.
-// Returns Map<accountId, series>.
-export function buildPostedSeries(videoRows, days) {
-  const startMs = axisStartMs(days);
+// `startMs` sets the day boundaries (pass a client-offset axis so posts land
+// on the viewer's calendar days). Returns Map<accountId, series>.
+export function buildPostedSeries(videoRows, days, startMs = axisStartMs(days)) {
   const byAccount = new Map();
   for (const v of videoRows) {
     const idx = dayIndex((Number(v.create_time) || 0) * 1000, startMs, days);

@@ -2277,8 +2277,9 @@ const accountsState = {
   windowDays: 14, // 14 | 30 | 90 — drives the overall chart + leaderboards
   chartSource: "growth", // growth (daily views) | posted (by post date) | followers
   overview: null, // /api/metrics/overview payload for the current window
+  // Collapsed by default; expanding is remembered per browser.
   postsGridCollapsed: (() => {
-    try { return localStorage.getItem("keystone-posts-grid") === "collapsed"; } catch { return false; }
+    try { return localStorage.getItem("keystone-posts-grid") !== "open"; } catch { return true; }
   })(),
   topVideos: [], // cross-account leaderboard for the current window
   accountVideos: {}, // accountId -> top videos, fetched on expand
@@ -2981,10 +2982,13 @@ function animateTabIn(tab) {
 
 async function loadAccounts() {
   const days = accountsState.windowDays;
+  // Our UTC offset, so the server buckets posts into OUR calendar days —
+  // otherwise evening posts land on the next UTC day on Vercel.
+  const tz = -new Date().getTimezoneOffset();
   const [data, overview, top] = await Promise.all([
     api("/api/tiktok-accounts"),
-    api(`/api/metrics/overview?days=${days}`).catch(() => null),
-    api(`/api/videos/top?days=${days}&limit=12`).catch(() => ({ videos: [] }))
+    api(`/api/metrics/overview?days=${days}&tz=${tz}`).catch(() => null),
+    api(`/api/videos/top?days=${days}&limit=12&tz=${tz}`).catch(() => ({ videos: [] }))
   ]);
   accountsState.accounts = data.accounts || [];
   accountsState.overview = overview;

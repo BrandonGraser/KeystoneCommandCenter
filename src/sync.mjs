@@ -103,16 +103,19 @@ export function normalizeWindow(value) {
 // Per-account daily series for the overall chart, both attributions:
 //   posted — video totals bucketed on post date (available immediately)
 //   growth — snapshot-to-snapshot gains + absolute follower counts
-export async function getMetricsOverview(days) {
-  const startMs = axisStartMs(days);
-  const startDate = isoDate(new Date(startMs));
+// `tzOffsetMin` (client's UTC offset, minutes) aligns the posted-series day
+// boundaries to the viewer's calendar days; snapshots keep the server axis
+// because their dates were recorded server-side.
+export async function getMetricsOverview(days, tzOffsetMin = null) {
+  const startMs = axisStartMs(days, tzOffsetMin);
+  const startDate = isoDate(new Date(axisStartMs(days)));
   const [accounts, videoRows, snapshots] = await Promise.all([
     listTikTokAccounts(),
     listVideosSince(Math.floor(startMs / 1000)),
     getSnapshotSeries(startDate)
   ]);
 
-  const posted = buildPostedSeries(videoRows, days);
+  const posted = buildPostedSeries(videoRows, days, startMs);
   const growth = buildGrowthSeries(snapshots.rows, snapshots.baseline, days);
 
   return {
