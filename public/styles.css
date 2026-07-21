@@ -4432,20 +4432,51 @@ html[data-theme="light"] .depth-shadow {
 .posts-day {
   margin-top: 16px;
   border-top: 1px solid var(--line);
-  padding-top: 12px;
+  padding-top: 8px;
 }
 
-.posts-day .control-label {
-  display: block;
-  margin-bottom: 8px;
+.posts-day-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  color: var(--muted);
+  text-align: left;
+}
+
+.posts-day-toggle .control-label {
+  margin: 0;
+}
+
+.posts-day-toggle:hover .control-label {
+  color: var(--ink);
+}
+
+.posts-day-summary {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.posts-day-summary strong {
+  color: var(--ink);
 }
 
 .posts-day-scroll {
   overflow-x: auto;
+  margin-top: 8px;
 }
 
 .posts-day-table {
-  border-collapse: collapse;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px;
   font-size: 12px;
   white-space: nowrap;
 }
@@ -4453,30 +4484,30 @@ html[data-theme="light"] .depth-shadow {
 .posts-day-table thead th {
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
+  letter-spacing: 0.04em;
+  color: var(--muted-2);
   font-weight: 600;
-}
-
-.posts-day-table th,
-.posts-day-table td {
-  padding: 4px 7px;
   text-align: center;
-  min-width: 30px;
+  padding: 0 2px 4px;
+}
+
+.posts-day-table thead th.posts-day-today-h {
+  color: var(--ink);
 }
 
 .posts-day-table td {
-  font-weight: 600;
-  color: var(--ink);
+  text-align: center;
+  padding: 0;
 }
 
 .posts-day-name {
   position: sticky;
   left: 0;
   background: var(--panel);
-  text-align: left !important;
-  padding-right: 12px !important;
+  text-align: left;
+  padding-right: 14px;
   font-weight: 600;
+  font-size: 12px;
   color: var(--ink);
 }
 
@@ -4488,18 +4519,36 @@ html[data-theme="light"] .depth-shadow {
   margin-right: 6px;
 }
 
-.posts-day-zero {
-  color: var(--muted-2) !important;
-  font-weight: 400 !important;
+/* Heatmap chips: deeper green = more posts that day; empty days stay faint. */
+.posts-day-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--good) 20%, transparent);
 }
 
-.posts-day-today {
-  background: var(--panel-2);
+.posts-lvl-2 { background: color-mix(in srgb, var(--good) 36%, transparent); }
+.posts-lvl-3 { background: color-mix(in srgb, var(--good) 52%, transparent); }
+.posts-lvl-4 { background: color-mix(in srgb, var(--good) 70%, transparent); }
+
+.posts-day-empty {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.posts-day-cell.is-today {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 30%, transparent);
 }
 
 .posts-day-total {
   color: var(--muted);
-  border-left: 1px solid var(--line);
+  font-weight: 600;
+  padding-left: 8px;
 }
 
 /* Daily day-over-day tracker under the Chartex chart */

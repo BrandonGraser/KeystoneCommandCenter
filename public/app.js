@@ -2277,6 +2277,9 @@ const accountsState = {
   windowDays: 14, // 14 | 30 | 90 — drives the overall chart + leaderboards
   chartSource: "growth", // growth (daily views) | posted (by post date) | followers
   overview: null, // /api/metrics/overview payload for the current window
+  postsGridCollapsed: (() => {
+    try { return localStorage.getItem("keystone-posts-grid") === "collapsed"; } catch { return false; }
+  })(),
   topVideos: [], // cross-account leaderboard for the current window
   accountVideos: {}, // accountId -> top videos, fetched on expand
   expanded: new Set(), // account ids whose credentials panel is open
@@ -2343,6 +2346,13 @@ function bindAccountEvents() {
       accountsState.windowDays = Number(windowBtn.dataset.days) || 14;
       accountsState.accountVideos = {}; // per-account lists are window-scoped
       loadAccounts();
+      return;
+    }
+    const gridToggle = event.target.closest(".posts-day-toggle");
+    if (gridToggle) {
+      accountsState.postsGridCollapsed = !accountsState.postsGridCollapsed;
+      try { localStorage.setItem("keystone-posts-grid", accountsState.postsGridCollapsed ? "collapsed" : "open"); } catch { /* preference just won't persist */ }
+      renderAccountOverall();
       return;
     }
     const sourceBtn = event.target.closest(".overall-source-btn");
@@ -3247,9 +3257,10 @@ function renderAccountOverall() {
   refreshIcons();
 }
 
-// Always-visible posts-per-day grid: one row per account, one column per day,
-// so "who posted today?" needs no digging through the chart's source/metric
-// tabs. Same per-post-date data the chart's Posts view draws from.
+// Collapsible posts-per-day grid: one row per account, one heatmap chip per
+// day, so "who posted today?" needs no digging through the chart's
+// source/metric tabs. Same per-post-date data the chart's Posts view draws
+// from; the collapsed header keeps a today summary visible.
 function renderPostsPerDayGrid(days, axis0) {
   const overview = accountsState.overview;
   if (!overview) return "";
@@ -3266,22 +3277,34 @@ function renderPostsPerDayGrid(days, axis0) {
     .sort((a, b) => b.total - a.total);
   if (!rows.length) return "";
 
+  const todayIdx = days - 1;
+  const postedToday = rows.reduce((s, r) => s + (Number(r.perDay[todayIdx]) || 0), 0);
+  const activeToday = rows.filter((r) => (Number(r.perDay[todayIdx]) || 0) > 0).length;
+  const collapsed = accountsState.postsGridCollapsed;
+  const header = `
+    <button type="button" class="posts-day-toggle" aria-expanded="${!collapsed}">
+      <i data-lucide="chevron-${collapsed ? "right" : "down"}" style="width:14px;height:14px"></i>
+      <span class="control-label">Posts per day · last ${days} days</span>
+      <span class="posts-day-summary"><strong>${postedToday}</strong> post${postedToday === 1 ? "" : "s"} today · ${activeToday}/${rows.length} accounts</span>
+    </button>`;
+  if (collapsed) return `<div class="posts-day">${header}</div>`;
+
   const dayLabels = [];
   for (let i = 0; i < days; i++) {
     const d = new Date(axis0 + i * 86400000);
     dayLabels.push(`${d.getMonth() + 1}/${d.getDate()}`);
   }
-  const todayIdx = days - 1;
   const head = dayLabels.map((l, i) =>
-    `<th class="${i === todayIdx ? "posts-day-today" : ""}">${i === todayIdx ? "Today" : l}</th>`
+    `<th class="${i === todayIdx ? "posts-day-today-h" : ""}">${i === todayIdx ? "Today" : l}</th>`
   ).join("");
 
   const body = rows.map(({ acct, perDay, total }) => {
     const cells = perDay.map((v, i) => {
       const n = Number(v) || 0;
-      const cls = `${i === todayIdx ? "posts-day-today" : ""}${n === 0 ? " posts-day-zero" : ""}`;
-      const tip = n > 0 ? ` data-tip="${escapeHtml(acct.name)} — ${n} post${n === 1 ? "" : "s"} on ${dayLabels[i]}"` : "";
-      return `<td class="${cls}"${tip}>${n === 0 ? "·" : n}</td>`;
+      const today = i === todayIdx ? " is-today" : "";
+      if (n === 0) return `<td><span class="posts-day-cell posts-day-empty${today}"></span></td>`;
+      const tip = ` data-tip="${escapeHtml(acct.name)} — ${n} post${n === 1 ? "" : "s"} on ${dayLabels[i]}"`;
+      return `<td${tip}><span class="posts-day-cell posts-lvl-${Math.min(n, 4)}${today}">${n}</span></td>`;
     }).join("");
     return `<tr>
       <th class="posts-day-name"><i style="background:${colorOf[acct.id] || accountColor(0)}"></i>${escapeHtml(acct.name)}</th>
@@ -3292,7 +3315,7 @@ function renderPostsPerDayGrid(days, axis0) {
 
   return `
     <div class="posts-day">
-      <span class="control-label">Posts per day · last ${days} days</span>
+      ${header}
       <div class="posts-day-scroll">
         <table class="posts-day-table">
           <thead><tr><th class="posts-day-name"></th>${head}<th class="posts-day-total">Total</th></tr></thead>
