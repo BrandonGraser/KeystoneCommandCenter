@@ -4428,6 +4428,80 @@ html[data-theme="light"] .depth-shadow {
   color: var(--muted);
 }
 
+/* Posts-per-day grid (Accounts tab, under the overall chart) */
+.posts-day {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.posts-day .control-label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.posts-day-scroll {
+  overflow-x: auto;
+}
+
+.posts-day-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.posts-day-table thead th {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.posts-day-table th,
+.posts-day-table td {
+  padding: 4px 7px;
+  text-align: center;
+  min-width: 30px;
+}
+
+.posts-day-table td {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.posts-day-name {
+  position: sticky;
+  left: 0;
+  background: var(--panel);
+  text-align: left !important;
+  padding-right: 12px !important;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.posts-day-name i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.posts-day-zero {
+  color: var(--muted-2) !important;
+  font-weight: 400 !important;
+}
+
+.posts-day-today {
+  background: var(--panel-2);
+}
+
+.posts-day-total {
+  color: var(--muted);
+  border-left: 1px solid var(--line);
+}
+
 /* Daily day-over-day tracker under the Chartex chart */
 .chartex-daily {
   margin-top: 18px;

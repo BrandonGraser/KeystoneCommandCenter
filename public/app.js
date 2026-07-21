@@ -3238,9 +3238,68 @@ function renderAccountOverall() {
     <div class="overall-chart ${contributors.length ? "has-axis" : ""}">${chart}</div>
     ${contributors.length ? `<div class="overall-axis">${labels.map((l) => `<span>${l}</span>`).join("")}</div>` : ""}
     ${legend ? `<div class="overall-legend">${legend}</div>` : ""}
+    ${renderPostsPerDayGrid(days, axis0)}
     ${renderTopVideos()}
   `;
+  // Start the posts grid at its right edge so today is in view.
+  const gridScroll = els.accountOverall.querySelector(".posts-day-scroll");
+  if (gridScroll) gridScroll.scrollLeft = gridScroll.scrollWidth;
   refreshIcons();
+}
+
+// Always-visible posts-per-day grid: one row per account, one column per day,
+// so "who posted today?" needs no digging through the chart's source/metric
+// tabs. Same per-post-date data the chart's Posts view draws from.
+function renderPostsPerDayGrid(days, axis0) {
+  const overview = accountsState.overview;
+  if (!overview) return "";
+
+  const colorOf = {};
+  [...accountsState.accounts].sort((a, b) => a.id - b.id).forEach((a, i) => { colorOf[a.id] = accountColor(i); });
+
+  const rows = overview.accounts
+    .map((acct) => {
+      const perDay = acct.posted?.posts || null;
+      return perDay && { acct, perDay, total: perDay.reduce((s, v) => s + (Number(v) || 0), 0) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.total - a.total);
+  if (!rows.length) return "";
+
+  const dayLabels = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(axis0 + i * 86400000);
+    dayLabels.push(`${d.getMonth() + 1}/${d.getDate()}`);
+  }
+  const todayIdx = days - 1;
+  const head = dayLabels.map((l, i) =>
+    `<th class="${i === todayIdx ? "posts-day-today" : ""}">${i === todayIdx ? "Today" : l}</th>`
+  ).join("");
+
+  const body = rows.map(({ acct, perDay, total }) => {
+    const cells = perDay.map((v, i) => {
+      const n = Number(v) || 0;
+      const cls = `${i === todayIdx ? "posts-day-today" : ""}${n === 0 ? " posts-day-zero" : ""}`;
+      const tip = n > 0 ? ` data-tip="${escapeHtml(acct.name)} — ${n} post${n === 1 ? "" : "s"} on ${dayLabels[i]}"` : "";
+      return `<td class="${cls}"${tip}>${n === 0 ? "·" : n}</td>`;
+    }).join("");
+    return `<tr>
+      <th class="posts-day-name"><i style="background:${colorOf[acct.id] || accountColor(0)}"></i>${escapeHtml(acct.name)}</th>
+      ${cells}
+      <td class="posts-day-total">${total}</td>
+    </tr>`;
+  }).join("");
+
+  return `
+    <div class="posts-day">
+      <span class="control-label">Posts per day · last ${days} days</span>
+      <div class="posts-day-scroll">
+        <table class="posts-day-table">
+          <thead><tr><th class="posts-day-name"></th>${head}<th class="posts-day-total">Total</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 // 6/24-style label for a unix-seconds timestamp.
