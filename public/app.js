@@ -3325,7 +3325,7 @@ function renderCoverartCard(item) {
         <button type="button" class="coverart-remove-art" data-ca-remove-art="${item.id}" title="Remove the art, keep the task">Remove art</button>
       </div>
       <div class="coverart-actions">
-        <a class="coverart-btn" href="${escapeHtml(item.image_url)}" download title="Download the original file"><i data-lucide="download" style="width:14px;height:14px"></i> Download</a>
+        <a class="coverart-btn" href="${escapeHtml(item.image_url)}?download=1" title="Download the original file"><i data-lucide="download" style="width:14px;height:14px"></i> Download</a>
         <button type="button" class="coverart-btn" data-ca-upload="${item.id}"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Replace</button>
       </div>`;
   } else {

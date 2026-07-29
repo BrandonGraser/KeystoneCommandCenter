@@ -5631,6 +5631,10 @@ html[data-theme="light"] .depth-shadow {
 /* The download control is an <a>, so it restates the base button look. */
 .coverart-btn {
   flex: 1;
+  /* Let both controls shrink below their label's natural width so the
+     flex split stays 50/50 on narrow cards. */
+  min-width: 0;
+  white-space: nowrap;
   min-height: 32px;
   display: inline-flex;
   align-items: center;
