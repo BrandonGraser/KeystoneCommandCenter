@@ -15,6 +15,7 @@
   "dependencies": {
     "@gsap/react": "^2.1.2",
     "@libsql/client": "^0.17.3",
+    "@vercel/blob": "^1.1.1",
     "gsap": "^3.15.0"
   }
 }

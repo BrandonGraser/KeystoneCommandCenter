@@ -57,7 +57,10 @@ import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } f
 import { parseArtistId, scrapeArtistPage } from "./spotify.mjs";
 import { getChartexOverview, syncAllChartexArtists, syncChartexArtist } from "./chartex.mjs";
 import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, ensureReupTask, setReupAccountDone, setUserAvatar } from "./db.mjs";
+import { createCoverartTask, deleteCoverartTask, listCoverartTasks, removeCoverartImage, setCoverartImage } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
+import { del as deleteBlob } from "@vercel/blob";
+import { handleUpload } from "@vercel/blob/client";
 
 export async function handleApi(request, response, url, currentUser) {
   const method = request.method || "GET";
@@ -386,6 +389,64 @@ export async function handleApi(request, response, url, currentUser) {
     return;
   }
 
+  // --- Coverart tasks (Coverarts tab) --------------------------------------
+  if (url.pathname === "/api/coverarts" && method === "GET") {
+    sendJson(response, 200, { tasks: await listCoverartTasks() });
+    return;
+  }
+  if (url.pathname === "/api/coverarts" && method === "POST") {
+    const body = await readJson(request);
+    const title = cleanText(body.title);
+    if (!title) throw badRequest("A song title is required.");
+    sendJson(response, 201, {
+      task: await createCoverartTask({ title, category: cleanText(body.category) || "Misc." })
+    });
+    return;
+  }
+  // Token exchange for direct browser → Vercel Blob uploads. The file itself
+  // never passes through this function, so the ~4.5MB serverless body cap
+  // doesn't apply and the art is stored byte-for-byte as picked.
+  if (url.pathname === "/api/coverarts/upload" && method === "POST") {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      throw badRequest("Blob storage is not configured — create a Blob store on the Vercel project (Storage tab), which adds BLOB_READ_WRITE_TOKEN, then redeploy.");
+    }
+    const body = await readJson(request);
+    const result = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async () => ({
+        allowedContentTypes: ["image/png", "image/jpeg"],
+        maximumSizeInBytes: 100 * 1024 * 1024,
+        addRandomSuffix: true
+      }),
+      // Vercel only delivers this callback to public deployments; the client
+      // confirms its own upload via POST /api/coverarts/:id/image instead.
+      onUploadCompleted: async () => {}
+    });
+    sendJson(response, 200, result);
+    return;
+  }
+  const coverartImageMatch = url.pathname.match(/^\/api\/coverarts\/(\d+)\/image$/);
+  if (coverartImageMatch && method === "POST") {
+    const { task, previous_url } = await setCoverartImage(Number(coverartImageMatch[1]), await readJson(request));
+    await deleteBlobQuietly(previous_url);
+    sendJson(response, 200, { task });
+    return;
+  }
+  if (coverartImageMatch && method === "DELETE") {
+    const { task, previous_url } = await removeCoverartImage(Number(coverartImageMatch[1]));
+    await deleteBlobQuietly(previous_url);
+    sendJson(response, 200, { task });
+    return;
+  }
+  const coverartMatch = url.pathname.match(/^\/api\/coverarts\/(\d+)$/);
+  if (coverartMatch && method === "DELETE") {
+    const { previous_url } = await deleteCoverartTask(Number(coverartMatch[1]));
+    await deleteBlobQuietly(previous_url);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
   // --- Chartex artist/song stats --------------------------------------------
   if (url.pathname === "/api/chartex/overview" && method === "GET") {
     sendJson(response, 200, await getChartexOverview(normalizeWindow(url.searchParams.get("days"))));
@@ -520,6 +581,13 @@ export async function handleApi(request, response, url, currentUser) {
   }
 
   throw notFound("Route not found.");
+}
+
+// Blob files replaced or orphaned by a delete are cleaned up best-effort — a
+// failed delete only leaves an unreferenced file in storage, never bad data.
+async function deleteBlobQuietly(blobUrl) {
+  if (!blobUrl || !process.env.BLOB_READ_WRITE_TOKEN) return;
+  try { await deleteBlob(blobUrl); } catch { /* orphaned blob is harmless */ }
 }
 
 // `tz` query param → the client's UTC offset in minutes (-840..840), or null.

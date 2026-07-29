@@ -153,7 +153,16 @@ const els = {
   chatBadge: document.querySelector("#chatBadge"),
   notesView: document.querySelector("#notesView"),
   chartexView: document.querySelector("#chartexView"),
-  chartexBoard: document.querySelector("#chartexBoard")
+  chartexBoard: document.querySelector("#chartexBoard"),
+  coverartsView: document.querySelector("#coverartsView"),
+  coverartBoard: document.querySelector("#coverartBoard"),
+  coverartFileInput: document.querySelector("#coverartFileInput"),
+  coverartDialog: document.querySelector("#coverartDialog"),
+  coverartForm: document.querySelector("#coverartForm"),
+  coverartTitle: document.querySelector("#coverartTitle"),
+  coverartCategoryPills: document.querySelector("#coverartCategoryPills"),
+  closeCoverartDialog: document.querySelector("#closeCoverartDialog"),
+  cancelCoverart: document.querySelector("#cancelCoverart")
 };
 
 function refreshIcons() {
@@ -589,6 +598,7 @@ function bindEvents() {
   }, 4000);
   bindAccountEvents();
   bindChartexEvents();
+  bindCoverartEvents();
   els.taskImages.addEventListener("click", (event) => {
     if (event.target.closest(".task-image-browse")) {
       els.taskImages.querySelector(".task-image-input")?.click();
@@ -2948,19 +2958,379 @@ function initDatePicker(input) {
   });
 }
 
+// --- Coverarts tab ---------------------------------------------------------
+// Airtable-style cover art queue: a task is just a song title + tag; the
+// finished 3000x3000 art is uploaded straight from the browser to Vercel
+// Blob (no canvas re-encode, no downscale — the exact file bytes land in
+// storage), then its URL is attached to the task.
+
+const coverartsState = {
+  loaded: false,
+  loading: false,
+  items: [],
+  filter: "All",
+  selectedCategory: "Misc.",
+  uploadTargetId: null,
+  uploading: {} // task id -> percent while a direct blob upload is in flight
+};
+
+// The @vercel/blob client is only needed once someone actually uploads, so it
+// is pulled from the CDN on demand (the app itself has no bundler).
+let blobClientPromise = null;
+function blobClient() {
+  if (!blobClientPromise) {
+    blobClientPromise = import("https://esm.sh/@vercel/blob@1/client").catch((error) => {
+      blobClientPromise = null;
+      throw new Error(`Could not load the upload client: ${error.message}`);
+    });
+  }
+  return blobClientPromise;
+}
+
+async function loadCoverarts() {
+  if (coverartsState.loading) return;
+  coverartsState.loading = true;
+  try {
+    const data = await api("/api/coverarts");
+    coverartsState.items = data.tasks || [];
+    coverartsState.loaded = true;
+  } catch (error) {
+    els.coverartBoard.innerHTML = `<p class="detail-empty">${escapeHtml(error.message)}</p>`;
+    coverartsState.loading = false;
+    return;
+  }
+  coverartsState.loading = false;
+  renderCoverarts();
+}
+
+function bindCoverartEvents() {
+  els.coverartBoard.addEventListener("click", onCoverartBoardClick);
+  els.closeCoverartDialog.addEventListener("click", () => els.coverartDialog.close());
+  els.cancelCoverart.addEventListener("click", () => els.coverartDialog.close());
+  els.coverartForm.addEventListener("submit", createCoverart);
+  els.coverartCategoryPills.addEventListener("click", (event) => {
+    const pill = event.target.closest("[data-ca-category]");
+    if (!pill) return;
+    coverartsState.selectedCategory = pill.dataset.caCategory;
+    renderCoverartCategoryPills();
+  });
+  els.coverartFileInput.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    const id = coverartsState.uploadTargetId;
+    event.target.value = "";
+    if (file && id) uploadCoverartFile(id, file);
+  });
+  // Drag & drop straight onto a card's dropzone.
+  els.coverartBoard.addEventListener("dragover", (event) => {
+    const zone = event.target.closest("[data-ca-upload]");
+    if (!zone) return;
+    event.preventDefault();
+    zone.classList.add("dragover");
+  });
+  els.coverartBoard.addEventListener("dragleave", (event) => {
+    const zone = event.target.closest("[data-ca-upload]");
+    if (zone) zone.classList.remove("dragover");
+  });
+  els.coverartBoard.addEventListener("drop", (event) => {
+    const zone = event.target.closest("[data-ca-upload]");
+    if (!zone) return;
+    event.preventDefault();
+    zone.classList.remove("dragover");
+    const file = event.dataTransfer?.files?.[0];
+    if (file) uploadCoverartFile(Number(zone.dataset.caUpload), file);
+  });
+}
+
+async function onCoverartBoardClick(event) {
+  if (event.target.closest("#addCoverart")) {
+    openCoverartDialog();
+    return;
+  }
+  const filterBtn = event.target.closest("[data-ca-filter]");
+  if (filterBtn) {
+    coverartsState.filter = filterBtn.dataset.caFilter;
+    renderCoverarts();
+    return;
+  }
+  const uploadBtn = event.target.closest("[data-ca-upload]");
+  if (uploadBtn) {
+    coverartsState.uploadTargetId = Number(uploadBtn.dataset.caUpload);
+    els.coverartFileInput.click();
+    return;
+  }
+  const viewImg = event.target.closest("[data-ca-view]");
+  if (viewImg) {
+    openImageLightbox(viewImg.dataset.caView);
+    return;
+  }
+  const removeArtBtn = event.target.closest("[data-ca-remove-art]");
+  if (removeArtBtn) {
+    if (!window.confirm("Remove this cover art? The task stays and goes back to Needs Art.")) return;
+    try {
+      const data = await api(`/api/coverarts/${removeArtBtn.dataset.caRemoveArt}/image`, { method: "DELETE" });
+      replaceCoverartItem(data.task);
+      renderCoverarts();
+    } catch (error) {
+      showNotice(error.message, "bad");
+    }
+    return;
+  }
+  const deleteBtn = event.target.closest("[data-ca-delete]");
+  if (deleteBtn) {
+    const id = Number(deleteBtn.dataset.caDelete);
+    const item = coverartsState.items.find((i) => i.id === id);
+    if (!window.confirm(`Delete the coverart task "${item?.title || "this"}"?${item?.image_url ? " Its uploaded art will be deleted too." : ""}`)) return;
+    try {
+      await api(`/api/coverarts/${id}`, { method: "DELETE" });
+      coverartsState.items = coverartsState.items.filter((i) => i.id !== id);
+      renderCoverarts();
+    } catch (error) {
+      showNotice(error.message, "bad");
+    }
+  }
+}
+
+function openCoverartDialog() {
+  els.coverartTitle.value = "";
+  coverartsState.selectedCategory = coverartsState.filter !== "All" ? coverartsState.filter : "Misc.";
+  renderCoverartCategoryPills();
+  els.coverartDialog.showModal();
+  els.coverartTitle.focus();
+  refreshIcons();
+}
+
+function renderCoverartCategoryPills() {
+  const categories = state.dailyCategories.length ? state.dailyCategories : Object.keys(CATEGORY_TONES);
+  if (!categories.includes(coverartsState.selectedCategory)) coverartsState.selectedCategory = categories[0] || "Misc.";
+  els.coverartCategoryPills.innerHTML = categories.map((category) => {
+    const tone = categoryTone(category);
+    const isActive = category === coverartsState.selectedCategory;
+    return `<button
+      type="button"
+      class="category-pill-option${isActive ? " active" : ""}"
+      data-ca-category="${escapeHtml(category)}"
+      style="--pill-accent: ${tone.accent}; --pill-bg: ${tone.background}; --pill-border: ${tone.border};"
+    >${escapeHtml(category)}</button>`;
+  }).join("");
+}
+
+async function createCoverart(event) {
+  event.preventDefault();
+  const title = els.coverartTitle.value.trim();
+  if (!title) return;
+  const submitButton = els.coverartForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  try {
+    const data = await api("/api/coverarts", {
+      method: "POST",
+      body: { title, category: coverartsState.selectedCategory }
+    });
+    coverartsState.items.unshift(data.task);
+    els.coverartDialog.close();
+    renderCoverarts();
+  } catch (error) {
+    showNotice(error.message, "bad");
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+function replaceCoverartItem(task) {
+  const index = coverartsState.items.findIndex((i) => i.id === task.id);
+  if (index >= 0) coverartsState.items[index] = task;
+}
+
+// Reads the real pixel size without decoding through a canvas, so the file
+// itself stays untouched.
+function readImageDimensions(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("That file is not a readable image."));
+    };
+    img.src = objectUrl;
+  });
+}
+
+async function uploadCoverartFile(id, file) {
+  if (!id || !file) return;
+  if (!["image/png", "image/jpeg"].includes(file.type)) {
+    showNotice("Cover art must be a PNG or JPG.", "bad");
+    return;
+  }
+  let dims;
+  try {
+    dims = await readImageDimensions(file);
+  } catch (error) {
+    showNotice(error.message, "bad");
+    return;
+  }
+  if (dims.width !== 3000 || dims.height !== 3000) {
+    showNotice(`That image is ${dims.width}×${dims.height} — cover art must be exactly 3000×3000. Nothing was uploaded.`, "bad");
+    return;
+  }
+  coverartsState.uploading[id] = 0;
+  renderCoverarts();
+  try {
+    const { upload } = await blobClient();
+    const safeName = file.name.replace(/[^\w.-]+/g, "_");
+    const blob = await upload(`coverarts/${safeName}`, file, {
+      access: "public",
+      handleUploadUrl: "/api/coverarts/upload",
+      contentType: file.type,
+      onUploadProgress: ({ percentage }) => {
+        coverartsState.uploading[id] = Math.round(percentage);
+        const node = els.coverartBoard.querySelector(`[data-ca-progress="${id}"]`);
+        if (node) node.textContent = `Uploading… ${Math.round(percentage)}%`;
+      }
+    });
+    const data = await api(`/api/coverarts/${id}/image`, {
+      method: "POST",
+      body: { url: blob.url, size: file.size, content_type: file.type, width: dims.width, height: dims.height }
+    });
+    replaceCoverartItem(data.task);
+    showNotice("Cover art uploaded — full quality, exact file, untouched.", "good");
+  } catch (error) {
+    // The blob client reduces token-exchange failures to a generic message —
+    // re-ask our endpoint so a real reason (e.g. "storage not configured")
+    // reaches the notice.
+    let message = error.message;
+    if (/client token/i.test(message)) {
+      try {
+        const probe = await fetch("/api/coverarts/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}"
+        });
+        const data = await probe.json();
+        if (data.error) message = data.error;
+      } catch { /* keep the original message */ }
+    }
+    showNotice(message, "bad");
+  } finally {
+    delete coverartsState.uploading[id];
+    renderCoverarts();
+  }
+}
+
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+  return `${n} B`;
+}
+
+function renderCoverarts() {
+  const items = coverartsState.items;
+  const presentCategories = [...new Set(items.map((i) => i.category || "Misc."))];
+  if (coverartsState.filter !== "All" && !presentCategories.includes(coverartsState.filter)) {
+    coverartsState.filter = "All";
+  }
+  const filterTabs = ["All", ...presentCategories].map((category) => {
+    const tone = category === "All" ? null : categoryTone(category);
+    return `<button
+      type="button"
+      class="category-pill-option coverart-filter-pill${category === coverartsState.filter ? " active" : ""}"
+      data-ca-filter="${escapeHtml(category)}"
+      ${tone ? `style="--pill-accent: ${tone.accent};"` : ""}
+    >${escapeHtml(category)}</button>`;
+  }).join("");
+
+  const filtered = coverartsState.filter === "All"
+    ? items
+    : items.filter((i) => (i.category || "Misc.") === coverartsState.filter);
+  const pending = filtered.filter((i) => !i.image_url);
+  const finished = filtered.filter((i) => i.image_url);
+
+  els.coverartBoard.innerHTML = `
+    <section class="controls coverart-controls">
+      <div>
+        <span class="control-label">Coverarts</span>
+        <p class="accounts-subhead">Cover art queue · finals must be exactly 3000×3000, stored uncompressed</p>
+      </div>
+      <div class="coverart-filters">${filterTabs}</div>
+      <button type="button" id="addCoverart" class="primary"><i data-lucide="plus" style="width:15px;height:15px"></i> New coverart</button>
+    </section>
+    <section class="coverart-group">
+      <div class="coverart-group-head"><h3>NEEDS ART</h3><span class="coverart-count">${pending.length}</span></div>
+      ${pending.length
+        ? `<div class="coverart-grid">${pending.map(renderCoverartCard).join("")}</div>`
+        : `<p class="detail-empty">Nothing waiting on art${items.length ? "" : " yet — create a coverart task to get started"}.</p>`}
+    </section>
+    ${finished.length ? `
+    <section class="coverart-group">
+      <div class="coverart-group-head"><h3>ART DELIVERED</h3><span class="coverart-count">${finished.length}</span></div>
+      <div class="coverart-grid">${finished.map(renderCoverartCard).join("")}</div>
+    </section>` : ""}
+  `;
+  refreshIcons();
+}
+
+function renderCoverartCard(item) {
+  const category = item.category || "Misc.";
+  const percent = coverartsState.uploading[item.id];
+  let art;
+  if (percent != null) {
+    art = `<div class="coverart-drop uploading">
+      <i data-lucide="upload-cloud" style="width:22px;height:22px"></i>
+      <span data-ca-progress="${item.id}">Uploading… ${percent}%</span>
+      <small>Original file — no compression</small>
+    </div>`;
+  } else if (item.image_url) {
+    const typeLabel = item.image_type === "image/png" ? "PNG" : item.image_type === "image/jpeg" ? "JPG" : "Image";
+    art = `
+      <figure class="coverart-art">
+        <img src="${escapeHtml(item.image_url)}" alt="Cover art for ${escapeHtml(item.title)}" loading="lazy" data-ca-view="${escapeHtml(item.image_url)}">
+      </figure>
+      <div class="coverart-meta">
+        <span>3000×3000 · ${typeLabel}${item.image_size ? ` · ${formatBytes(item.image_size)}` : ""}</span>
+        <button type="button" class="coverart-remove-art" data-ca-remove-art="${item.id}" title="Remove the art, keep the task">Remove art</button>
+      </div>
+      <div class="coverart-actions">
+        <a class="coverart-btn" href="${escapeHtml(item.image_url)}" download title="Download the original file"><i data-lucide="download" style="width:14px;height:14px"></i> Download</a>
+        <button type="button" class="coverart-btn" data-ca-upload="${item.id}"><i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Replace</button>
+      </div>`;
+  } else {
+    art = `<button type="button" class="coverart-drop" data-ca-upload="${item.id}">
+      <i data-lucide="image-plus" style="width:22px;height:22px"></i>
+      <span>Upload cover art</span>
+      <small>PNG or JPG · exactly 3000×3000</small>
+    </button>`;
+  }
+  return `
+    <article class="coverart-card${item.image_url ? " has-art" : ""}">
+      <div class="coverart-card-head">
+        <div class="coverart-card-title">
+          <strong>${escapeHtml(item.title)}</strong>
+          <span class="task-category" style="${categoryToneStyle(category)}">${escapeHtml(category)}</span>
+        </div>
+        <button type="button" class="icon-button coverart-delete" data-ca-delete="${item.id}" title="Delete task"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
+      </div>
+      ${art}
+    </article>`;
+}
+
 function switchTab(tab) {
   // Tolerate a stored tab that no longer exists (e.g. the removed Spotify tab).
-  if (!["tasks", "accounts", "chartex", "notes"].includes(tab)) tab = "tasks";
+  if (!["tasks", "accounts", "chartex", "coverarts", "notes"].includes(tab)) tab = "tasks";
   els.tasksView.hidden = tab !== "tasks";
   els.accountsView.hidden = tab !== "accounts";
   els.notesView.hidden = tab !== "notes";
   els.chartexView.hidden = tab !== "chartex";
+  els.coverartsView.hidden = tab !== "coverarts";
   els.mainTabs.querySelectorAll(".main-tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tab);
   });
   setStoredTab(tab);
   if (tab === "accounts" && !accountsState.loaded) loadAccounts();
   if (tab === "chartex" && !chartexState.loaded) loadChartex();
+  if (tab === "coverarts" && !coverartsState.loaded) loadCoverarts();
   const sbFrame = document.getElementById("storyboardFrame");
   if (tab === "notes" && sbFrame && !sbFrame.src.includes("storyboard")) {
     sbFrame.src = "/storyboard/index.html";

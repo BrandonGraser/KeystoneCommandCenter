@@ -395,6 +395,21 @@ async function migrate(client) {
         version INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`
+    },
+    {
+      // Coverarts tab: song title + category tag, then the finished
+      // 3000x3000 art lands in Vercel Blob and its URL is stored here.
+      sql: `CREATE TABLE IF NOT EXISTS coverart_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'Misc.',
+        image_url TEXT,
+        image_size INTEGER,
+        image_type TEXT,
+        uploaded_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`
     }
   ], "write");
 
@@ -1651,6 +1666,82 @@ export async function deleteCategory(name) {
   const client = await getDb();
   await client.execute({ sql: "DELETE FROM categories WHERE name = ?", args: [trimmed] });
   return { categories: await listCategories() };
+}
+
+// --- Coverart tasks ------------------------------------------------------------
+
+export async function listCoverartTasks() {
+  const client = await getDb();
+  const r = await client.execute(
+    "SELECT * FROM coverart_tasks ORDER BY (image_url IS NOT NULL) ASC, id DESC"
+  );
+  return rows(r);
+}
+
+export async function getCoverartTask(id) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "SELECT * FROM coverart_tasks WHERE id = ?",
+    args: [Number(id)]
+  });
+  return firstRow(r);
+}
+
+export async function createCoverartTask({ title, category }) {
+  const client = await getDb();
+  const r = await client.execute({
+    sql: "INSERT INTO coverart_tasks (title, category) VALUES (?, ?) RETURNING *",
+    args: [title, category || "Misc."]
+  });
+  return firstRow(r);
+}
+
+// The art itself lives in Vercel Blob (uploaded straight from the browser so
+// it never touches the 4.5MB serverless body cap and is never re-encoded);
+// only its URL + metadata land here. Returns the replaced blob URL so the
+// route can delete the orphan from storage.
+export async function setCoverartImage(id, payload = {}) {
+  const url = String(payload.url || "");
+  let host = "";
+  try { host = new URL(url).hostname; } catch { /* rejected below */ }
+  if (!url.startsWith("https://") || !host.endsWith(".blob.vercel-storage.com")) {
+    const e = new Error("A Vercel Blob image URL is required."); e.status = 400; throw e;
+  }
+  if (Number(payload.width) !== 3000 || Number(payload.height) !== 3000) {
+    const e = new Error("Cover art must be exactly 3000×3000."); e.status = 400; throw e;
+  }
+  const existing = await getCoverartTask(id);
+  if (!existing) { const e = new Error("Coverart task not found."); e.status = 404; throw e; }
+  const client = await getDb();
+  const r = await client.execute({
+    sql: `UPDATE coverart_tasks
+      SET image_url = ?, image_size = ?, image_type = ?,
+        uploaded_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? RETURNING *`,
+    args: [url, Number(payload.size) || null, String(payload.content_type || "") || null, Number(id)]
+  });
+  return { task: firstRow(r), previous_url: existing.image_url || null };
+}
+
+export async function removeCoverartImage(id) {
+  const existing = await getCoverartTask(id);
+  if (!existing) { const e = new Error("Coverart task not found."); e.status = 404; throw e; }
+  const client = await getDb();
+  const r = await client.execute({
+    sql: `UPDATE coverart_tasks
+      SET image_url = NULL, image_size = NULL, image_type = NULL,
+        uploaded_at = NULL, updated_at = datetime('now')
+      WHERE id = ? RETURNING *`,
+    args: [Number(id)]
+  });
+  return { task: firstRow(r), previous_url: existing.image_url || null };
+}
+
+export async function deleteCoverartTask(id) {
+  const existing = await getCoverartTask(id);
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM coverart_tasks WHERE id = ?", args: [Number(id)] });
+  return { ok: true, previous_url: existing?.image_url || null };
 }
 
 // --- Overdue carry-over --------------------------------------------------------

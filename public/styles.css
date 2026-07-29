@@ -5448,3 +5448,210 @@ html[data-theme="light"] .depth-shadow {
   border-radius: 999px;
   padding: 1px 8px;
 }
+
+/* ---------------------------------------------------------------
+   Coverarts tab
+--------------------------------------------------------------- */
+
+.coverart-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.coverart-filter-pill.active {
+  border-color: var(--ink);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+.coverart-group {
+  margin-top: 18px;
+}
+
+.coverart-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.coverart-group-head h3 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.coverart-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.coverart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.coverart-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 12px;
+}
+
+.coverart-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coverart-card-title {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  min-width: 0;
+}
+
+.coverart-card-title strong {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.coverart-delete {
+  width: 28px;
+  min-height: 28px;
+  color: var(--muted-2);
+  border-color: transparent;
+  background: none;
+  flex-shrink: 0;
+}
+
+.coverart-delete:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: none;
+}
+
+.coverart-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  aspect-ratio: 1;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+  padding: 12px;
+  text-align: center;
+}
+
+.coverart-drop:hover,
+.coverart-drop.dragover {
+  border-color: var(--ember);
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.coverart-drop small {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.coverart-drop.uploading {
+  cursor: progress;
+  border-style: solid;
+  border-color: var(--ember);
+}
+
+.coverart-art {
+  margin: 0;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.coverart-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+.coverart-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+.coverart-remove-art {
+  all: unset;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--muted-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.coverart-remove-art:hover {
+  color: var(--danger);
+}
+
+.coverart-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* The download control is an <a>, so it restates the base button look. */
+.coverart-btn {
+  flex: 1;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.coverart-btn:hover {
+  border-color: color-mix(in srgb, var(--ember) 40%, transparent);
+  background: var(--panel-2);
+}

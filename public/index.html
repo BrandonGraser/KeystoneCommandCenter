@@ -18,6 +18,7 @@
         <button type="button" class="main-tab active" data-tab="tasks">Tasks</button>
         <button type="button" class="main-tab" data-tab="accounts">Accounts</button>
         <button type="button" class="main-tab" data-tab="chartex">Chartex</button>
+        <button type="button" class="main-tab" data-tab="coverarts">Coverarts</button>
         <button type="button" class="main-tab" data-tab="notes">Notes</button>
       </nav>
 
@@ -110,6 +111,11 @@
 
       <div id="chartexView" hidden>
         <div id="chartexBoard" class="spotify-board"></div>
+      </div>
+
+      <div id="coverartsView" hidden>
+        <div id="coverartBoard" class="coverart-board"></div>
+        <input type="file" id="coverartFileInput" accept="image/png,image/jpeg" hidden>
       </div>
 
       <div id="notesView" hidden>
@@ -381,6 +387,31 @@
           <span></span>
           <button type="button" id="cancelAccount">Cancel</button>
           <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="coverartDialog">
+      <form id="coverartForm" method="dialog" class="task-form coverart-form">
+        <div class="dialog-head">
+          <div>
+            <h2>New coverart task</h2>
+            <p class="eyebrow">Song title + tag — upload the art when it's ready</p>
+          </div>
+          <button type="button" id="closeCoverartDialog" class="icon-button" title="Close"><i data-lucide="x" style="width:16px;height:16px"></i></button>
+        </div>
+        <label>
+          <span>Song Title</span>
+          <input id="coverartTitle" type="text" required autocomplete="off" placeholder="Song name">
+        </label>
+        <div class="who-for-section">
+          <span class="control-label">Tag</span>
+          <div id="coverartCategoryPills" class="category-pill-picker"></div>
+        </div>
+        <div class="dialog-actions">
+          <span></span>
+          <button type="button" id="cancelCoverart">Cancel</button>
+          <button type="submit" class="primary"><i data-lucide="check" style="width:14px;height:14px"></i> Create</button>
         </div>
       </form>
     </dialog>
