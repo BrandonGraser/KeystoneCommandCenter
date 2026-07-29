@@ -423,6 +423,14 @@ export async function handleApi(request, response, url, currentUser) {
       throw badRequest("Blob storage is not configured — create a Blob store on the Vercel project (Storage tab), which adds BLOB_READ_WRITE_TOKEN, then redeploy.");
     }
     const body = await readJson(request);
+    // This path is public so Vercel Blob's cookie-less upload-completed
+    // callback can reach it — handleUpload authenticates that event by its
+    // x-vercel-signature. Everything else (token minting) needs a session.
+    if (body?.type !== "blob.upload-completed" && !currentUser) {
+      const e = new Error("Not authorized.");
+      e.status = 401;
+      throw e;
+    }
     const result = await handleUpload({
       body,
       request,

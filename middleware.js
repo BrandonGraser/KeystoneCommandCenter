@@ -1,9 +1,12 @@
 import { isAuthed, LOGIN_PATH } from "./src/auth.mjs";
 
 // Public paths that must stay reachable without a session.
+// /api/coverarts/upload is called back by Vercel Blob's servers (no session
+// cookie) after a client upload completes; the route itself still requires a
+// signed-in user for token minting and a valid x-vercel-signature otherwise.
 const PUBLIC_PATHS = new Set([
   LOGIN_PATH, "/api/login", "/healthz", "/api/cron/sync-accounts",
-  "/api/tiktok/connect", "/api/tiktok/callback"
+  "/api/tiktok/connect", "/api/tiktok/callback", "/api/coverarts/upload"
 ]);
 
 export default async function middleware(request) {

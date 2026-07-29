@@ -13,7 +13,7 @@ import { getAuthedUser, LOGIN_PATH } from "./src/auth.mjs";
 const PORT = Number(process.env.PORT || 4242);
 const PUBLIC_DIR = join(process.cwd(), "public");
 
-const PUBLIC_PATHS = new Set([LOGIN_PATH, "/api/login", "/healthz", "/api/cron/sync-accounts"]);
+const PUBLIC_PATHS = new Set([LOGIN_PATH, "/api/login", "/healthz", "/api/cron/sync-accounts", "/api/coverarts/upload"]);
 
 const server = createServer(async (request, response) => {
   try {
