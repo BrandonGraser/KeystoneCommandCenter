@@ -2968,8 +2968,9 @@ const coverartsState = {
   loaded: false,
   loading: false,
   items: [],
+  categories: [], // Coverarts' own tag list — separate from the tasks tab
   filter: "All",
-  selectedCategory: "Misc.",
+  selectedCategory: "",
   uploadTargetId: null,
   uploading: {} // task id -> percent while a direct blob upload is in flight
 };
@@ -2993,6 +2994,7 @@ async function loadCoverarts() {
   try {
     const data = await api("/api/coverarts");
     coverartsState.items = data.tasks || [];
+    coverartsState.categories = data.categories || [];
     coverartsState.loaded = true;
   } catch (error) {
     els.coverartBoard.innerHTML = `<p class="detail-empty">${escapeHtml(error.message)}</p>`;
@@ -3008,10 +3010,38 @@ function bindCoverartEvents() {
   els.closeCoverartDialog.addEventListener("click", () => els.coverartDialog.close());
   els.cancelCoverart.addEventListener("click", () => els.coverartDialog.close());
   els.coverartForm.addEventListener("submit", createCoverart);
-  els.coverartCategoryPills.addEventListener("click", (event) => {
+  els.coverartCategoryPills.addEventListener("click", async (event) => {
+    const removeBtn = event.target.closest("[data-ca-remove-tag]");
+    if (removeBtn) {
+      const name = removeBtn.dataset.caRemoveTag;
+      if (!window.confirm(`Remove the "${name}" tag? Existing coverart tasks keep it, but it disappears from the picker.`)) return;
+      try {
+        const result = await api(`/api/coverart-categories/${encodeURIComponent(name)}`, { method: "DELETE" });
+        coverartsState.categories = result.categories;
+        if (coverartsState.selectedCategory === name) coverartsState.selectedCategory = "";
+        renderCoverartCategoryPills();
+      } catch (error) {
+        showNotice(error.message, "bad");
+      }
+      return;
+    }
+    if (event.target.closest("[data-ca-add-tag]")) {
+      const name = window.prompt("New tag name:");
+      if (!name || !name.trim()) return;
+      try {
+        const result = await api("/api/coverart-categories", { method: "POST", body: { name: name.trim() } });
+        coverartsState.categories = result.categories;
+        coverartsState.selectedCategory = name.trim();
+        renderCoverartCategoryPills();
+      } catch (error) {
+        showNotice(error.message, "bad");
+      }
+      return;
+    }
     const pill = event.target.closest("[data-ca-category]");
     if (!pill) return;
-    coverartsState.selectedCategory = pill.dataset.caCategory;
+    // Clicking the selected tag again deselects it — tasks can be untagged.
+    coverartsState.selectedCategory = coverartsState.selectedCategory === pill.dataset.caCategory ? "" : pill.dataset.caCategory;
     renderCoverartCategoryPills();
   });
   els.coverartFileInput.addEventListener("change", (event) => {
@@ -3092,7 +3122,7 @@ async function onCoverartBoardClick(event) {
 
 function openCoverartDialog() {
   els.coverartTitle.value = "";
-  coverartsState.selectedCategory = coverartsState.filter !== "All" ? coverartsState.filter : "Misc.";
+  coverartsState.selectedCategory = coverartsState.categories.includes(coverartsState.filter) ? coverartsState.filter : "";
   renderCoverartCategoryPills();
   els.coverartDialog.showModal();
   els.coverartTitle.focus();
@@ -3100,8 +3130,10 @@ function openCoverartDialog() {
 }
 
 function renderCoverartCategoryPills() {
-  const categories = state.dailyCategories.length ? state.dailyCategories : Object.keys(CATEGORY_TONES);
-  if (!categories.includes(coverartsState.selectedCategory)) coverartsState.selectedCategory = categories[0] || "Misc.";
+  const categories = coverartsState.categories;
+  if (coverartsState.selectedCategory && !categories.includes(coverartsState.selectedCategory)) {
+    coverartsState.selectedCategory = "";
+  }
   els.coverartCategoryPills.innerHTML = categories.map((category) => {
     const tone = categoryTone(category);
     const isActive = category === coverartsState.selectedCategory;
@@ -3110,8 +3142,8 @@ function renderCoverartCategoryPills() {
       class="category-pill-option${isActive ? " active" : ""}"
       data-ca-category="${escapeHtml(category)}"
       style="--pill-accent: ${tone.accent}; --pill-bg: ${tone.background}; --pill-border: ${tone.border};"
-    >${escapeHtml(category)}</button>`;
-  }).join("");
+    >${escapeHtml(category)}<span class="category-pill-x" data-ca-remove-tag="${escapeHtml(category)}" title="Remove tag">×</span></button>`;
+  }).join("") + `<button type="button" class="category-pill-option category-pill-add" data-ca-add-tag>+ New tag</button>`;
 }
 
 async function createCoverart(event) {
@@ -3228,7 +3260,7 @@ function formatBytes(bytes) {
 
 function renderCoverarts() {
   const items = coverartsState.items;
-  const presentCategories = [...new Set(items.map((i) => i.category || "Misc."))];
+  const presentCategories = [...new Set(items.map((i) => i.category).filter(Boolean))];
   if (coverartsState.filter !== "All" && !presentCategories.includes(coverartsState.filter)) {
     coverartsState.filter = "All";
   }
@@ -3244,7 +3276,7 @@ function renderCoverarts() {
 
   const filtered = coverartsState.filter === "All"
     ? items
-    : items.filter((i) => (i.category || "Misc.") === coverartsState.filter);
+    : items.filter((i) => i.category === coverartsState.filter);
   const pending = filtered.filter((i) => !i.image_url);
   const finished = filtered.filter((i) => i.image_url);
 
@@ -3273,7 +3305,7 @@ function renderCoverarts() {
 }
 
 function renderCoverartCard(item) {
-  const category = item.category || "Misc.";
+  const category = item.category || "";
   const percent = coverartsState.uploading[item.id];
   let art;
   if (percent != null) {
@@ -3308,7 +3340,7 @@ function renderCoverartCard(item) {
       <div class="coverart-card-head">
         <div class="coverart-card-title">
           <strong>${escapeHtml(item.title)}</strong>
-          <span class="task-category" style="${categoryToneStyle(category)}">${escapeHtml(category)}</span>
+          ${category ? `<span class="task-category" style="${categoryToneStyle(category)}">${escapeHtml(category)}</span>` : ""}
         </div>
         <button type="button" class="icon-button coverart-delete" data-ca-delete="${item.id}" title="Delete task"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
       </div>

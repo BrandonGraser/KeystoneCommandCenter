@@ -57,7 +57,7 @@ import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } f
 import { parseArtistId, scrapeArtistPage } from "./spotify.mjs";
 import { getChartexOverview, syncAllChartexArtists, syncChartexArtist } from "./chartex.mjs";
 import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, ensureReupTask, setReupAccountDone, setUserAvatar } from "./db.mjs";
-import { createCoverartTask, deleteCoverartTask, listCoverartTasks, removeCoverartImage, setCoverartImage } from "./db.mjs";
+import { createCoverartCategory, createCoverartTask, deleteCoverartCategory, deleteCoverartTask, listCoverartCategories, listCoverartTasks, removeCoverartImage, setCoverartImage } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 import { del as deleteBlob } from "@vercel/blob";
 import { handleUpload } from "@vercel/blob/client";
@@ -391,7 +391,8 @@ export async function handleApi(request, response, url, currentUser) {
 
   // --- Coverart tasks (Coverarts tab) --------------------------------------
   if (url.pathname === "/api/coverarts" && method === "GET") {
-    sendJson(response, 200, { tasks: await listCoverartTasks() });
+    const [tasks, categories] = await Promise.all([listCoverartTasks(), listCoverartCategories()]);
+    sendJson(response, 200, { tasks, categories });
     return;
   }
   if (url.pathname === "/api/coverarts" && method === "POST") {
@@ -399,8 +400,19 @@ export async function handleApi(request, response, url, currentUser) {
     const title = cleanText(body.title);
     if (!title) throw badRequest("A song title is required.");
     sendJson(response, 201, {
-      task: await createCoverartTask({ title, category: cleanText(body.category) || "Misc." })
+      task: await createCoverartTask({ title, category: cleanText(body.category) })
     });
+    return;
+  }
+  // Coverarts' own tag list (separate from the tasks-tab categories).
+  if (url.pathname === "/api/coverart-categories" && method === "POST") {
+    const body = await readJson(request);
+    sendJson(response, 201, await createCoverartCategory(body.name));
+    return;
+  }
+  const coverartCategoryMatch = url.pathname.match(/^\/api\/coverart-categories\/([^/]+)$/);
+  if (coverartCategoryMatch && method === "DELETE") {
+    sendJson(response, 200, await deleteCoverartCategory(decodeURIComponent(coverartCategoryMatch[1])));
     return;
   }
   // Token exchange for direct browser → Vercel Blob uploads. The file itself

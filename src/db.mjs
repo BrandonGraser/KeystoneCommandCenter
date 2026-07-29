@@ -397,6 +397,15 @@ async function migrate(client) {
       )`
     },
     {
+      // Coverarts tag list — independent of the tasks/daily-notes
+      // `categories` table, starts empty, fully user-managed.
+      sql: `CREATE TABLE IF NOT EXISTS coverart_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )`
+    },
+    {
       // Coverarts tab: song title + category tag, then the finished
       // 3000x3000 art lands in Vercel Blob and its URL is stored here.
       sql: `CREATE TABLE IF NOT EXISTS coverart_tasks (
@@ -1670,6 +1679,32 @@ export async function deleteCategory(name) {
 
 // --- Coverart tasks ------------------------------------------------------------
 
+// Coverarts has its own tag list, deliberately separate from the tasks-tab
+// `categories` table. It starts empty and has no protected fallback entry.
+export async function listCoverartCategories() {
+  const client = await getDb();
+  const r = await client.execute("SELECT name FROM coverart_categories ORDER BY sort_order ASC, id ASC");
+  return rows(r).map((row) => row.name);
+}
+
+export async function createCoverartCategory(name) {
+  const trimmed = String(name || "").replace(/\s+/g, " ").trim().slice(0, 40);
+  if (!trimmed) { const e = new Error("Tag name is required."); e.status = 400; throw e; }
+  const client = await getDb();
+  const max = await client.execute("SELECT coalesce(max(sort_order), 0) AS m FROM coverart_categories");
+  await client.execute({
+    sql: "INSERT OR IGNORE INTO coverart_categories (name, sort_order) VALUES (?, ?)",
+    args: [trimmed, Number(max.rows[0]?.["m"] ?? 0) + 1]
+  });
+  return { categories: await listCoverartCategories() };
+}
+
+export async function deleteCoverartCategory(name) {
+  const client = await getDb();
+  await client.execute({ sql: "DELETE FROM coverart_categories WHERE name = ?", args: [String(name || "").trim()] });
+  return { categories: await listCoverartCategories() };
+}
+
 export async function listCoverartTasks() {
   const client = await getDb();
   const r = await client.execute(
@@ -1691,7 +1726,7 @@ export async function createCoverartTask({ title, category }) {
   const client = await getDb();
   const r = await client.execute({
     sql: "INSERT INTO coverart_tasks (title, category) VALUES (?, ?) RETURNING *",
-    args: [title, category || "Misc."]
+    args: [title, category || ""]
   });
   return firstRow(r);
 }
