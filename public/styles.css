@@ -5546,6 +5546,60 @@ html[data-theme="light"] .depth-shadow {
   background: none;
 }
 
+.coverart-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.coverart-due {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.coverart-due.overdue { color: var(--due-overdue); }
+.coverart-due.today { color: var(--due-today); }
+.coverart-due.tomorrow { color: var(--due-tomorrow); }
+.coverart-due.soon { color: var(--due-soon); }
+.coverart-due.upcoming { color: var(--due-upcoming); }
+.coverart-due.later { color: var(--due-later); }
+
+.coverart-pinterest {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ember);
+  text-decoration: none;
+}
+
+.coverart-pinterest:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.coverart-notes {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .coverart-drop {
   display: flex;
   flex-direction: column;

@@ -160,6 +160,9 @@ const els = {
   coverartDialog: document.querySelector("#coverartDialog"),
   coverartForm: document.querySelector("#coverartForm"),
   coverartTitle: document.querySelector("#coverartTitle"),
+  coverartPinterest: document.querySelector("#coverartPinterest"),
+  coverartNotes: document.querySelector("#coverartNotes"),
+  coverartDue: document.querySelector("#coverartDue"),
   coverartCategoryPills: document.querySelector("#coverartCategoryPills"),
   closeCoverartDialog: document.querySelector("#closeCoverartDialog"),
   cancelCoverart: document.querySelector("#cancelCoverart")
@@ -178,6 +181,7 @@ async function init() {
   bindEvents();
   initDatePicker(els.taskDue);
   initDatePicker(els.accountScheduledThrough);
+  initDatePicker(els.coverartDue);
   const bootstrap = await api("/api/bootstrap");
   state.assignees = bootstrap.assignees;
   state.activeAssignee = state.assignees[0] || "";
@@ -3122,6 +3126,9 @@ async function onCoverartBoardClick(event) {
 
 function openCoverartDialog() {
   els.coverartTitle.value = "";
+  els.coverartPinterest.value = "";
+  els.coverartNotes.value = "";
+  els.coverartDue.value = "";
   coverartsState.selectedCategory = coverartsState.categories.includes(coverartsState.filter) ? coverartsState.filter : "";
   renderCoverartCategoryPills();
   els.coverartDialog.showModal();
@@ -3155,7 +3162,13 @@ async function createCoverart(event) {
   try {
     const data = await api("/api/coverarts", {
       method: "POST",
-      body: { title, category: coverartsState.selectedCategory }
+      body: {
+        title,
+        category: coverartsState.selectedCategory,
+        pinterest_url: els.coverartPinterest.value.trim(),
+        notes: els.coverartNotes.value.trim(),
+        due_date: els.coverartDue.value
+      }
     });
     coverartsState.items.unshift(data.task);
     els.coverartDialog.close();
@@ -3335,6 +3348,13 @@ function renderCoverartCard(item) {
       <small>PNG or JPG · exactly 3000×3000</small>
     </button>`;
   }
+  // Due pressure only matters while the art is still owed.
+  const due = item.due_date && !item.image_url ? dueState(item.due_date) : null;
+  const info = [
+    due ? `<span class="coverart-due ${due.className}"><i data-lucide="calendar" style="width:11px;height:11px"></i> ${escapeHtml(due.label)}</span>` : "",
+    item.pinterest_url ? `<a class="coverart-pinterest" href="${escapeHtml(item.pinterest_url)}" target="_blank" rel="noopener" title="Open the Pinterest board"><i data-lucide="external-link" style="width:11px;height:11px"></i> Pinterest board</a>` : "",
+    item.notes ? `<p class="coverart-notes" title="${escapeHtml(item.notes)}">${escapeHtml(item.notes)}</p>` : ""
+  ].filter(Boolean).join("");
   return `
     <article class="coverart-card${item.image_url ? " has-art" : ""}">
       <div class="coverart-card-head">
@@ -3344,6 +3364,7 @@ function renderCoverartCard(item) {
         </div>
         <button type="button" class="icon-button coverart-delete" data-ca-delete="${item.id}" title="Delete task"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
       </div>
+      ${info ? `<div class="coverart-info">${info}</div>` : ""}
       ${art}
     </article>`;
 }

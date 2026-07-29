@@ -412,6 +412,9 @@ async function migrate(client) {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         category TEXT NOT NULL DEFAULT 'Misc.',
+        pinterest_url TEXT,
+        notes TEXT,
+        due_date TEXT,
         image_url TEXT,
         image_size INTEGER,
         image_type TEXT,
@@ -490,6 +493,12 @@ async function migrate(client) {
   }
   if (!chatColNames.includes("reply_to_id")) {
     await client.execute("ALTER TABLE chat_messages ADD COLUMN reply_to_id INTEGER");
+  }
+
+  const coverartCols = await client.execute("PRAGMA table_info(coverart_tasks)");
+  const coverartColNames = coverartCols.rows.map((r) => r["name"]);
+  for (const col of ["pinterest_url", "notes", "due_date"]) {
+    if (!coverartColNames.includes(col)) await client.execute(`ALTER TABLE coverart_tasks ADD COLUMN ${col} TEXT`);
   }
 
   const accountCols = await client.execute("PRAGMA table_info(tiktok_accounts)");
@@ -1707,8 +1716,11 @@ export async function deleteCoverartCategory(name) {
 
 export async function listCoverartTasks() {
   const client = await getDb();
+  // Needs-art first, and within it the nearest due date floats to the top.
   const r = await client.execute(
-    "SELECT * FROM coverart_tasks ORDER BY (image_url IS NOT NULL) ASC, id DESC"
+    `SELECT * FROM coverart_tasks ORDER BY (image_url IS NOT NULL) ASC,
+      CASE WHEN due_date IS NULL OR due_date = '' THEN 1 ELSE 0 END ASC,
+      due_date ASC, id DESC`
   );
   return rows(r);
 }
@@ -1722,11 +1734,12 @@ export async function getCoverartTask(id) {
   return firstRow(r);
 }
 
-export async function createCoverartTask({ title, category }) {
+export async function createCoverartTask({ title, category, pinterest_url, notes, due_date }) {
   const client = await getDb();
+  const due = /^\d{4}-\d{2}-\d{2}$/.test(String(due_date || "")) ? String(due_date) : null;
   const r = await client.execute({
-    sql: "INSERT INTO coverart_tasks (title, category) VALUES (?, ?) RETURNING *",
-    args: [title, category || ""]
+    sql: "INSERT INTO coverart_tasks (title, category, pinterest_url, notes, due_date) VALUES (?, ?, ?, ?, ?) RETURNING *",
+    args: [title, category || "", pinterest_url || null, notes || null, due]
   });
   return firstRow(r);
 }

@@ -400,7 +400,13 @@ export async function handleApi(request, response, url, currentUser) {
     const title = cleanText(body.title);
     if (!title) throw badRequest("A song title is required.");
     sendJson(response, 201, {
-      task: await createCoverartTask({ title, category: cleanText(body.category) })
+      task: await createCoverartTask({
+        title,
+        category: cleanText(body.category),
+        pinterest_url: cleanText(body.pinterest_url),
+        notes: cleanMultiline(body.notes),
+        due_date: cleanText(body.due_date)
+      })
     });
     return;
   }
