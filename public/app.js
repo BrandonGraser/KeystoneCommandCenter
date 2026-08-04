@@ -3537,6 +3537,24 @@ const OVERALL_METRICS = {
 };
 const WINDOW_OPTIONS = [14, 30, 90];
 const CHART_SOURCES = [["growth", "Daily views"], ["posted", "By post date"], ["followers", "Followers"]];
+const MANUAL_DAILY_POSTING_DATE = "2026-08-05";
+
+// One-time operational milestone on the shared Accounts chart. It follows the
+// same local-calendar axis as the plotted metrics and only renders when its
+// exact date falls inside the selected window.
+function manualPostingMarker(axis0, days, mode) {
+  const markerDate = new Date(`${MANUAL_DAILY_POSTING_DATE}T00:00:00`).getTime();
+  const dayIndex = Math.round((markerDate - axis0) / 86400000);
+  if (dayIndex < 0 || dayIndex >= days) return "";
+
+  const position = mode === "line"
+    ? (days > 1 ? dayIndex / (days - 1) : 0.5)
+    : (dayIndex + 0.5) / days;
+  const edgeClass = position > 0.84 ? " marker-at-end" : position < 0.16 ? " marker-at-start" : "";
+  return `<div class="overall-milestone${edgeClass}" style="--marker-x:${position}" title="Manual daily posting began on 8/5/2026">
+    <span>8/5 · Started manually posting 1 post/day</span>
+  </div>`;
+}
 
 // Follower stats need a TikTok permission that only accounts connected (or
 // reconnected) after July 2026 have. Hide all follower UI until real data
@@ -3648,7 +3666,7 @@ function renderAccountOverall() {
       ? "No follower data yet — hit Reconnect on each account to grant the new stats permission, then Sync."
       : `No ${escapeHtml(metric)} recorded in this window yet. Sync accounts to populate this.`;
   const chart = contributors.length
-    ? `<div class="overall-yaxis">${yAxis}</div>${chartSvg}`
+    ? `<div class="overall-yaxis">${yAxis}</div>${chartSvg}${manualPostingMarker(axis0, days, mode)}`
     : `<p class="detail-empty overall-empty">${emptyMessage}</p>`;
   const modeToggle = source === "followers" ? "" : `<div class="chart-mode-toggle">
     <button type="button" class="chart-mode-btn ${mode === "bar" ? "active" : ""}" data-mode="bar" title="Stacked bars"><i data-lucide="bar-chart-3" style="width:14px;height:14px"></i></button>
