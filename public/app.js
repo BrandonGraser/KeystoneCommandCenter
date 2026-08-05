@@ -3547,12 +3547,14 @@ function manualPostingMarker(axis0, days, mode) {
   const dayIndex = Math.round((markerDate - axis0) / 86400000);
   if (dayIndex < 0 || dayIndex >= days) return "";
 
+  // Place the milestone at the transition into 8/5: between the 8/4 and 8/5
+  // bars/points, rather than through the middle of the 8/5 value.
   const position = mode === "line"
-    ? (days > 1 ? dayIndex / (days - 1) : 0.5)
-    : (dayIndex + 0.5) / days;
+    ? (days > 1 ? (dayIndex - 0.5) / (days - 1) : 0.5)
+    : dayIndex / days;
   const edgeClass = position > 0.84 ? " marker-at-end" : position < 0.16 ? " marker-at-start" : "";
-  return `<div class="overall-milestone${edgeClass}" style="--marker-x:${position}" title="Manual daily posting began on 8/5/2026">
-    <span>8/5 · Started manually posting 1 post/day</span>
+  return `<div class="overall-milestone${edgeClass}" style="--marker-x:${position}" tabindex="0" role="note" aria-label="Started manually posting 1 post per day on 8/5/2026">
+    <span>Started manually posting 1 post/day</span>
   </div>`;
 }
 

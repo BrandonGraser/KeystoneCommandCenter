@@ -3061,15 +3061,25 @@ dialog::backdrop {
   top: 0;
   bottom: 0;
   left: calc(44px + (100% - 44px) * var(--marker-x));
-  width: 0;
+  width: 12px;
+  transform: translateX(-6px);
+  cursor: help;
+  outline: none;
+}
+
+.overall-milestone::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
   border-left: 2px dashed var(--ember);
-  pointer-events: none;
 }
 
 .overall-milestone span {
   position: absolute;
   top: 6px;
-  left: 6px;
+  left: 12px;
   max-width: 190px;
   padding: 4px 7px;
   border: 1px solid color-mix(in srgb, var(--ember) 55%, var(--line));
@@ -3081,15 +3091,31 @@ dialog::backdrop {
   line-height: 1.25;
   white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+
+.overall-milestone:hover span,
+.overall-milestone:focus-visible span {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 .overall-milestone.marker-at-end span {
-  left: -6px;
-  transform: translateX(-100%);
+  left: 0;
+  transform: translate(-100%, -3px);
+}
+
+.overall-milestone.marker-at-end:hover span,
+.overall-milestone.marker-at-end:focus-visible span {
+  transform: translate(-100%, 0);
 }
 
 .overall-milestone.marker-at-start span {
-  left: 6px;
+  left: 12px;
 }
 
 .overall-grid {
