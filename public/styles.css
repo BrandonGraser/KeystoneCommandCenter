@@ -3076,30 +3076,6 @@ dialog::backdrop {
 
 .overall-total span { color: var(--muted); font-weight: 600; }
 
-.overall-insights {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  margin: 0 0 16px 44px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--line);
-}
-
-.overall-insights > span {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-  padding: 8px 11px;
-  background: color-mix(in srgb, var(--panel-2) 86%, transparent);
-}
-
-.overall-insights small { color: var(--muted-2); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.overall-insights strong { color: var(--ink); font-family: "Space Grotesk", sans-serif; font-size: 12px; white-space: nowrap; }
-
 .overall-milestone {
   --marker-x: 0;
   position: absolute;
@@ -3581,7 +3557,6 @@ a.video-card:hover {
   .account-metrics .metric:last-child { grid-column: 1 / -1; }
   .overall-head { display: grid; }
   .overall-controls { justify-content: flex-start; }
-  .overall-insights { grid-template-columns: 1fr; margin-left: 0; }
   .overall-chart.has-axis { padding-left: 36px; }
   .overall-axis { padding-left: 36px; }
   .overall-export { order: -1; }
