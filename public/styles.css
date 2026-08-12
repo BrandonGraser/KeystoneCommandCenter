@@ -3345,6 +3345,12 @@ dialog::backdrop {
   flex-wrap: wrap;
 }
 
+.overall-export {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
 .overall-windows button,
 .overall-sources button {
   font-size: 11px;

@@ -119,7 +119,6 @@ const els = {
   accountOverall: document.querySelector("#accountOverall"),
   accountSearch: document.querySelector("#accountSearch"),
   accountSort: document.querySelector("#accountSort"),
-  exportAccountMetrics: document.querySelector("#exportAccountMetrics"),
   syncAllAccounts: document.querySelector("#syncAllAccounts"),
   accountGroup: document.querySelector("#accountGroup"),
   accountGroupList: document.querySelector("#accountGroupList"),
@@ -2328,7 +2327,6 @@ function bindAccountEvents() {
   });
   els.addAccount.addEventListener("click", () => openAccountDialog());
   els.syncAllAccounts.addEventListener("click", syncAllAccountsAction);
-  els.exportAccountMetrics.addEventListener("click", exportAccountMetricsPdf);
   els.closeAccountDialog.addEventListener("click", () => els.accountDialog.close());
   els.cancelAccount.addEventListener("click", () => els.accountDialog.close());
   els.accountForm.addEventListener("submit", saveAccount);
@@ -2358,6 +2356,11 @@ function bindAccountEvents() {
     renderAvatarPreview();
   });
   els.accountOverall.addEventListener("click", (event) => {
+    const exportBtn = event.target.closest("#exportAccountMetrics");
+    if (exportBtn) {
+      exportAccountMetricsPdf(exportBtn);
+      return;
+    }
     const windowBtn = event.target.closest(".overall-window-btn");
     if (windowBtn) {
       accountsState.windowDays = Number(windowBtn.dataset.days) || 14;
@@ -3560,8 +3563,7 @@ function manualPostingMarker(axis0, days, mode) {
   </div>`;
 }
 
-function exportAccountMetricsPdf() {
-  const button = els.exportAccountMetrics;
+function exportAccountMetricsPdf(button) {
   button.disabled = true;
   button.classList.add("syncing");
   const tz = -new Date().getTimezoneOffset();
@@ -3706,6 +3708,7 @@ function renderAccountOverall() {
         <p class="overall-total"><strong>${formatCount(grand)}</strong> ${totalLabel}</p>
       </div>
       <div class="overall-controls">
+        <button type="button" id="exportAccountMetrics" class="secondary overall-export"><i data-lucide="file-down" style="width:14px;height:14px"></i> Export PDF</button>
         <div class="overall-windows segmented">${windowTabs}</div>
         <div class="overall-sources segmented">${sourceTabs}</div>
         ${metricTabs ? `<div class="overall-tabs segmented">${metricTabs}</div>` : ""}
