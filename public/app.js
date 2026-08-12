@@ -3663,6 +3663,13 @@ function renderAccountOverall() {
     }
   }
   const grand = contributors.reduce((s, c) => s + c.total, 0);
+  const combinedPerDay = new Array(days).fill(0);
+  for (const c of contributors) c.perDay.forEach((v, i) => { combinedPerDay[i] += Number(v) || 0; });
+  const peakValue = Math.max(0, ...combinedPerDay);
+  const peakIndex = combinedPerDay.indexOf(peakValue);
+  const peakDate = new Date(axis0 + Math.max(0, peakIndex) * 86400000);
+  const peakLabel = `${peakDate.getMonth() + 1}/${peakDate.getDate()}`;
+  const activeAccounts = contributors.filter((c) => c.total > 0).length;
 
   const windowTabs = WINDOW_OPTIONS.map((d) =>
     `<button type="button" class="overall-window-btn ${d === accountsState.windowDays ? "active" : ""}" data-days="${d}">${d}d</button>`
@@ -3703,17 +3710,22 @@ function renderAccountOverall() {
 
   els.accountOverall.innerHTML = `
     <div class="overall-head">
-      <div>
-        <span class="control-label">All accounts · last ${days} days</span>
-        <p class="overall-total"><strong>${formatCount(grand)}</strong> ${totalLabel}</p>
+      <div class="overall-title-block">
+        <span class="control-label">Performance overview · last ${days} days</span>
+        <p class="overall-total"><strong>${formatCount(grand)}</strong><span>${totalLabel}</span></p>
       </div>
       <div class="overall-controls">
         <button type="button" id="exportAccountMetrics" class="secondary overall-export"><i data-lucide="file-down" style="width:14px;height:14px"></i> Export PDF</button>
-        <div class="overall-windows segmented">${windowTabs}</div>
-        <div class="overall-sources segmented">${sourceTabs}</div>
-        ${metricTabs ? `<div class="overall-tabs segmented">${metricTabs}</div>` : ""}
-        ${modeToggle}
+        <div class="overall-control-cluster"><span>Window</span><div class="overall-windows segmented">${windowTabs}</div></div>
+        <div class="overall-control-cluster"><span>Source</span><div class="overall-sources segmented">${sourceTabs}</div></div>
+        ${metricTabs ? `<div class="overall-control-cluster"><span>Metric</span><div class="overall-tabs segmented">${metricTabs}</div></div>` : ""}
+        <div class="overall-control-cluster overall-view-control"><span>View</span>${modeToggle}</div>
       </div>
+    </div>
+    <div class="overall-insights">
+      <span><small>Daily average</small><strong>${formatCount(Math.round(grand / Math.max(1, days)))}</strong></span>
+      <span><small>Peak day</small><strong>${peakLabel} · ${formatCount(peakValue)}</strong></span>
+      <span><small>Contributing accounts</small><strong>${activeAccounts} of ${accountsState.accounts.length}</strong></span>
     </div>
     <div class="overall-chart ${contributors.length ? "has-axis" : ""}">${chart}</div>
     ${contributors.length ? `<div class="overall-axis">${labels.map((l) => `<span>${l}</span>`).join("")}</div>` : ""}

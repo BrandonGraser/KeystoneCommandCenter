@@ -2584,7 +2584,22 @@ dialog::backdrop {
 .account-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   position: relative;
+  gap: 8px;
+  margin-bottom: 12px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
+
+.account-metrics .metric {
+  min-height: 72px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+}
+
+.account-metrics .metric strong { font-size: 25px; }
 
 .account-metric-out strong {
   color: var(--due-overdue);
@@ -2984,7 +2999,7 @@ dialog::backdrop {
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--panel);
-  padding: 14px;
+  padding: 18px;
   margin-bottom: 14px;
   box-shadow:
     0 1px 2px rgba(0,0,0,0.04),
@@ -3007,15 +3022,20 @@ dialog::backdrop {
 
 .overall-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
+
+.overall-title-block { min-width: 195px; padding-top: 3px; }
 
 .overall-total {
   margin: 4px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   color: var(--muted);
   font-size: 13px;
 }
@@ -3023,7 +3043,7 @@ dialog::backdrop {
 .overall-total strong {
   color: var(--ink);
   font-family: "Space Grotesk", sans-serif;
-  font-size: 24px;
+  font-size: 32px;
   font-weight: 600;
 }
 
@@ -3037,7 +3057,7 @@ dialog::backdrop {
   left: 0;
   top: 0;
   width: 40px;
-  height: 150px;
+  height: 190px;
 }
 
 .overall-yaxis span {
@@ -3051,8 +3071,34 @@ dialog::backdrop {
 .overall-bars {
   display: block;
   width: 100%;
-  height: 150px;
+  height: 190px;
 }
+
+.overall-total span { color: var(--muted); font-weight: 600; }
+
+.overall-insights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 16px 44px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--line);
+}
+
+.overall-insights > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 11px;
+  background: color-mix(in srgb, var(--panel-2) 86%, transparent);
+}
+
+.overall-insights small { color: var(--muted-2); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.overall-insights strong { color: var(--ink); font-family: "Space Grotesk", sans-serif; font-size: 12px; white-space: nowrap; }
 
 .overall-milestone {
   --marker-x: 0;
@@ -3219,11 +3265,13 @@ dialog::backdrop {
 .overall-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
+  gap: 5px 7px;
   margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-  font-size: 11px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+  font-size: 9px;
   color: var(--muted);
 }
 
@@ -3231,6 +3279,8 @@ dialog::backdrop {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 3px 6px;
+  border-radius: 6px;
   cursor: default;
   transition: opacity 0.12s ease;
 }
@@ -3340,10 +3390,15 @@ dialog::backdrop {
 
 .overall-controls {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 9px;
   flex-wrap: wrap;
 }
+
+.overall-control-cluster { display: grid; gap: 4px; }
+.overall-control-cluster > span { padding-left: 3px; color: var(--muted-2); font-size: 8px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.overall-view-control .chart-mode-toggle { min-height: 30px; }
 
 .overall-export {
   min-height: 30px;
@@ -3360,8 +3415,8 @@ dialog::backdrop {
 /* Top-videos leaderboard under the overall chart */
 
 .top-videos {
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
   border-top: 1px solid var(--line);
 }
 
@@ -3522,6 +3577,15 @@ a.video-card:hover {
 }
 
 @media (max-width: 640px) {
+  .account-metrics { grid-template-columns: 1fr 1fr; }
+  .account-metrics .metric:last-child { grid-column: 1 / -1; }
+  .overall-head { display: grid; }
+  .overall-controls { justify-content: flex-start; }
+  .overall-insights { grid-template-columns: 1fr; margin-left: 0; }
+  .overall-chart.has-axis { padding-left: 36px; }
+  .overall-axis { padding-left: 36px; }
+  .overall-export { order: -1; }
+
   .account-charts {
     grid-template-columns: 1fr;
   }
@@ -4501,8 +4565,10 @@ html[data-theme="light"] .depth-shadow {
 /* Posts-per-day grid (Accounts tab, under the overall chart) */
 .posts-day {
   margin-top: 16px;
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
 }
 
 .posts-day-toggle {
@@ -4512,7 +4578,7 @@ html[data-theme="light"] .depth-shadow {
   width: 100%;
   background: none;
   border: none;
-  padding: 4px 0;
+  padding: 11px 12px;
   cursor: pointer;
   color: var(--muted);
   text-align: left;
@@ -4540,7 +4606,8 @@ html[data-theme="light"] .depth-shadow {
 
 .posts-day-scroll {
   overflow-x: auto;
-  margin-top: 8px;
+  margin-top: 2px;
+  padding: 0 10px 10px;
 }
 
 .posts-day-table {
