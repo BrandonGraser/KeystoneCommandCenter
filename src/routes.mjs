@@ -61,6 +61,7 @@ import { createCoverartCategory, createCoverartTask, deleteCoverartCategory, del
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 import { del as deleteBlob } from "@vercel/blob";
 import { handleUpload } from "@vercel/blob/client";
+import { buildAccountMetricsPdf } from "./account-report.mjs";
 
 export async function handleApi(request, response, url, currentUser) {
   const method = request.method || "GET";
@@ -510,6 +511,28 @@ export async function handleApi(request, response, url, currentUser) {
   // --- Metrics -------------------------------------------------------------
   if (url.pathname === "/api/metrics/overview" && method === "GET") {
     sendJson(response, 200, await getMetricsOverview(normalizeWindow(url.searchParams.get("days")), tzOffsetParam(url)));
+    return;
+  }
+  if (url.pathname === "/api/metrics/export.pdf" && method === "GET") {
+    const days = 90;
+    const cutoff = Math.floor(axisStartMs(days, tzOffsetParam(url)) / 1000);
+    const [overview, accounts, topVideos] = await Promise.all([
+      getMetricsOverview(days, tzOffsetParam(url)),
+      listTikTokAccounts(),
+      listTopVideos({ sinceUnix: cutoff, sort: "views", limit: 12 })
+    ]);
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(new Date()).map((part) => [part.type, part.value]));
+    const date = `${parts.year}-${parts.month}-${parts.day}`;
+    const pdf = buildAccountMetricsPdf({ overview, accounts, topVideos, generatedDate: date });
+    response.writeHead(200, {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="keystone-account-metrics-${date}.pdf"`,
+      "Content-Length": pdf.length,
+      "Cache-Control": "no-store"
+    });
+    response.end(pdf);
     return;
   }
   if (url.pathname === "/api/videos/top" && method === "GET") {

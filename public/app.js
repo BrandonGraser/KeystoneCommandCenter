@@ -119,6 +119,7 @@ const els = {
   accountOverall: document.querySelector("#accountOverall"),
   accountSearch: document.querySelector("#accountSearch"),
   accountSort: document.querySelector("#accountSort"),
+  exportAccountMetrics: document.querySelector("#exportAccountMetrics"),
   syncAllAccounts: document.querySelector("#syncAllAccounts"),
   accountGroup: document.querySelector("#accountGroup"),
   accountGroupList: document.querySelector("#accountGroupList"),
@@ -2327,6 +2328,7 @@ function bindAccountEvents() {
   });
   els.addAccount.addEventListener("click", () => openAccountDialog());
   els.syncAllAccounts.addEventListener("click", syncAllAccountsAction);
+  els.exportAccountMetrics.addEventListener("click", exportAccountMetricsPdf);
   els.closeAccountDialog.addEventListener("click", () => els.accountDialog.close());
   els.cancelAccount.addEventListener("click", () => els.accountDialog.close());
   els.accountForm.addEventListener("submit", saveAccount);
@@ -3556,6 +3558,24 @@ function manualPostingMarker(axis0, days, mode) {
   return `<div class="overall-milestone${edgeClass}" style="--marker-x:${position}" tabindex="0" role="note" aria-label="Started manually posting 1 post per day on 8/5/2026">
     <span>Started manually posting 1 post/day</span>
   </div>`;
+}
+
+function exportAccountMetricsPdf() {
+  const button = els.exportAccountMetrics;
+  button.disabled = true;
+  button.classList.add("syncing");
+  const tz = -new Date().getTimezoneOffset();
+  const download = document.createElement("a");
+  download.href = `/api/metrics/export.pdf?days=90&tz=${tz}`;
+  download.download = "";
+  document.body.appendChild(download);
+  download.click();
+  download.remove();
+  showNotice("Preparing the 90-day account metrics PDF...", "good");
+  setTimeout(() => {
+    button.disabled = false;
+    button.classList.remove("syncing");
+  }, 3000);
 }
 
 // Follower stats need a TikTok permission that only accounts connected (or
