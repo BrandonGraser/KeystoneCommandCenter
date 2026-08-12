@@ -2312,6 +2312,7 @@ dialog::backdrop {
 }
 
 .main-tab {
+  position: relative;
   min-height: 34px;
   padding: 0 16px;
   border: 0;
@@ -2589,6 +2590,24 @@ dialog::backdrop {
   border: 0;
   background: transparent;
   box-shadow: none;
+}
+
+.main-tab.has-notice::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--panel);
+  border-radius: 999px;
+  background: var(--ember, #d92b1e);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ember) 45%, transparent),
+              0 0 9px color-mix(in srgb, var(--ember) 45%, transparent);
+}
+
+.main-tab.has-notice.active::before {
+  border-color: var(--bg);
 }
 
 .account-metrics .metric {

@@ -194,7 +194,9 @@ async function init() {
   renderLinkInputs();
   applyStoredResourceCollapse();
   renderChatChannels();
-  await initialLoad();
+  // Load the coverart queue up front so its tab can flag unfinished art even
+  // when the user starts on another tab.
+  await Promise.all([initialLoad(), loadCoverarts()]);
   if (new URLSearchParams(location.search).get("tiktok") === "connected") {
     switchTab("accounts");
     showNotice("TikTok connected — engagement metrics updated.", "good");
@@ -3014,6 +3016,19 @@ async function loadCoverarts() {
   renderCoverarts();
 }
 
+function updateCoverartTabNotice() {
+  const tab = els.mainTabs.querySelector('[data-tab="coverarts"]');
+  if (!tab) return;
+  const pending = coverartsState.items.filter((item) => !item.image_url).length;
+  tab.classList.toggle("has-notice", pending > 0);
+  tab.title = pending > 0
+    ? `${pending} coverart${pending === 1 ? "" : "s"} waiting for an assigned photo`
+    : "";
+  tab.setAttribute("aria-label", pending > 0
+    ? `Coverarts, ${pending} waiting for an assigned photo`
+    : "Coverarts");
+}
+
 function bindCoverartEvents() {
   els.coverartBoard.addEventListener("click", onCoverartBoardClick);
   els.closeCoverartDialog.addEventListener("click", () => els.coverartDialog.close());
@@ -3278,6 +3293,7 @@ function formatBytes(bytes) {
 
 function renderCoverarts() {
   const items = coverartsState.items;
+  updateCoverartTabNotice();
   const presentCategories = [...new Set(items.map((i) => i.category).filter(Boolean))];
   if (coverartsState.filter !== "All" && !presentCategories.includes(coverartsState.filter)) {
     coverartsState.filter = "All";
