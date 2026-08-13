@@ -471,6 +471,9 @@ async function migrate(client) {
   if (!taskColNames.includes("auto_data")) {
     await client.execute("ALTER TABLE tasks ADD COLUMN auto_data TEXT");
   }
+  // The account re-up reminder feature was removed. Purge tasks it created so
+  // old records cannot keep appearing after the application is upgraded.
+  await client.execute("DELETE FROM tasks WHERE auto_key = 'reup'");
 
   const resourceCols = await client.execute("PRAGMA table_info(resource_items)");
   const resourceColNames = resourceCols.rows.map((r) => r["name"]);
@@ -1809,100 +1812,6 @@ export async function carryOverdueTasks(today) {
     args: [target, target]
   });
   return Number(r.rowsAffected || 0);
-}
-
-// --- Auto re-up task -----------------------------------------------------------
-
-// Keep exactly one low-key auto task listing every account whose scheduled
-// content runs out within 7 days (or already ran out). The task's due date is
-// the soonest runout (never in the past — carry-over would just churn it).
-// Marking it done parks it until the account list actually changes; when no
-// account is low anymore, the auto task retires itself to the archive.
-export async function ensureReupTask(today) {
-  const client = await getDb();
-  const t = /^\d{4}-\d{2}-\d{2}$/.test(String(today || "")) ? String(today) : null;
-  const low = await client.execute({
-    sql: `SELECT name, scheduled_through FROM tiktok_accounts
-      WHERE archived = 0 AND coalesce(scheduled_through, '') != ''
-        AND scheduled_through <= date(coalesce(?, date('now', 'localtime')), '+7 days')
-      ORDER BY scheduled_through ASC, name ASC`,
-    args: [t]
-  });
-  const accounts = rows(low);
-  const existing = await client.execute(
-    "SELECT id, title, done, due_date, auto_data FROM tasks WHERE auto_key = 'reup' AND archived = 0 ORDER BY id DESC LIMIT 1"
-  );
-  const task = firstRow(existing);
-
-  if (!accounts.length) {
-    if (task && !Number(task.done)) {
-      await client.execute({
-        sql: "UPDATE tasks SET archived = 1, archived_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-        args: [task.id]
-      });
-    }
-    return;
-  }
-
-  const todayIso = t || new Date().toISOString().slice(0, 10);
-  const title = `Re-up ${accounts.map((a) => a.name).join(", ")}`;
-  const earliest = accounts[0].scheduled_through;
-  const dueDate = earliest < todayIso ? todayIso : earliest;
-  // Per-account checklist state rides in auto_data. Checked flags carry over
-  // by name whenever the list refreshes; re-upped accounts drop off, new low
-  // accounts arrive unchecked.
-  let prevDone = new Map();
-  try {
-    prevDone = new Map((JSON.parse(task?.auto_data)?.accounts || []).map((a) => [a.name, Boolean(a.done)]));
-  } catch { /* no prior checklist */ }
-  const autoData = JSON.stringify({
-    accounts: accounts.map((a) => ({ name: a.name, runout: a.scheduled_through, done: prevDone.get(a.name) || false }))
-  });
-
-  if (task && !Number(task.done)) {
-    if (task.title !== title || task.due_date !== dueDate || task.auto_data !== autoData) {
-      await client.execute({
-        sql: "UPDATE tasks SET title = ?, due_date = ?, auto_data = ?, updated_at = datetime('now') WHERE id = ?",
-        args: [title, dueDate, autoData, task.id]
-      });
-    }
-    return;
-  }
-  // A completed auto task for the SAME account list means it's handled and
-  // just waiting for the next schedule sync — don't nag with a duplicate.
-  if (task && Number(task.done)) {
-    if (task.title === title) return;
-    await client.execute({
-      sql: "UPDATE tasks SET archived = 1, archived_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-      args: [task.id]
-    });
-  }
-  await client.execute({
-    sql: `INSERT INTO tasks (assignee, title, details, category, status, due_date, urgency, auto_key, auto_data)
-      VALUES ('Brandon', ?, 'Auto-created: these accounts have 7 days or less of scheduled content left. Check accounts off as you finish making their content — the task clears itself once the new schedules sync.', 'Keystone', 'Not Started', ?, 2, 'reup', ?)`,
-    args: [title, dueDate, autoData]
-  });
-}
-
-// Flip one account's checkbox on the re-up task's checklist.
-export async function setReupAccountDone(taskId, name, done) {
-  const client = await getDb();
-  const r = await client.execute({
-    sql: "SELECT auto_data FROM tasks WHERE id = ? AND auto_key = 'reup'",
-    args: [Number(taskId)]
-  });
-  const row = firstRow(r);
-  if (!row) { const e = new Error("Re-up task not found."); e.status = 404; throw e; }
-  let data = { accounts: [] };
-  try { data = JSON.parse(row.auto_data) || data; } catch { /* fresh */ }
-  const entry = (data.accounts || []).find((a) => a.name === String(name));
-  if (!entry) { const e = new Error("That account is not on the checklist."); e.status = 404; throw e; }
-  entry.done = Boolean(done);
-  await client.execute({
-    sql: "UPDATE tasks SET auto_data = ?, updated_at = datetime('now') WHERE id = ?",
-    args: [JSON.stringify(data), Number(taskId)]
-  });
-  return getTask(Number(taskId));
 }
 
 // --- Bootstrap ---------------------------------------------------------------

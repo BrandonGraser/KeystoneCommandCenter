@@ -670,11 +670,6 @@ function bindEvents() {
       await handleChatPhoto(photoInput);
       return;
     }
-    const reupCheck = event.target.closest(".reup-check");
-    if (reupCheck) {
-      await toggleReupAccount(reupCheck);
-      return;
-    }
     const select = event.target.closest(".inline-status-select");
     if (!select) return;
     const row = select.closest(".task-row");
@@ -872,13 +867,11 @@ function renderTaskRow(task) {
         ${state.statuses.map((s) => `<option value="${escapeHtml(s)}"${s === task.status ? " selected" : ""}>${escapeHtml(s)}</option>`).join("")}
        </select>`;
   return `
-    <article class="task-row ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} ${task.auto_key ? "auto-task" : ""} status-row-${statusMeta.className}" data-task-id="${task.id}">
+    <article class="task-row ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} status-row-${statusMeta.className}" data-task-id="${task.id}">
       <input class="task-check" type="checkbox" ${task.done ? "checked" : ""} ${state.showArchive ? "disabled" : ""} title="Mark done">
       <div class="task-main">
         <div class="task-title" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</div>
         <div class="task-tags">
-          ${task.auto_key ? `<span class="auto-task-badge" title="Created automatically from the content schedule">Auto</span>` : ""}
-          ${reupAccounts(task).length ? `<span class="reup-progress-badge" title="Accounts checked off">${reupAccounts(task).filter((a) => a.done).length}/${reupAccounts(task).length}</span>` : ""}
           <span class="task-category collapsed-category" style="${categoryToneStyle(task.category)}">${escapeHtml(task.category || "Misc.")}</span>
           ${statusSelect}
           <span class="urgency-badge urgency-${urgencyTier(task.urgency)}" title="Urgency ${task.urgency ?? 3}/5">${task.urgency ?? 3}</span>
@@ -900,78 +893,12 @@ function renderTaskRow(task) {
   `;
 }
 
-// Persist a re-up checkbox flip, then update the checklist and row badge in
-// place (no board re-render, so the scroll position and chat stay put).
-async function toggleReupAccount(checkbox) {
-  const container = checkbox.closest(".reup-checklist");
-  const taskId = Number(container?.dataset.taskId);
-  if (!taskId) return;
-  const done = checkbox.checked;
-  try {
-    const data = await api(`/api/tasks/${taskId}/reup-check`, {
-      method: "POST",
-      body: { name: checkbox.dataset.account, done }
-    });
-    const index = state.tasks.findIndex((t) => t.id === taskId);
-    if (index >= 0) state.tasks[index] = { ...state.tasks[index], ...data.task };
-    checkbox.closest(".reup-item")?.classList.toggle("done", done);
-    const accounts = reupAccounts(data.task);
-    const doneCount = accounts.filter((a) => a.done).length;
-    const note = container.querySelector(".reup-progress-note");
-    if (note) note.textContent = `${doneCount}/${accounts.length} done${doneCount === accounts.length ? " — upload when ready, this task clears itself after schedules sync" : ""}`;
-    const badge = document.querySelector(`.task-row[data-task-id="${taskId}"] .reup-progress-badge`);
-    if (badge) badge.textContent = `${doneCount}/${accounts.length}`;
-  } catch (error) {
-    checkbox.checked = !done;
-    showNotice(error.message, "bad");
-  }
-}
-
-// Parsed re-up checklist for the auto task: [{ name, runout, done }].
-function reupAccounts(task) {
-  if (task.auto_key !== "reup" || !task.auto_data) return [];
-  try {
-    return JSON.parse(task.auto_data)?.accounts || [];
-  } catch {
-    return [];
-  }
-}
-
-// Checklist inside the expanded re-up task: tick accounts off as their
-// content gets made; the checks persist server-side and survive the task
-// refreshing its own account list.
-function renderReupChecklist(task) {
-  const accounts = reupAccounts(task);
-  if (!accounts.length) return "";
-  const doneCount = accounts.filter((a) => a.done).length;
-  return `
-    <div class="reup-checklist" data-task-id="${task.id}">
-      <div class="chat-head">
-        <span class="detail-label">Accounts to re-up</span>
-        <span class="reup-progress-note">${doneCount}/${accounts.length} done${doneCount === accounts.length ? " — upload when ready, this task clears itself after schedules sync" : ""}</span>
-      </div>
-      <ul class="reup-list">
-        ${accounts.map((a) => `
-          <li class="reup-item ${a.done ? "done" : ""}">
-            <label>
-              <input type="checkbox" class="reup-check" data-account="${escapeHtml(a.name)}" ${a.done ? "checked" : ""}>
-              <span class="reup-name">${escapeHtml(a.name)}</span>
-              <span class="reup-runout">${escapeHtml(a.runout ? `runs out ${shortDate(a.runout)}` : "")}</span>
-            </label>
-          </li>
-        `).join("")}
-      </ul>
-    </div>
-  `;
-}
-
 function renderTaskExpanded(task) {
   const messages = state.taskMessages[task.id] || [];
   const noteLinks = (task.links || []).filter(isNoteLink);
   const taskLinks = (task.links || []).filter((link) => !isNoteLink(link));
   return `
     <section class="task-expanded" data-task-id="${task.id}">
-      ${renderReupChecklist(task)}
       <div class="task-detail-grid">
         <div class="full-task-detail">
           <span class="detail-label">Full Task</span>

@@ -56,7 +56,7 @@ import { axisStartMs } from "./metrics.mjs";
 import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } from "./tiktok.mjs";
 import { parseArtistId, scrapeArtistPage } from "./spotify.mjs";
 import { getChartexOverview, syncAllChartexArtists, syncChartexArtist } from "./chartex.mjs";
-import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, ensureReupTask, setReupAccountDone, setUserAvatar } from "./db.mjs";
+import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, setUserAvatar } from "./db.mjs";
 import { createCoverartCategory, createCoverartTask, deleteCoverartCategory, deleteCoverartTask, listCoverartCategories, listCoverartTasks, removeCoverartImage, setCoverartImage } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 import { del as deleteBlob } from "@vercel/blob";
@@ -81,10 +81,8 @@ export async function handleApi(request, response, url, currentUser) {
   if (method === "GET" && url.pathname === "/api/sync") {
     // Roll yesterday's unfinished tasks forward to "due today" before
     // listing. The client sends its local date so the rollover happens at
-    // the user's midnight, not the server's. The auto re-up task refreshes
-    // on the same tick.
+    // the user's midnight, not the server's.
     await carryOverdueTasks(url.searchParams.get("today"));
-    await ensureReupTask(url.searchParams.get("today"));
     const [bootstrap, tasks, resources, chatCounts] = await Promise.all([
       getBootstrap(),
       listTasks(Object.fromEntries(url.searchParams.entries())),
@@ -196,13 +194,6 @@ export async function handleApi(request, response, url, currentUser) {
     return;
   }
 
-  const reupCheckMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/reup-check$/);
-  if (reupCheckMatch && method === "POST") {
-    const body = await readJson(request);
-    sendJson(response, 200, { task: await setReupAccountDone(Number(reupCheckMatch[1]), cleanText(body.name), Boolean(body.done)) });
-    return;
-  }
-
   const taskMatch = url.pathname.match(/^\/api\/tasks\/(\d+)$/);
   const duplicateMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/duplicate$/);
   const restoreMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/restore$/);
@@ -248,8 +239,6 @@ export async function handleApi(request, response, url, currentUser) {
     }
     await carryOverdueTasks();
     const result = await syncAllAccounts();
-    // After schedules refresh, recheck which accounts are within 7 days.
-    try { await ensureReupTask(); } catch { /* never block the cron */ }
     // Chartex piggybacks on the same daily cron; its failure never blocks TikTok.
     let chartex = null;
     try {

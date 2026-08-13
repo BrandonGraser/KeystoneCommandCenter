@@ -4981,33 +4981,6 @@ html[data-theme="light"] .depth-shadow {
   font-size: 10px;
 }
 
-/* Low-key auto-created tasks (content re-up reminders) */
-.task-row.auto-task {
-  border-style: dashed;
-  background: transparent;
-  opacity: 0.78;
-}
-
-.task-row.auto-task:hover {
-  opacity: 1;
-}
-
-.task-row.auto-task .task-title {
-  font-weight: 500;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.auto-task-badge {
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  color: var(--muted-2);
-  border: 1px dashed var(--line-strong);
-  border-radius: 999px;
-  padding: 1px 8px;
-}
 
 /* Chat upgrade: Discord/Slack-style channels, avatars, dividers, composer */
 .author-bg-brandon { background: var(--author-brandon); }
@@ -5497,87 +5470,6 @@ html[data-theme="light"] .depth-shadow {
   object-fit: cover;
   margin: 0;
   border-radius: 8px;
-}
-
-/* Re-up checklist inside the expanded auto task */
-.reup-checklist {
-  border: 1px dashed var(--line-strong);
-  border-radius: 10px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-}
-
-.reup-progress-note {
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.reup-list {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
-  gap: 4px 18px;
-}
-
-.reup-item label {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 5px 6px;
-  border-radius: 6px;
-  cursor: pointer;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.reup-item label:hover {
-  background: rgba(127, 127, 127, 0.08);
-}
-
-.reup-check {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-.reup-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  text-transform: none;
-  letter-spacing: normal;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.reup-item.done .reup-name {
-  text-decoration: line-through;
-  color: var(--muted-2);
-  font-weight: 500;
-}
-
-.reup-runout {
-  font-size: 10px;
-  color: var(--muted-2);
-  margin-left: auto;
-  white-space: nowrap;
-  text-transform: none;
-  letter-spacing: normal;
-  flex-shrink: 0;
-}
-
-.reup-progress-badge {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  padding: 1px 8px;
 }
 
 /* ---------------------------------------------------------------
