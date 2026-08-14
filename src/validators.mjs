@@ -96,6 +96,8 @@ export function validateTaskPayload(input, { partial = false } = {}) {
   if ("due_date" in input) output.due_date = normalizeDateInput(input.due_date);
   if ("stamp_at" in input) output.stamp_at = normalizeDateTimeInput(input.stamp_at);
   if ("done" in input) output.done = Boolean(input.done);
+  if ("task_type" in input) output.task_type = input.task_type === "daily" ? "daily" : "standard";
+  if ("completion_date" in input) output.completion_date = normalizeDateInput(input.completion_date);
   if ("archived" in input) output.archived = Boolean(input.archived);
   if ("urgency" in input) output.urgency = Math.max(1, Math.min(10, Math.round(Number(input.urgency) || 5)));
 
@@ -109,6 +111,10 @@ export function validateTaskPayload(input, { partial = false } = {}) {
   }
 
   if (output.status === "BRB" && (!partial || "status" in input || "due_date" in input)) {
+    output.due_date = null;
+  }
+  if (output.task_type === "daily") {
+    output.status = "Not Started";
     output.due_date = null;
   }
 

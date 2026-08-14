@@ -56,7 +56,7 @@ import { axisStartMs } from "./metrics.mjs";
 import { buildAuthUrl, buildOAuthErrorHtml, exchangeCode, isTikTokConfigured } from "./tiktok.mjs";
 import { parseArtistId, scrapeArtistPage } from "./spotify.mjs";
 import { getChartexOverview, syncAllChartexArtists, syncChartexArtist } from "./chartex.mjs";
-import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, setUserAvatar } from "./db.mjs";
+import { carryOverdueTasks, createCategory, createChartexArtist, deleteCategory, deleteChartexArtist, resetDailyTasks, setUserAvatar } from "./db.mjs";
 import { createCoverartCategory, createCoverartTask, deleteCoverartCategory, deleteCoverartTask, listCoverartCategories, listCoverartTasks, removeCoverartImage, setCoverartImage } from "./db.mjs";
 import { buildAuthCookie, verifyCredentials } from "./auth.mjs";
 import { del as deleteBlob } from "@vercel/blob";
@@ -83,6 +83,7 @@ export async function handleApi(request, response, url, currentUser) {
     // listing. The client sends its local date so the rollover happens at
     // the user's midnight, not the server's.
     await carryOverdueTasks(url.searchParams.get("today"));
+    await resetDailyTasks(url.searchParams.get("today"));
     const [bootstrap, tasks, resources, chatCounts] = await Promise.all([
       getBootstrap(),
       listTasks(Object.fromEntries(url.searchParams.entries())),
@@ -148,7 +149,7 @@ export async function handleApi(request, response, url, currentUser) {
   if (url.pathname === "/api/tasks" && method === "POST") {
     const body = await readJson(request);
     const task = await createTask(body);
-    const notification = task.done ? await notifyTaskDone(task) : null;
+    const notification = task.done && task.task_type !== "daily" ? await notifyTaskDone(task) : null;
     sendJson(response, 201, { task, notification });
     return;
   }
@@ -220,7 +221,7 @@ export async function handleApi(request, response, url, currentUser) {
     const before = await getTask(taskId);
     const task = await updateTask(taskId, await readJson(request));
     if (!task) throw notFound("Task not found.");
-    const notification = !before?.done && task.done ? await notifyTaskDone(task) : null;
+    const notification = !before?.done && task.done && task.task_type !== "daily" ? await notifyTaskDone(task) : null;
     sendJson(response, 200, { task, notification });
     return;
   }

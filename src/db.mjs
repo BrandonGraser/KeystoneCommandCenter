@@ -471,6 +471,12 @@ async function migrate(client) {
   if (!taskColNames.includes("auto_data")) {
     await client.execute("ALTER TABLE tasks ADD COLUMN auto_data TEXT");
   }
+  if (!taskColNames.includes("task_type")) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'standard'");
+  }
+  if (!taskColNames.includes("daily_completed_on")) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN daily_completed_on TEXT");
+  }
   // The account re-up reminder feature was removed. Purge tasks it created so
   // old records cannot keep appearing after the application is upgraded.
   await client.execute("DELETE FROM tasks WHERE auto_key = 'reup'");
@@ -716,7 +722,7 @@ export async function createTask(input, meta = {}) {
   const client = await getDb();
   const result = await client.execute({
     sql: `INSERT INTO tasks (assignee, title, details, project, category, status, done, due_date, stamp_at,
-      source_filename, source_tab, source_row, import_id, urgency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      source_filename, source_tab, source_row, import_id, urgency, task_type, daily_completed_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       payload.assignee,
       payload.title,
@@ -731,7 +737,9 @@ export async function createTask(input, meta = {}) {
       meta.source_tab || null,
       meta.source_row || null,
       meta.import_id || null,
-      payload.urgency ?? 5
+      payload.urgency ?? 5,
+      payload.task_type || "standard",
+      payload.task_type === "daily" && payload.done ? (payload.completion_date || null) : null
     ]
   });
   const taskId = Number(result.lastInsertRowid);
@@ -748,7 +756,7 @@ export async function updateTask(id, input) {
   const sets = [];
   const params = [];
 
-  for (const field of ["assignee", "title", "details", "project", "category", "status", "due_date", "stamp_at", "archived", "urgency"]) {
+  for (const field of ["assignee", "title", "details", "project", "category", "status", "due_date", "stamp_at", "archived", "urgency", "task_type"]) {
     if (field in payload) {
       sets.push(`${field} = ?`);
       params.push(field === "archived" ? (payload[field] ? 1 : 0) : payload[field]);
@@ -762,8 +770,14 @@ export async function updateTask(id, input) {
     sets.push("done = ?");
     params.push(payload.done ? 1 : 0);
     if (payload.done && !("stamp_at" in payload)) sets.push("stamp_at = coalesce(stamp_at, datetime('now'))");
-    if (payload.done && !("status" in payload)) sets.push("status = 'Done'");
-    if (!payload.done && task.status === "Done" && !("status" in payload)) sets.push("status = 'Not Started'");
+    if (task.task_type === "daily" || payload.task_type === "daily") {
+      sets.push("daily_completed_on = ?");
+      params.push(payload.done ? (payload.completion_date || null) : null);
+      if (!("status" in payload) && task.status === "Done") sets.push("status = 'Not Started'");
+    } else {
+      if (payload.done && !("status" in payload)) sets.push("status = 'Done'");
+      if (!payload.done && task.status === "Done" && !("status" in payload)) sets.push("status = 'Not Started'");
+    }
   }
 
   const client = await getDb();
@@ -812,10 +826,11 @@ export async function duplicateTask(id) {
     details: source.details || "",
     project: source.project || "",
     category: source.category || "Misc.",
+    task_type: source.task_type || "standard",
     status,
     done: false,
     urgency: source.urgency ?? 5,
-    due_date: status === "BRB" ? null : source.due_date || null,
+    due_date: source.task_type === "daily" || status === "BRB" ? null : source.due_date || null,
     links: source.links.map((l) => ({ label: l.label, url: l.url || "" })),
     notes: source.notes.map((n) => ({ person: n.person, body: n.body })),
     workflow_steps: source.workflow_steps.map((s) => ({ label: s.label }))
@@ -1810,6 +1825,20 @@ export async function carryOverdueTasks(today) {
         AND due_date IS NOT NULL AND due_date != ''
         AND due_date < coalesce(?, date('now', 'localtime'))`,
     args: [target, target]
+  });
+  return Number(r.rowsAffected || 0);
+}
+
+// Daily tasks stay in place forever; only their completion state rolls over.
+// `today` comes from the browser so midnight follows the user's timezone.
+export async function resetDailyTasks(today) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(today || ""))) return 0;
+  const client = await getDb();
+  const r = await client.execute({
+    sql: `UPDATE tasks SET done = 0, daily_completed_on = NULL, updated_at = datetime('now')
+      WHERE task_type = 'daily' AND archived = 0 AND done = 1
+        AND coalesce(daily_completed_on, '') < ?`,
+    args: [String(today)]
   });
   return Number(r.rowsAffected || 0);
 }

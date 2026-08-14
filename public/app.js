@@ -84,6 +84,8 @@ const els = {
   taskName: document.querySelector("#taskName"),
   taskTitle: document.querySelector("#taskTitle"),
   taskAssignee: document.querySelector("#taskAssignee"),
+  taskType: document.querySelector("#taskType"),
+  taskDueField: document.querySelector("#taskDueField"),
   taskCategory: document.querySelector("#taskCategory"),
   taskDue: document.querySelector("#taskDue"),
   taskDone: document.querySelector("#taskDone"),
@@ -664,6 +666,7 @@ function bindEvents() {
     renderCategoryPillPicker(els.taskCategory.value || "Misc.");
   });
   els.taskAssignee.addEventListener("change", () => ensureNoteLinkPerson(els.taskAssignee.value));
+  els.taskType.addEventListener("change", updateTaskTypeFields);
   els.taskBoard.addEventListener("change", async (event) => {
     const photoInput = event.target.closest(".chat-photo-input");
     if (photoInput) {
@@ -833,12 +836,27 @@ function renderTasks() {
     `;
     return;
   }
-  const groups = groupBy(state.tasks, (task) => task.status || "BRB");
-  els.taskBoard.innerHTML = state.statuses
+  const dailyTasks = state.tasks.filter((task) => task.task_type === "daily");
+  const standardTasks = state.tasks.filter((task) => task.task_type !== "daily");
+  const groups = groupBy(standardTasks, (task) => task.status || "BRB");
+  const dailyGroup = dailyTasks.length ? renderDailyGroup(dailyTasks) : "";
+  els.taskBoard.innerHTML = dailyGroup + state.statuses
     .filter((status) => groups.has(status))
     .map((status) => renderGroup(status, groups.get(status)))
     .join("");
   refreshIcons();
+}
+
+function renderDailyGroup(tasks) {
+  return `
+    <section class="status-group daily-task-group">
+      <div class="group-head">
+        <h2>Daily</h2>
+        <span>${tasks.filter((task) => task.done).length}/${tasks.length} done · resets at midnight</span>
+      </div>
+      ${tasks.map(renderTaskBlock).join("")}
+    </section>
+  `;
 }
 
 function renderGroup(status, tasks) {
@@ -858,16 +876,17 @@ function renderTaskBlock(task) {
 }
 
 function renderTaskRow(task) {
+  const isDaily = task.task_type === "daily";
   const due = dueState(task.due_date, task.done, task.status);
   const archive = archiveState(task);
   const statusMeta = taskStatusMeta(task.status, task.done);
-  const statusSelect = task.done
+  const statusSelect = isDaily ? "" : task.done
     ? `<span class="status-badge status-done-status">Done</span>`
     : `<select class="status-badge status-${statusMeta.className} inline-status-select" title="Change status">
         ${state.statuses.map((s) => `<option value="${escapeHtml(s)}"${s === task.status ? " selected" : ""}>${escapeHtml(s)}</option>`).join("")}
        </select>`;
   return `
-    <article class="task-row ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} status-row-${statusMeta.className}" data-task-id="${task.id}">
+    <article class="task-row ${isDaily ? "daily-task-row" : ""} ${task.done ? "done" : ""} ${state.showArchive ? "archived-row" : ""} status-row-${statusMeta.className}" data-task-id="${task.id}">
       <input class="task-check" type="checkbox" ${task.done ? "checked" : ""} ${state.showArchive ? "disabled" : ""} title="Mark done">
       <div class="task-main">
         <div class="task-title" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</div>
@@ -879,10 +898,11 @@ function renderTaskRow(task) {
           ${task.last_message && hasUnreadMessages(task) ? `<span class="unread-msg-badge">New message</span>` : ""}
         </div>
       </div>
-      <div class="due ${due.className}" title="${escapeHtml(due.label)}">
-        <span>${escapeHtml(state.showArchive ? archive.display : (due.display || task.due_date || "No due"))}</span>
-        <small>${escapeHtml(state.showArchive ? archive.label : due.label)}</small>
-      </div>
+      ${isDaily && !state.showArchive ? `<div class="due daily-no-due" aria-label="No due date"></div>` : `
+        <div class="due ${due.className}" title="${escapeHtml(due.label)}">
+          <span>${escapeHtml(state.showArchive ? archive.display : (due.display || task.due_date || "No due"))}</span>
+          <small>${escapeHtml(state.showArchive ? archive.label : due.label)}</small>
+        </div>`}
       <div class="row-actions">
         <span class="expand-hint">${state.expandedTaskId === task.id ? "▲ Hide" : "▼ View"}</span>
         ${state.showArchive
@@ -1122,7 +1142,7 @@ els.taskBoard.addEventListener("click", async (event) => {
   if (event.target.matches(".task-check")) {
     const data = await api(`/api/tasks/${task.id}`, {
       method: "PATCH",
-      body: { done: event.target.checked }
+      body: { done: event.target.checked, completion_date: localToday() }
     });
     if (event.target.checked) {
       celebrateTaskDone(row);
@@ -1160,10 +1180,12 @@ function openTaskDialog(task = null) {
   els.taskName.value = task?.title || "";
   els.taskTitle.value = task?.details || "";
   els.taskAssignee.value = task?.assignee || state.activeAssignee || state.assignees[0] || "";
+  els.taskType.value = task?.task_type || "standard";
   els.taskCategory.value = task?.category || "Misc.";
   applyCategoryTone(els.taskCategory, els.taskCategory.value);
   renderCategoryPillPicker(els.taskCategory.value);
   dpSet(els.taskDue, task ? (task.due_date || "") : today());
+  updateTaskTypeFields();
   els.taskDone.checked = Boolean(task?.done);
   els.taskUrgency.value = task?.urgency ?? 3;
   els.taskUrgencyValue.textContent = els.taskUrgency.value;
@@ -1180,6 +1202,13 @@ function openTaskDialog(task = null) {
   els.archiveTask.hidden = !task;
   els.taskDialog.showModal();
   if (task) loadFormImages(task.id);
+}
+
+function updateTaskTypeFields() {
+  const isDaily = els.taskType.value === "daily";
+  els.taskDueField.hidden = isDaily;
+  if (isDaily) dpSet(els.taskDue, "");
+  else if (!dpGet(els.taskDue)) dpSet(els.taskDue, today());
 }
 
 async function loadFormImages(taskId) {
@@ -1202,8 +1231,10 @@ async function saveTask(event) {
     details: els.taskTitle.value,
     assignee: els.taskAssignee.value,
     category: els.taskCategory.value,
-    due_date: dpGet(els.taskDue) || null,
+    task_type: els.taskType.value,
+    due_date: els.taskType.value === "daily" ? null : (dpGet(els.taskDue) || null),
     done: els.taskDone.checked,
+    completion_date: els.taskDone.checked && els.taskType.value === "daily" ? localToday() : null,
     urgency: Number(els.taskUrgency.value) || 3,
     workflow_steps: collectWorkflowInputs(),
     links: [...collectLinkInputs(), ...collectNoteLinkInputs()],
